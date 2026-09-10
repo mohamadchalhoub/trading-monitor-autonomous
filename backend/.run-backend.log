@@ -1,0 +1,3783 @@
+
+> trading-monitor-backend@0.1.0 dev
+> ts-node-dev --respawn --exit-child src/main.ts
+
+[INFO] 18:04:31 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[NestFactory] [39m[32mStarting Nest application...[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mPrismaModule dependencies initialized[39m[38;5;3m +69ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAppModule dependencies initialized[39m[38;5;3m +12ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAuthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMarketDataModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigHostModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mConfigModule dependencies initialized[39m[38;5;3m +5ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAnalyticsModule dependencies initialized[39m[38;5;3m +21ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAccountsModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mJobsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTradingDataModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mMarketEventsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mXtbImportModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTelegramModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAiModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mRulesModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHistoricalChartsModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mCollectorIngressModule dependencies initialized[39m[38;5;3m +2ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mTechnicalAnalysisModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mHealthModule dependencies initialized[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[InstanceLoader] [39m[32mAlertsModule dependencies initialized[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAppController {/}:[39m[38;5;3m +26ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/, GET} route[39m[38;5;3m +6ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAccountsController {/accounts}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:id, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mTradingDataController {/accounts/:accountId}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:accountId/snapshots/latest, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:accountId/positions, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:accountId/trades, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mCollectorIngressController {/collector}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/collector/snapshot, POST} route[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/collector/trades, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/collector/cursor/:accountId, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/collector/heartbeat/:accountId, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/collector/candles, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/collector/candles/latest, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mAlertsController {/accounts/:accountId/alerts}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:accountId/alerts, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mRulesController {/accounts/:accountId/rules}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:accountId/rules, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mTechnicalAnalysisController {/accounts/:accountId/technical-analysis}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:accountId/technical-analysis, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHistoricalChartsController {/accounts/:accountId/eurusd-trades}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:accountId/eurusd-trades, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/accounts/:accountId/eurusd-trades/:positionId/chart, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mHealthController {/health}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health/live, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health, GET} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/health/incidents, GET} route[39m[38;5;3m +2ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RoutesResolver] [39m[32mXtbImportController {/xtb-import}:[39m[38;5;3m +0ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/xtb-import, POST} route[39m[38;5;3m +1ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [32m    LOG[39m [38;5;3m[RouterExplorer] [39m[32mMapped {/xtb-import/batches/:accountId, GET} route[39m[38;5;3m +1ms[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:53 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:53 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:53 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:53 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:53 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:53 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:54 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:54 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:54 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:54 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:56 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:56 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:56 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:56 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:59 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:59 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:59 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:04:59 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:04 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:04 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:04 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:04 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:09 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:09 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:09 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:09 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:14 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:14 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:14 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:14 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:19 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:19 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:20 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:20 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:24 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:25 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:25 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:25 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:29 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:30 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:30 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:30 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:35 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:35 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:35 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:35 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:40 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:40 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:40 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:40 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:45 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:45 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:45 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:45 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:50 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:50 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:50 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:50 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:55 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:55 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:55 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:05:55 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:00 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:00 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:01 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:01 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:05 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:05 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:06 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:06 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:10 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:10 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:11 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:11 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:15 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:16 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:16 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:16 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:20 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:21 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:21 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:21 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:26 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:26 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:26 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:26 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:31 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:31 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:31 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:31 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:36 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:36 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:36 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:36 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:41 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:41 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:41 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:42 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:46 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:46 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:46 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:47 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:51 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:51 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:52 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:56 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:56 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:57 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:06:57 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:01 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:01 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:02 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:02 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:06 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:07 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:07 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:07 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:12 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:12 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:12 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:13 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:17 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:17 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:17 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:18 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:22 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:22 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:22 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:23 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:27 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:27 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:27 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:28 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:32 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:32 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:32 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:33 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:37 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:37 PM [31m  ERROR[39m [38;5;3m[MarketEventIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+[31m[Nest] 3300  - [39m09/09/2026, 6:07:37 PM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionProcessor] [39m[31mworker error: connect ECONNREFUSED 127.0.0.1:6380[39m
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[ioredis] Unhandled error event: Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16)
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+Error: connect ECONNREFUSED 127.0.0.1:6380
+    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:1637:16) {
+  errno: -4078,
+  code: 'ECONNREFUSED',
+  syscall: 'connect',
+  address: '127.0.0.1',
+  port: 6380
+}
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:42 PM [32m    LOG[39m [38;5;3m[DailyMarketAnalysisProcessor] [39m[32mdaily market analysis scheduled: 0 8 * * * (Asia/Beirut)[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:42 PM [32m    LOG[39m [38;5;3m[DailyMarketAnalysisProcessor] [39m[32mdaily market analysis (startup catch-up — scheduled time already passed today): running for account=82cd5b46-f216-43f0-8dc7-896295057067[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:43 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 1 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:43 PM [32m    LOG[39m [38;5;3m[HeartbeatDigestProcessor] [39m[32mheartbeat digest scheduled: 0 21 * * * (Asia/Beirut)[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:43 PM [32m    LOG[39m [38;5;3m[NestApplication] [39m[32mNest application successfully started[39m[38;5;3m +9ms[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:43 PM [32m    LOG[39m [38;5;3m[Bootstrap] [39m[32mAPI listening on port 3000[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:45 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:45 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:46 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:07:46 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[33m[Nest] 3300  - [39m09/09/2026, 6:08:01 PM [33m   WARN[39m [38;5;3m[HealthStatusWriterService] [39m[33mhealth incident: TELEGRAM OK → DOWN[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:37 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:37 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:38 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M30 count=9[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:38 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=M30 count=9[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:38 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=H4 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:38 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=H4 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:38 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=D1 count=2[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:38 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=D1 count=2[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:39 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=W1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:39 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=W1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:39 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=MN1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:39 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=MN1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:49 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:49 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:49 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:08:50 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:01 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:01 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:11 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:11 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:22 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:22 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:32 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:32 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:42 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:43 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:53 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:53 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:53 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:09:53 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:04 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:04 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:14 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:14 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:24 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:25 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:35 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:35 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:45 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:45 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:55 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:56 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:56 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:10:56 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:06 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:06 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:17 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:17 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:27 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:27 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:37 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:38 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:48 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:48 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:59 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:11:59 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:01 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:01 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:16 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:17 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:27 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:27 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:37 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:38 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:49 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:49 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:12:59 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:00 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:10 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:10 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:10 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:11 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:21 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:21 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:31 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:32 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:42 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:42 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 0 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:42 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M5 count=33[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:42 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=M5 count=33[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M15 count=13[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=M15 count=13[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=H1 count=7[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=H1 count=7[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M30 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=M30 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=H4 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=H4 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=D1 count=2[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:43 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=D1 count=2[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:44 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=W1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:44 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=W1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:44 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=MN1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:44 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=MN1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:54 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:13:54 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:13:54 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:05 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:14:05 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:05 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:15 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:14:15 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:15 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:16 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:14:16 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:16 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:27 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:14:27 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:27 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:37 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:14:37 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:37 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:48 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:14:48 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:48 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:58 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:14:59 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:14:59 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:09 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:15:09 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:09 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:19 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:15:20 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:20 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:20 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:15:20 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:20 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:30 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:15:30 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:31 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:41 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:15:41 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:42 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:52 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:15:52 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:15:52 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:02 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:16:02 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:03 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:13 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:16:13 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:13 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:23 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:16:23 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:23 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:24 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:16:24 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:24 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:34 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:16:34 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:34 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:45 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:16:45 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:45 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:55 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:16:55 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:16:55 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:05 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:17:06 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:06 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:16 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:17:16 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:16 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:26 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:17:27 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:27 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:27 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:17:27 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:27 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:37 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:17:38 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:38 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:48 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:17:48 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:48 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:58 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:17:59 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:17:59 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:09 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:18:09 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:09 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:20 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:18:20 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:20 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:18:22 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:18:22 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:30 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:18:30 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:30 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:31 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:18:31 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:31 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:41 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:18:41 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:42 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:52 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:18:52 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:52 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:52 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M5 count=5[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:52 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=M5 count=5[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:52 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M15 count=5[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:52 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=M15 count=5[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:53 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=H1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:53 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=H1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:53 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M30 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:53 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=M30 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:53 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=H4 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:53 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=H4 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:53 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=D1 count=2[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:53 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=D1 count=2[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:54 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=W1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:54 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=W1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:54 PM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=MN1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:18:54 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mcandles accepted symbol=EURUSD timeframe=MN1 count=4[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:04 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:19:04 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:04 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:14 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:19:14 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:15 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:25 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:19:25 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:25 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:35 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:19:35 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:35 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:36 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:19:36 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:36 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:46 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:19:46 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:46 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:57 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:19:57 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:19:57 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:07 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:20:07 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:07 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:17 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:20:17 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:18 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:28 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:20:28 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:28 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:38 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:20:38 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:39 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:39 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:20:39 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:39 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:49 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:20:49 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:20:49 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:00 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:00 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:00 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:07 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:07 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:07 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:10 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:10 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:10 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:19 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:20 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:21 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:21 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:28 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:31 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:31 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:31 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:32 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:41 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:42 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:42 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:42 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:43 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:43 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:53 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:21:53 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:21:53 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:03 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:22:04 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:04 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[33m[Nest] 3300  - [39m09/09/2026, 6:22:10 PM [33m   WARN[39m [38;5;3m[HealthStatusWriterService] [39m[33mhealth incident: TELEGRAM OK → DOWN[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:14 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:22:14 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:15 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:29 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:22:30 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:30 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:40 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:22:40 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:41 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:51 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32msnapshot accepted account=82cd5b46-f216-43f0-8dc7-896295057067 positions=0 mt5_connected=true[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:22:51 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:51 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:51 PM [32m    LOG[39m [38;5;3m[CollectorIngressController] [39m[32mtrades accepted account=82cd5b46-f216-43f0-8dc7-896295057067 received=0 created=0 updated=0[39m
+[95m[Nest] 3300  - [39m09/09/2026, 6:22:51 PM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 239 candle(s), 37 level(s) found[39m
+[32m[Nest] 3300  - [39m09/09/2026, 6:22:51 PM [32m    LOG[39m [38;5;3m[RuleEngineService] [39m[32mevaluated 2 rule(s) for account=82cd5b46-f216-43f0-8dc7-896295057067: 1 triggered[39m

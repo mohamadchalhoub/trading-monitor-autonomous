@@ -1,0 +1,165 @@
+# Phase 11 — DEPLOYMENT.md. The LINUX-HOST HALF of the two-host topology
+# (Phase 0 §25): NestJS, PostgreSQL, Redis, and the web dashboard, all here,
+# behind Caddy as the TLS-terminating reverse proxy. The Windows VPS running
+# MT5 + the Python collector is deliberately NOT a service in this file — it
+# runs outside Docker, on its own host, and only ever pushes outbound HTTPS
+# to whatever domain Caddy serves `api` on (see collector/.env's
+# COLLECTOR_API_BASE_URL). No inbound port is ever opened toward it.
+#
+# Usage: cp backend/.env.production.example backend/.env.production (fill
+# in real secrets), same for frontend/, then:
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    # Explicit and distinct from the dev compose's "trading-monitor-postgres"
+    # (backend/docker-compose.yml) — backup.sh/restore.sh's POSTGRES_CONTAINER
+    # override already existed as a mechanism; the container just had nothing
+    # predictable to point it at. This name is what .env.production's
+    # POSTGRES_CONTAINER should reference (production-readiness review).
+    container_name: trading-monitor-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # AOF persistence, same reasoning as dev (backend/docker-compose.yml) —
+    # plus a password, since this instance is reachable from other
+    # containers on a network that (unlike dev) isn't purely local-machine.
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  # One-shot: applies pending Prisma migrations, then exits. `api` waits for
+  # this to exit 0 before starting — never runs migrations from its own
+  # boot path, so a rolling restart of `api` never re-runs `migrate deploy`.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: build
+    env_file: ./backend/.env.production
+    command: ["npx", "prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ./backend/.env.production
+    # Loopback-only (single-VPS topology, DEPLOYMENT_SINGLE_VPS.md): the
+    # Wine-hosted collector runs on this same host, outside Docker, and
+    # needs to reach the API without round-tripping through the public
+    # domain/Caddy. Bound to 127.0.0.1 specifically — never 0.0.0.0 — so
+    # nothing outside this machine can reach port 3000 directly; the public
+    # path through Caddy (443) is unaffected and still the only externally
+    # reachable route to this service.
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    # Dashboard authentication (Option B) put a bearer-token guard in front
+    # of the rich /health endpoint, which this container obviously can't
+    # carry — so it polls /health/live instead: a deliberately separate,
+    # deliberately unauthenticated, deliberately minimal endpoint
+    # (health.controller.ts) that answers only 200/503 with no per-component
+    # detail. The 503 logic (fail on DATABASE/REDIS specifically — api's own
+    # direct infrastructure, not external systems a restart can't fix
+    # anyway) now lives server-side in that endpoint, not duplicated here.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3000/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [internal]
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ./frontend/.env.production
+    depends_on:
+      api:
+        # Genuinely useful here (not just added for symmetry): the
+        # dashboard's own pages call the API server-side on nearly every
+        # request, so waiting for api's healthcheck avoids a startup window
+        # where web is "up" but every page it serves errors immediately.
+        condition: service_healthy
+    # Only checks that the Next.js server itself answers a request at all
+    # (a hung event loop won't) — deliberately does NOT check whether the
+    # page it serves can reach the API, which would just duplicate api's
+    # own healthcheck and couple the two containers' health together.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:3001/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [internal]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      APP_DOMAIN: ${APP_DOMAIN}
+      DASHBOARD_BASIC_AUTH_USER: ${DASHBOARD_BASIC_AUTH_USER}
+      DASHBOARD_BASIC_AUTH_HASH: ${DASHBOARD_BASIC_AUTH_HASH}
+    depends_on:
+      - api
+      - web
+    networks: [internal]
+
+networks:
+  internal:
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

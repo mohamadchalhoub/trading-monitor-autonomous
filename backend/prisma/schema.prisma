@@ -1,0 +1,627 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  MT5
+  XTB
+}
+
+enum Side {
+  BUY
+  SELL
+}
+
+enum PositionStatus {
+  OPEN
+  CLOSED
+}
+
+// Mirrors MT5's ENUM_DEAL_ENTRY (0=IN, 1=OUT, 2=INOUT, 3=OUT_BY) — see the
+// Phase 1 MT5 verification notes for why deals, not paired "trades", are
+// the ingested unit; round-trip aggregation is Phase 3 analytics' job.
+enum DealEntry {
+  IN
+  OUT
+  INOUT
+  OUT_BY
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  accounts TradingAccount[]
+
+  @@map("users")
+}
+
+model TradingAccount {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  platform           Platform
+  externalAccountId  String   @map("external_account_id")
+  broker             String?
+  currency           String   @db.Char(3)
+  displayName        String?  @map("display_name")
+  isActive           Boolean  @default(true) @map("is_active")
+
+  // Revision 1, Req. 8 — explicit, never inferred from broker server time.
+  tradingDayTimezone  String  @default("UTC") @map("trading_day_timezone")
+  tradingDayResetHour Int     @default(0) @map("trading_day_reset_hour")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshots   AccountSnapshot[]
+  positions   Position[]
+  trades      Trade[]
+  syncCursor  SyncCursor?
+  heartbeat   CollectorHeartbeat?
+  rules       RuleDefinition[]
+  ruleStates  RuleState[]
+  alerts      Alert[]
+  importBatches ImportBatch[]
+  apiCredentials ApiCredential[]
+
+  @@unique([platform, externalAccountId])
+  @@map("trading_accounts")
+}
+
+model AccountSnapshot {
+  id          BigInt   @id @default(autoincrement())
+  accountId   String   @map("account_id")
+  balance     Decimal  @db.Decimal(18, 2)
+  equity      Decimal  @db.Decimal(18, 2)
+  margin      Decimal  @db.Decimal(18, 2)
+  freeMargin  Decimal  @db.Decimal(18, 2) @map("free_margin")
+  marginLevel Decimal? @db.Decimal(9, 2) @map("margin_level")
+  profit      Decimal  @db.Decimal(18, 2)
+  capturedAt  DateTime @map("captured_at")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, capturedAt])
+  @@index([accountId, capturedAt(sort: Desc)])
+  @@map("account_snapshots")
+}
+
+model Position {
+  id                 String         @id @default(uuid())
+  accountId          String         @map("account_id")
+  platform           Platform
+  externalPositionId String         @map("external_position_id")
+  symbol             String
+  side               Side
+  volume             Decimal        @db.Decimal(12, 2)
+  openPrice          Decimal        @map("open_price") @db.Decimal(18, 6)
+  currentPrice       Decimal?       @map("current_price") @db.Decimal(18, 6)
+  stopLoss           Decimal?       @map("stop_loss") @db.Decimal(18, 6)
+  takeProfit         Decimal?       @map("take_profit") @db.Decimal(18, 6)
+  profit             Decimal        @default(0) @db.Decimal(18, 2)
+  swap               Decimal        @default(0) @db.Decimal(18, 2)
+  status             PositionStatus @default(OPEN)
+  openedAt           DateTime       @map("opened_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  // Revision 1, Req. 10 — the exact record as received, before mapping.
+  rawPayload Json? @map("raw_payload")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, platform, externalPositionId])
+  @@index([accountId, status])
+  @@map("positions")
+}
+
+model Trade {
+  id               String    @id @default(uuid())
+  accountId        String    @map("account_id")
+  platform         Platform
+  externalTradeId  String    @map("external_trade_id") // MT5 deal ticket
+  positionId       String?   @map("position_id")        // MT5 position_id — links IN/OUT pairs
+  orderId          String?   @map("order_id")
+  symbol           String
+  side              Side
+  dealEntry         DealEntry @map("deal_entry")
+  volume           Decimal   @db.Decimal(12, 2)
+  price            Decimal   @db.Decimal(18, 6)
+  commission       Decimal   @default(0) @db.Decimal(18, 2)
+  swap             Decimal   @default(0) @db.Decimal(18, 2)
+  profit           Decimal   @default(0) @db.Decimal(18, 2)
+  executedAt       DateTime  @map("executed_at")
+  comment          String?
+
+  // Historical chart reconstruction phase — XTB import only (xtb-import.service.ts
+  // sets these on both the IN and OUT leg when the source row had them; MT5
+  // live deals leave both null, same as XTB rows that genuinely had no SL/TP
+  // set — "not present" and "not applicable" are the same null here on
+  // purpose, since a deal-level SL/TP is inherently a position-level concept
+  // duplicated onto its deals for chart-marker convenience, not a fact about
+  // the deal itself). Never invented when absent from the source data.
+  stopLoss         Decimal?  @map("stop_loss") @db.Decimal(18, 6)
+  takeProfit       Decimal?  @map("take_profit") @db.Decimal(18, 6)
+
+  // Revision 1, Req. 10.
+  rawPayload Json? @map("raw_payload")
+
+  importedAt DateTime @default(now()) @map("imported_at")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, platform, externalTradeId])
+  @@index([accountId, executedAt(sort: Desc)])
+  @@index([accountId, symbol])
+  @@index([accountId, positionId])
+  @@map("trades")
+}
+
+// Revision 1, Req. 17 — the primary key of the diagnostic high-water mark;
+// the actual incremental-sync mechanism is a time-window with overlap
+// (see the Phase 1 verification notes), not a strict ticket cursor.
+model SyncCursor {
+  accountId        String    @id @map("account_id")
+  lastSyncedAt     DateTime? @map("last_synced_at")
+  lastDealTicket   String?   @map("last_deal_ticket")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("sync_cursors")
+}
+
+// Revision 1, Req. 7 — updated on every accepted snapshot push; this is
+// the entire heartbeat mechanism, no separate endpoint or loop.
+model CollectorHeartbeat {
+  accountId         String   @id @map("account_id")
+  lastHeartbeatAt   DateTime @map("last_heartbeat_at")
+  mt5Connected      Boolean  @map("mt5_connected")
+  lastError         String?  @map("last_error")
+  collectorVersion  String?  @map("collector_version")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("collector_heartbeats")
+}
+
+// Phase 4 — RULE_ENGINE_SPEC.md §1. A closed set of rule types, no
+// general-purpose expression DSL (Phase 0 §08, Req. 5).
+enum RuleType {
+  DAILY_LOSS_LIMIT
+  DRAWDOWN
+  CONSECUTIVE_LOSSES
+  POSITION_SIZE_MULTIPLE
+  TRADE_FREQUENCY_MULTIPLE
+  MARGIN_UTILIZATION
+  NO_STOP_LOSS
+  CONCENTRATION
+  // Market intelligence, phase 5 — the one event-aware rule type built this
+  // pass (EVENT_CHASING/NEWS_VOLATILITY were considered and deliberately
+  // NOT built: their inputs — "did the trader just react to a headline,"
+  // "how much has price moved since a news item" — aren't derivable from
+  // data this system already has, unlike this one, which reuses the same
+  // open-positions exposure CONCENTRATION already computes). Communicates
+  // risk context only ("significant EURUSD exposure ahead of a high-impact
+  // USD release"), never a buy/sell instruction — see
+  // high-impact-event-exposure.evaluator.ts.
+  HIGH_IMPACT_EVENT_EXPOSURE
+  COMPOUND
+  // User's custom EURUSD trading rules — technical-analysis phase
+  // (support/resistance, Ichimoku, Fibonacci, market direction). All three
+  // are additive; nothing above is replaced or removed. SUPPORT_RESISTANCE_
+  // PROXIMITY and ICHIMOKU_BREAKOUT are evaluated on the normal snapshot-
+  // driven trigger like every rule above; DAILY_MARKET_ANALYSIS (Rules 3+4
+  // combined into one daily report) is evaluated on its own cron schedule
+  // instead — see rule-engine.service.ts's `ruleTypeFilter`.
+  SUPPORT_RESISTANCE_PROXIMITY
+  ICHIMOKU_BREAKOUT
+  DAILY_MARKET_ANALYSIS
+}
+
+// RULE_ENGINE_SPEC.md §4 — the four-state Phase 0 diagram (Inactive/Active/
+// Cooldown/Resolved) collapses to this one value plus RuleState.cooldownUntil:
+// ACTIVE covers both the diagram's "Active" and "Cooldown" (the condition has
+// been continuously true since lastTriggeredAt, cooldownUntil just says
+// whether a re-notify is currently suppressed); INACTIVE covers both
+// "Inactive" and "Resolved" (both mean "not currently alerting").
+enum RuleRunState {
+  INACTIVE
+  ACTIVE
+}
+
+// RULE_ENGINE_SPEC.md §1/§12.12 decision 1 (per Phase 4 approval): rule
+// configurations are account-specific, never shared/global — each row
+// belongs to exactly one account, matching this account's own thresholds,
+// cooldown, and enabled state.
+model RuleDefinition {
+  id              String   @id @default(uuid())
+  accountId       String   @map("account_id")
+  name            String
+  ruleType        RuleType @map("rule_type")
+  parameters      Json
+  enabled         Boolean  @default(true)
+  // null = fall back to RULE_DEFAULT_COOLDOWN_SECONDS (RULE_ENGINE_SPEC.md §5).
+  cooldownSeconds Int?     @map("cooldown_seconds")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  state   RuleState?
+  alerts  Alert[]
+
+  @@index([accountId, enabled])
+  @@map("rule_definitions")
+}
+
+// One row per rule (RULE_ENGINE_SPEC.md §4) — accountId is denormalized from
+// the owning rule for direct account-scoped queries/isolation checks, never
+// written independently of rule.accountId.
+model RuleState {
+  ruleId          String       @id @map("rule_id")
+  accountId       String       @map("account_id")
+  state           RuleRunState @default(INACTIVE)
+  cooldownUntil   DateTime?    @map("cooldown_until")
+  lastTriggeredAt DateTime?    @map("last_triggered_at")
+  resolvedAt      DateTime?    @map("resolved_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  rule    RuleDefinition @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("rule_states")
+}
+
+// Append-only trigger log (RULE_ENGINE_SPEC.md §6). triggerValues/
+// baselineSnapshot/ruleSnapshot are JSON copies taken at creation time —
+// never updated afterward, so a later edit to rule_definitions or a later
+// shift in the rolling baseline can never rewrite what an old alert says
+// happened (Phase 0 §09, Req. 9).
+model Alert {
+  id               String   @id @default(uuid())
+  ruleId           String   @map("rule_id")
+  accountId        String   @map("account_id")
+  triggeredAt      DateTime @default(now()) @map("triggered_at")
+  triggerValues    Json     @map("trigger_values")
+  baselineSnapshot Json     @map("baseline_snapshot")
+  ruleSnapshot     Json     @map("rule_snapshot")
+
+  rule    RuleDefinition @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  delivery AlertDelivery?
+  aiAnalysis AiAnalysis?
+
+  @@index([accountId, triggeredAt(sort: Desc)])
+  @@map("alerts")
+}
+
+// Phase 5 — PHASE5_DELIVERY_SPEC.md §2/§3. Trading alerts and system-health
+// incidents are two distinct message classes through one delivery worker;
+// only TRADING_ALERT is populated in Phase 5 (no health-incident source
+// exists yet). Written transactionally with its Alert (AlertLifecycleService)
+// — the transactional-outbox pattern: this row, not the Redis job, is the
+// durable record of "this needs to be delivered."
+enum NotificationClass {
+  TRADING_ALERT
+  SYSTEM_HEALTH
+}
+
+enum DeliveryStatus {
+  PENDING // row written, not yet confirmed enqueued/delivered
+  SENT    // Telegram accepted it for every configured recipient chat
+  FAILED  // a transient failure; will retry (attempts < max)
+  DEAD    // exhausted retries or a permanent error — needs attention
+}
+
+model AlertDelivery {
+  id                 String             @id @default(uuid())
+  alertId            String             @unique @map("alert_id")
+  class              NotificationClass  @default(TRADING_ALERT)
+  status             DeliveryStatus     @default(PENDING)
+  attempts           Int                @default(0)
+  lastError          String?            @map("last_error") // redacted — never contains the bot token
+  telegramMessageIds Json               @default("[]") @map("telegram_message_ids")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  sentAt             DateTime?          @map("sent_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("alert_deliveries")
+}
+
+// Phase 6 — AI_INTEGRATION_SPEC.md §5. One row per FRESH-EPISODE alert only
+// (RULE_ENGINE_SPEC.md §4's INACTIVE/RESOLVED→ACTIVE transition) — a
+// cooldown re-notify's Alert row never gets one (decision: narrate only the
+// first alert of an episode, not every re-notify). Created transactionally
+// with the Alert, same transactional-outbox reasoning as AlertDelivery, but
+// this relation is nullable since it doesn't exist for every Alert.
+enum AiAnalysisStatus {
+  PENDING   // row written, generation job not finished yet
+  READY     // generated, passed the safety filter — a Telegram follow-up is (or will be) sent
+  WITHHELD  // generated, FAILED the safety filter — never sent, kept for audit
+  FAILED    // provider error / timeout / schema-invalid response; may retry
+  SKIPPED   // AI is disabled (AI_ENABLED=false) — a deliberate no-op, not an error
+}
+
+model AiAnalysis {
+  id                String            @id @default(uuid())
+  alertId           String            @unique @map("alert_id")
+  status            AiAnalysisStatus  @default(PENDING)
+  provider          String?           // which AiProvider answered (e.g. "anthropic"), set once processed
+  model             String?           // e.g. "claude-sonnet-5"
+  result            Json?             // the validated AiAnalysisResult, once READY or WITHHELD (null otherwise)
+  safetyFlagged     Boolean           @default(false) @map("safety_flagged")
+  flaggedPattern    String?           @map("flagged_pattern") // which filter rule matched — never the withheld text itself, in logs
+  lastError         String?           @map("last_error")      // redacted — never contains the API key
+  attempts          Int               @default(0)
+  telegramMessageIds Json             @default("[]") @map("telegram_message_ids")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("ai_analyses")
+}
+
+// Phase 7 — HEALTH_SPEC.md. A second observer, independent of the trading
+// path (Phase 0 §13, Req. 6): whether the SYSTEM ITSELF is working, as
+// distinct from whether a trading rule triggered. The `health` module reads
+// collector_heartbeats/alert_deliveries/ai_analyses and pings Redis/DB/
+// Telegram directly; it is not layered on top of rules/alerts, on purpose —
+// a bug in trading-rule logic must never be able to affect whether the
+// system correctly reports its own health.
+enum HealthComponent {
+  COLLECTOR
+  MT5_TERMINAL
+  DATABASE
+  REDIS
+  TELEGRAM
+  AI_PROVIDER
+  XTB_IMPORT
+  DATA_INTEGRITY
+}
+
+enum HealthStatusValue {
+  OK
+  DEGRADED
+  DOWN
+}
+
+// Latest known status per component — one row each, upserted every check
+// interval. Live status is written to Redis FIRST (health.constants.ts'
+// redisHealthKey), Postgres second (HEALTH_SPEC.md §2) — a database outage
+// is one of the things this table exists to detect, so the health system
+// cannot depend on Postgres being up to report that Postgres is down.
+model HealthStatus {
+  component HealthComponent   @id
+  status    HealthStatusValue
+  detail    Json?
+  checkedAt DateTime          @map("checked_at")
+
+  @@map("health_status")
+}
+
+// Append-only — mirrors the alert lifecycle's shape (triggered_at/resolved_at)
+// but for infrastructure, not trading behavior. A row is written only on a
+// STATUS CHANGE (never one row per check tick), and closed (resolvedAt set)
+// when the component returns to OK.
+model HealthIncident {
+  id         String            @id @default(uuid())
+  component  HealthComponent
+  statusFrom HealthStatusValue @map("status_from")
+  statusTo   HealthStatusValue @map("status_to")
+  detail     Json?
+  openedAt   DateTime          @default(now()) @map("opened_at")
+  resolvedAt DateTime?         @map("resolved_at")
+
+  @@index([component, openedAt(sort: Desc)])
+  @@map("health_incidents")
+}
+
+// Phase 8 — XTB_IMPORT_SPEC.md. Whole-file dedup on (account_id, file_sha256)
+// (Phase 0 §06's idempotency table) — re-uploading the same export is a
+// no-op batch. Row-level dedup reuses Trade's OWN (account_id, platform,
+// external_trade_id) unique constraint — no separate mechanism needed.
+enum ImportBatchStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model ImportBatch {
+  id           String            @id @default(uuid())
+  accountId    String            @map("account_id")
+  fileSha256   String            @map("file_sha256")
+  fileName     String?           @map("file_name")
+  status       ImportBatchStatus @default(PENDING)
+  rowsTotal    Int               @default(0) @map("rows_total")
+  rowsImported Int               @default(0) @map("rows_imported")
+  rowsSkipped  Int               @default(0) @map("rows_skipped") // duplicates, either within the file or against already-imported data
+  error        String?
+  createdAt    DateTime          @default(now()) @map("created_at")
+  completedAt  DateTime?         @map("completed_at")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, fileSha256])
+  @@map("import_batches")
+}
+
+// Revision 1, Req. 13 — the plaintext token is generated once by
+// scripts/create-collector-token.ts, shown once, and never stored here.
+// Production-readiness review, item 1 — `accountId` closes the gap where a
+// valid collector token could submit data for ANY known account (previously
+// no column tied a token to one). Nullable at the schema level only because
+// a future non-collector scope might legitimately have no single account;
+// CollectorTokenGuard enforces it as required for scope='collector' at the
+// application layer, and rejects a token with no binding rather than
+// treating it as unrestricted.
+model ApiCredential {
+  id           String    @id @default(uuid())
+  name         String
+  tokenHash    String    @map("token_hash")
+  tokenPrefix  String    @map("token_prefix")
+  scope        String    @default("collector")
+  accountId    String?   @map("account_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  lastUsedAt   DateTime? @map("last_used_at")
+  revokedAt    DateTime? @map("revoked_at")
+
+  account TradingAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("api_credentials")
+}
+
+// Market intelligence (production readiness review, market-events phase) —
+// an independent observation domain, same pattern as HealthStatus/
+// HealthIncident above: no foreign key into any trading table. Deliberately
+// structured, never predictive — `impact`/`scheduleType` come from the
+// source's own classification (or, for a source like FRED that has none of
+// its own, a hand-curated allowlist — see market-events/curated-fred-
+// releases.ts), and `sentiment` defaults to UNCERTAIN and is only ever set
+// to something else by a source that actually provides real sentiment
+// scoring, never inferred here. `actualReaction` is deliberately nullable
+// and filled in later by a separate follow-up job comparing price/
+// volatility before vs after the event window — never assumed at ingestion
+// time. No evaluator reads this table yet; this phase is ingestion only.
+enum MarketEventScheduleType {
+  EXPECTED
+  SURPRISE
+}
+
+enum MarketEventImpact {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum MarketEventSentiment {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+  UNCERTAIN
+}
+
+// Market intelligence, news phase — the two kinds of row this one table
+// carries are conceptually distinct (a scheduled macro release vs. a
+// published news article) even though they share a storage shape; every
+// reader (evaluators, the AI context builder) filters by this first, never
+// by inferring the kind from `source` string-matching.
+enum MarketEventCategory {
+  ECONOMIC_EVENT
+  NEWS
+}
+
+model MarketEvent {
+  id                 String                  @id @default(uuid())
+  source             String
+  externalId         String                  @map("external_id")
+  category           MarketEventCategory     @default(ECONOMIC_EVENT)
+  title              String
+  scheduleType       MarketEventScheduleType @map("schedule_type")
+  impact             MarketEventImpact
+  sentiment          MarketEventSentiment    @default(UNCERTAIN)
+  affectedCurrencies String[]                @map("affected_currencies")
+  scheduledAt        DateTime                @map("scheduled_at")
+  // NEWS only — the article's own link, kept so a Telegram/AI consumer can
+  // cite the source without this table ever storing the full article body
+  // (Marketaux's free tier only ever gives a snippet anyway, never the
+  // full text — nothing to strip here, just never fetched in the first
+  // place). Always null for ECONOMIC_EVENT rows.
+  sourceUrl          String?                 @map("source_url")
+  actualReaction     Json?                   @map("actual_reaction")
+  rawPayload         Json                    @map("raw_payload")
+  createdAt          DateTime                @default(now()) @map("created_at")
+  updatedAt          DateTime                @updatedAt @map("updated_at")
+
+  // One row per (source, source-native id, occurrence) — re-running
+  // ingestion on a schedule is idempotent, and a release FRED corrects to a
+  // different date arrives as a distinct occurrence rather than overwriting
+  // the original. For NEWS, `externalId` is the provider's own article
+  // uuid and `scheduledAt` is `published_at` — equally stable, so the same
+  // constraint doubles as the news dedup key with no separate mechanism.
+  @@unique([source, externalId, scheduledAt])
+  @@index([scheduledAt])
+  @@index([category, scheduledAt])
+  @@map("market_events")
+}
+
+// Historical chart reconstruction phase — an independent market-data
+// domain, same "no foreign key into any trading table" pattern already
+// established by MarketEvent/HealthStatus: a candle is symbol+timeframe
+// data, shared across every account, never scoped to one. Sourced from the
+// currently-connected MT5 terminal via the collector (MT5 → Collector →
+// Backend, the same one-way push architecture snapshots/trades already
+// use — the backend itself never depends on a local MT5 terminal).
+// `source` stays a plain string rather than an enum, matching MarketEvent's
+// own field, in case a second candle provider is ever needed for symbols/
+// history depth the connected MT5 terminal can't cover.
+enum CandleTimeframe {
+  M5
+  M15
+  H1
+  // Technical-analysis phase (support/resistance, Ichimoku, Fibonacci) —
+  // real MT5-native candles at these timeframes, same collector pipeline
+  // as the original three (collector/app/mt5_client.py's
+  // _MT5_TIMEFRAME_BY_NAME), not resampled from finer data.
+  M30
+  H4
+  D1
+  // Ichimoku W1/MN1 breakout alerts — real MT5-native weekly/monthly
+  // candles (collector/app/mt5_client.py's _MT5_TIMEFRAME_BY_NAME), same
+  // "no resampling" reasoning as M30/H4/D1 above. Named "MN1" (not "MN")
+  // to match MetaTrader5's own TIMEFRAME_MN1 constant exactly.
+  W1
+  MN1
+}
+
+model HistoricalCandle {
+  id        BigInt          @id @default(autoincrement())
+  symbol    String
+  timeframe CandleTimeframe
+  openTime  DateTime        @map("open_time")
+  open      Decimal         @db.Decimal(18, 6)
+  high      Decimal         @db.Decimal(18, 6)
+  low       Decimal         @db.Decimal(18, 6)
+  close     Decimal         @db.Decimal(18, 6)
+  // Tick volume, not real traded volume (MT5/forex has no central
+  // exchange-reported volume) — nullable since not every source gives one.
+  volume    Decimal?        @db.Decimal(18, 2)
+  source    String          @default("MT5")
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  // One row per (symbol, timeframe, candle open time) — the collector's own
+  // periodic re-fetch of recent candles (to heal a bar that was still
+  // forming on a previous tick) upserts, never duplicates.
+  @@unique([symbol, timeframe, openTime])
+  @@index([symbol, timeframe, openTime(sort: Desc)])
+  @@map("historical_candles")
+}
+
+// One row per symbol, always overwritten in place — a genuine live bid/ask,
+// pushed by the collector on the same 10s cadence as its account snapshot
+// (Reliability pass: closes the gap between this system's coarsest price
+// (an M5 candle close, up to ~10 minutes stale by the time it's synced) and
+// what a trader sees live on their own terminal). Global market data, same
+// "no accountId" posture as HistoricalCandle — a live quote isn't specific
+// to any one account. TechnicalAnalysisReportService prefers this over the
+// candle-derived price when it's fresh enough, falling back to the candle
+// close otherwise (e.g. before the collector's first successful push).
+model LiveTick {
+  symbol    String   @id
+  bid       Decimal  @db.Decimal(18, 6)
+  ask       Decimal  @db.Decimal(18, 6)
+  tickAt    DateTime @map("tick_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("live_ticks")
+}

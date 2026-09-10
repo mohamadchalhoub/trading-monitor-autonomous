@@ -1,0 +1,541 @@
+
+> frontend@0.1.0 dev
+> next dev -p 3001
+
+▲ Next.js 16.3.3 (Turbopack)
+- Local:         http://localhost:3001
+- Network:       http://192.168.56.1:3001
+- Environments: .env.local
+✓ Ready in 2.3s
+⚠ Warning: Next.js ignored package-lock.json in C:\Users\user because it is outside the current Git repository (C:\Users\user\Desktop\automationTrade).
+ To use this directory, set `turbopack.root` in your Next.js config.
+
+✓ Running next.config.ts took 131ms
+
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 500 in 1162ms (next.js: 614ms, application-code: 548ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 500 in 140ms (next.js: 14ms, application-code: 126ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 91ms (next.js: 22ms, application-code: 69ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 500 in 129ms (next.js: 11ms, application-code: 117ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 98ms (next.js: 17ms, application-code: 80ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 67ms (next.js: 12ms, application-code: 56ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 500 in 116ms (next.js: 12ms, application-code: 104ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 86ms (next.js: 15ms, application-code: 70ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 500 in 151ms (next.js: 11ms, application-code: 140ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 65ms (next.js: 11ms, application-code: 54ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 62ms (next.js: 12ms, application-code: 50ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 63ms (next.js: 10ms, application-code: 52ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 64ms (next.js: 10ms, application-code: 54ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 103ms (next.js: 28ms, application-code: 75ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 94ms (next.js: 21ms, application-code: 73ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 70ms (next.js: 13ms, application-code: 56ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 65ms (next.js: 10ms, application-code: 55ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 66ms (next.js: 9ms, application-code: 57ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 64ms (next.js: 11ms, application-code: 53ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 66ms (next.js: 10ms, application-code: 57ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 77ms (next.js: 11ms, application-code: 67ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 500 in 159ms (next.js: 12ms, application-code: 147ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 112ms (next.js: 16ms, application-code: 96ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 93ms (next.js: 23ms, application-code: 70ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 75ms (next.js: 15ms, application-code: 60ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 103ms (next.js: 20ms, application-code: 83ms)
+⨯ TypeError: fetch failed
+    at async apiFetch (src\lib\api.ts:30:15)
+    at async Home (src\app\page.tsx:16:20)
+  28 |     throw new Error('Missing required configuration: DASHBOARD_API_TOKEN. See frontend/.env.local.example.');
+  29 |   }
+> 30 |   const res = await fetch(`${BASE_URL}${path}`, {
+     |               ^
+  31 |     ...init,
+  32 |     cache: 'no-store', // this is a monitoring dashboard — always read current state, never a stale cached page
+  33 |     headers: { {
+  digest: '1640510697',
+  [cause]: AggregateError: 
+      at ignore-listed frames {
+    code: 'ECONNREFUSED',
+    [errors]: [ [Error], [Error] ]
+  }
+}
+ GET / 200 in 66ms (next.js: 10ms, application-code: 56ms)
+ GET / 200 in 318ms (next.js: 12ms, application-code: 306ms)
+ GET / 200 in 304ms (next.js: 13ms, application-code: 291ms)
+ GET / 307 in 302ms (next.js: 12ms, application-code: 290ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 2.9s (next.js: 1475ms, application-code: 1425ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1184ms (next.js: 31ms, application-code: 1153ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1283ms (next.js: 22ms, application-code: 1261ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1119ms (next.js: 31ms, application-code: 1087ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1297ms (next.js: 22ms, application-code: 1274ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1971ms (next.js: 25ms, application-code: 1946ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 2.0s (next.js: 26ms, application-code: 1995ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1090ms (next.js: 21ms, application-code: 1069ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1276ms (next.js: 20ms, application-code: 1256ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1025ms (next.js: 30ms, application-code: 995ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1029ms (next.js: 10ms, application-code: 1019ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1444ms (next.js: 36ms, application-code: 1409ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1009ms (next.js: 20ms, application-code: 989ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 927ms (next.js: 19ms, application-code: 908ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1100ms (next.js: 19ms, application-code: 1081ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 941ms (next.js: 20ms, application-code: 921ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1146ms (next.js: 31ms, application-code: 1116ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 975ms (next.js: 25ms, application-code: 950ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1729ms (next.js: 19ms, application-code: 1710ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1332ms (next.js: 25ms, application-code: 1308ms)
+ GET / 307 in 286ms (next.js: 8ms, application-code: 277ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1083ms (next.js: 27ms, application-code: 1056ms)
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 171ms (next.js: 18ms, application-code: 154ms)
+⨯ Error: The destination stream closed early.
+    at ignore-listed frames {
+  digest: '2642529334'
+}
+ GET /dashboard/82cd5b46-f216-43f0-8dc7-896295057067 200 in 2.7s (next.js: 21ms, application-code: 2.7s)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1743ms (next.js: 1276ms, application-code: 467ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 536ms (next.js: 38ms, application-code: 498ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1038ms (next.js: 33ms, application-code: 1005ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1078ms (next.js: 52ms, application-code: 1025ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1095ms (next.js: 22ms, application-code: 1073ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1265ms (next.js: 35ms, application-code: 1230ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 1034ms (next.js: 25ms, application-code: 1010ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 770ms (next.js: 31ms, application-code: 739ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 824ms (next.js: 37ms, application-code: 788ms)
+ GET /technical-analysis/82cd5b46-f216-43f0-8dc7-896295057067 200 in 575ms (next.js: 19ms, application-code: 556ms)

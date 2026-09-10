@@ -1,0 +1,37 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: trading-monitor-postgres-test
+    environment:
+      POSTGRES_USER: trading_monitor
+      POSTGRES_PASSWORD: trading_monitor_test_password
+      POSTGRES_DB: trading_monitor_test
+    ports:
+      # Separate port AND separate container from the dev database (5433) —
+      # tests must never run against the developer's normal data.
+      - "5434:5432"
+    tmpfs:
+      # RAM-backed, no named volume — genuinely disposable. Wiped whenever
+      # the container is removed (`docker compose -f docker-compose.test.yml down -v`).
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_monitor"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  redis-test:
+    image: redis:7-alpine
+    container_name: trading-monitor-redis-test
+    ports:
+      # Separate port AND separate container from dev Redis (6380) — same
+      # isolation reasoning as postgres-test. No persistence flag and no
+      # named volume: genuinely disposable, wiped whenever the container is
+      # removed (`docker compose -f docker-compose.test.yml down -v`), and
+      # each test suite also FLUSHDB's/obliterates its own queue between runs.
+      - "6381:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
