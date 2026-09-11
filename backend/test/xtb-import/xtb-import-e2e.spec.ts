@@ -133,6 +133,45 @@ describe('Phase 8 — XTB CSV import (end-to-end)', () => {
     expect(trades).toHaveLength(4); // 2 pairs, not 3
   });
 
+  // Audit finding: the existing row-level dedup test above overlaps two
+  // files on the SAME order id with IDENTICAL values, which only proves a
+  // pure duplicate is skipped — it says nothing about what happens when a
+  // broker re-export CORRECTS a previously-imported row (e.g. a late swap
+  // adjustment changes the recorded profit). This test makes that behavior
+  // explicit rather than leaving it undocumented: dedup keys ONLY on
+  // (accountId, platform, externalTradeId) — a second row under the same id
+  // is skipped regardless of whether its OTHER fields differ, so a
+  // correction from the broker is silently NOT applied. This is a real,
+  // current limitation (no update-on-reimport path exists anywhere in this
+  // module), not a hidden bug — documented here so it can't be assumed away.
+  it('an overlapping export with a CORRECTED value for an already-imported order id keeps the ORIGINAL value, not the correction', async () => {
+    const account = await xtbAccount();
+    const original = `${HEADER}\n1,EURUSD,BUY,1,2026-01-01,1.1,2026-01-02,1.2,0,0,10,original`;
+    // Same order id 1, but the broker "corrected" profit from 10 to -50
+    // (e.g. a late swap/commission adjustment) — plus one genuinely new row.
+    const correctedReExport = `${HEADER}\n1,EURUSD,BUY,1,2026-01-01,1.1,2026-01-02,1.2,0,0,-50,corrected\n2,GBPUSD,SELL,1,2026-01-03,1.3,2026-01-04,1.29,0,0,5,`;
+
+    await request(app, {
+      method: 'POST',
+      url: '/xtb-import',
+      headers: { authorization: `Bearer ${account.token}` },
+      payload: { accountId: account.id, csvContent: original },
+    });
+    const res = await request(app, {
+      method: 'POST',
+      url: '/xtb-import',
+      headers: { authorization: `Bearer ${account.token}` },
+      payload: { accountId: account.id, csvContent: correctedReExport },
+    });
+
+    expect(res.body.rowsImported).toBe(1); // only order 2
+    expect(res.body.rowsSkipped).toBe(1); // order 1's "correction" is skipped, not applied
+
+    const outLeg = await prisma.trade.findFirst({ where: { accountId: account.id, externalTradeId: '1-OUT' } });
+    expect(outLeg?.profit.toNumber()).toBe(10); // ORIGINAL value retained — the correction never lands
+    expect((outLeg?.rawPayload as Record<string, string>).Comment).toBe('original');
+  });
+
   it('resumes a PENDING batch left over from an interrupted attempt instead of treating it as done', async () => {
     const account = await xtbAccount();
     const csvContent = `${HEADER}\n1,EURUSD,BUY,1,2026-01-01,1.1,2026-01-02,1.2,,,10,`;

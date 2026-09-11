@@ -1,13 +1,19 @@
 """Thin, read-only wrapper around the MetaTrader5 package.
 
-This module contains the ONLY import of MetaTrader5 (or a proxy to it) in
-the whole project, and the only calls into it. There is no function here,
-and there must never be one added, that can place, modify, or close a
-trade: no order_send, no order_check, no order_calc_*. That guarantee holds
-identically in both modes below, since both ultimately expose the exact
-same real MetaTrader5 API surface — the guarantee has always come from this
-file's own discipline about which functions it calls, never from the
-transport lacking them.
+There is no function here, and there must never be one added, that can
+place, modify, or close a trade: no order_send, no order_check, no
+order_calc_*. That guarantee holds identically in both modes below, since
+both ultimately expose the exact same real MetaTrader5 API surface — the
+guarantee has always come from this file's own discipline about which
+functions it calls, never from the transport lacking them.
+
+Autonomous demo trading (v2), Phase 6: order placement now exists in this
+project, but deliberately NOT here — it lives in `executor.py`, the only
+other file that imports MetaTrader5 (or a bridge proxy to it) and the only
+file anywhere in this project that calls order_send. This file's own
+invariant above stays exactly as true as it always was; the small,
+separately-reviewable set of functions capable of writing anything to a
+live account is now `executor.py` in full, and nowhere else.
 
 Two modes, chosen at runtime by MT5_BRIDGE_HOST:
 
@@ -143,6 +149,16 @@ class Mt5Client:
     def last_error(self) -> tuple[int, str]:
         return self._mt5.last_error()
 
+    def get_mt5_module(self) -> Any:
+        """Returns the already-connected mt5 module/proxy handle (native
+        import or RPyC bridge, whichever connect() resolved) — the ONLY
+        reason this exists is so `executor.py`'s `Executor` can share this
+        SAME session rather than opening a second one; nothing else should
+        call this. Does not itself grant any new capability — `Executor` is
+        still the only place that ever calls order_send with whatever
+        handle it's given."""
+        return self._mt5
+
     # -- read-only data access --------------------------------------------------
 
     def get_terminal_info(self) -> dict[str, Any] | None:
@@ -166,6 +182,12 @@ class Mt5Client:
             "profit": d.get("profit"),
             "leverage": d.get("leverage"),
             "trade_allowed": d.get("trade_allowed"),
+            # Autonomous demo trading (v2) — promoted to a first-class field
+            # alongside the others above (was previously only reachable via
+            # "raw") because it's the input to this project's single most
+            # safety-critical check (executor.py's verify_demo_account()):
+            # MT5's ACCOUNT_TRADE_MODE_REAL/DEMO/CONTEST integer enum.
+            "trade_mode": d.get("trade_mode"),
             "raw": d,
         }
 

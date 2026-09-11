@@ -53,6 +53,8 @@ describe('TradeAlignmentService', () => {
       openPrice: number;
       closePrice: number;
       profit: number;
+      commission: number;
+      swap: number;
       stopLoss: number | null;
       takeProfit: number | null;
     }> = {},
@@ -72,7 +74,8 @@ describe('TradeAlignmentService', () => {
       data: {
         accountId, platform: 'XTB', externalTradeId: `${positionId}-OUT`, positionId,
         symbol: 'EURUSD', side, dealEntry: 'OUT', volume: 0.1,
-        price: overrides.closePrice ?? 1.11, profit: overrides.profit ?? 10, executedAt: closedAt,
+        price: overrides.closePrice ?? 1.11, profit: overrides.profit ?? 10,
+        commission: overrides.commission ?? 0, swap: overrides.swap ?? 0, executedAt: closedAt,
         stopLoss: overrides.stopLoss ?? null, takeProfit: overrides.takeProfit ?? null,
       },
     });
@@ -84,7 +87,21 @@ describe('TradeAlignmentService', () => {
 
     const trips = await service.getRoundTrips(account.id, 'EURUSD');
     expect(trips).toHaveLength(1);
-    expect(trips[0]).toMatchObject({ positionId: 'p1', side: 'SELL', entryPrice: 1.2, exitPrice: 1.19, profit: 10 });
+    expect(trips[0]).toMatchObject({ positionId: 'p1', side: 'SELL', entryPrice: 1.2, exitPrice: 1.19, profit: 10, netProfit: 10 });
+  });
+
+  // Audit finding (reconciliation session): a real position in this account's
+  // own imported history has gross profit == 0 but a nonzero swap, making it
+  // a net LOSER, not a breakeven — `netProfit` (not `profit`) must carry
+  // that cost through, since `HistoricalPatternSummaryService` classifies
+  // win/loss/breakeven off this field, not the raw gross figure.
+  it('netProfit includes commission and swap — a gross-breakeven trade with negative swap is a net loser', async () => {
+    const account = await xtbAccount();
+    await createRoundTrip(account.id, 'p1', { profit: 0, swap: -1.5, commission: 0 });
+
+    const trips = await service.getRoundTrips(account.id, 'EURUSD');
+    expect(trips[0].profit).toBe(0);
+    expect(trips[0].netProfit).toBe(-1.5);
   });
 
   it('excludes an incomplete position (only an IN leg, still open)', async () => {

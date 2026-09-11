@@ -54,6 +54,19 @@ class ApiClient:
     def get_latest_candle_time(self, symbol: str, timeframe: str) -> dict[str, Any]:
         return self._get(f"/collector/candles/latest?symbol={symbol}&timeframe={timeframe}")
 
+    # Autonomous demo trading (v2), Phase 6 — the ONE reverse-direction pair
+    # in this client: every other method here pushes data the collector
+    # already has; these two are the collector asking the backend "is there
+    # anything approved for me to execute" and then reporting back what
+    # happened. Still the collector acting as an HTTP CLIENT of the backend
+    # (a GET/POST it initiates on its own poll cycle) — the backend never
+    # calls out to the collector.
+    def get_pending_order(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/autonomous/pending-order")
+
+    def post_execution_result(self, account_id: str, decision_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/autonomous/pending-order/{decision_id}/result", result)
+
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         try:

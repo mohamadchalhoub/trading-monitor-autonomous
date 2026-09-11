@@ -1,11 +1,12 @@
-from app.api_mapper import build_candles_payload, build_snapshot_payload, build_trades_payload
+from app.api_mapper import build_candles_payload, build_snapshot_payload, build_trades_payload, _trade_mode_label
 
 
 def test_snapshot_payload_shape():
     payload = build_snapshot_payload(
         account_id="acct-1",
         account={"balance": 3000.0, "equity": 2990.0, "margin": 10.0,
-                  "margin_free": 2980.0, "margin_level": 29900.0, "profit": -10.0},
+                  "margin_free": 2980.0, "margin_level": 29900.0, "profit": -10.0,
+                  "trade_mode": 1},
         positions=[{
             "ticket": 555, "symbol": "XAUUSD", "side": "BUY", "volume": 0.5,
             "price_open": 2400.0, "price_current": 2410.0, "sl": 2380.0, "tp": 0.0,
@@ -18,6 +19,7 @@ def test_snapshot_payload_shape():
     )
     assert payload["accountId"] == "acct-1"
     assert payload["balance"] == 3000.0
+    assert payload["tradeMode"] == "DEMO"
     assert payload["terminal"] == {"connected": True}
     assert len(payload["positions"]) == 1
 
@@ -34,6 +36,25 @@ def test_snapshot_payload_includes_last_error_when_present():
         mt5_connected=False, last_error="IPC timeout", collector_version="0.2.0",
     )
     assert payload["terminal"] == {"connected": False, "lastError": "IPC timeout"}
+
+
+def test_trade_mode_label_maps_mt5s_known_values():
+    assert _trade_mode_label(0) == "REAL"
+    assert _trade_mode_label(1) == "DEMO"
+    assert _trade_mode_label(2) == "CONTEST"
+
+
+def test_trade_mode_label_is_none_when_absent_or_unrecognized():
+    assert _trade_mode_label(None) is None
+    assert _trade_mode_label(99) is None  # an MT5 value this mapping doesn't know — never guessed
+
+
+def test_snapshot_payload_trade_mode_is_none_when_account_omits_it():
+    payload = build_snapshot_payload(
+        account_id="acct-1", account={"balance": 1.0}, positions=[],
+        mt5_connected=True, last_error=None, collector_version="0.2.0",
+    )
+    assert payload["tradeMode"] is None
 
 
 def test_trades_payload_shape():

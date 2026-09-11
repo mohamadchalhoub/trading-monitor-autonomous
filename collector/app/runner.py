@@ -20,6 +20,7 @@ from types import FrameType
 from app.api_client import ApiClient, ApiClientError
 from app.api_mapper import build_candles_payload, build_snapshot_payload, build_trades_payload
 from app.config import CANDLE_DURATION_BY_TIMEFRAME, Config
+from app.executor import DemoAccountRequiredError, Executor
 from app.formatting import (
     format_account_summary,
     format_connection_status,
@@ -67,10 +68,11 @@ _MIN_INITIAL_SYNC_DAYS_BY_TIMEFRAME: dict[str, int] = {
 
 
 class CollectorApp:
-    def __init__(self, config: Config, client: Mt5Client, api: ApiClient) -> None:
+    def __init__(self, config: Config, client: Mt5Client, api: ApiClient, executor: Executor) -> None:
         self._config = config
         self._client = client
         self._api = api
+        self._executor = executor
         self._stop_event = threading.Event()
         self._last_trade_sync_at: datetime | None = None
         self._last_candle_sync_at: datetime | None = None
@@ -92,6 +94,7 @@ class CollectorApp:
             "api_base_url": self._config.collector_api_base_url,
             "candle_symbols": self._config.candle_symbols,
             "candle_timeframes": self._config.candle_timeframes if self._config.candle_symbols else (),
+            "autonomous_execution_enabled": self._config.autonomous_execution_enabled,
         })
 
         backoff = self._config.reconnect_initial_backoff_seconds
@@ -107,6 +110,8 @@ class CollectorApp:
                     self._sync_trades()
                 if self._candle_sync_due():
                     self._sync_candles()
+                if self._config.autonomous_execution_enabled:
+                    self._poll_and_execute_pending_order()
 
                 backoff = self._config.reconnect_initial_backoff_seconds
                 self._stop_event.wait(timeout=self._config.poll_interval_seconds)
@@ -117,10 +122,37 @@ class CollectorApp:
         logger.info("collector stopped cleanly")
         return 0
 
+    def _deals_lookup_adapter(self, since):
+        """Adapts `Mt5Client.get_deals_since()`'s dicts to the flat
+        `{"symbol", "magic", "ticket", "volume", "price"}` shape
+        `executor.py`'s `find_recent_deal` expects. `get_deals_since()`
+        doesn't surface `magic` as a top-level field (it wasn't needed by
+        this project's own analytics use of it), but preserves the full raw
+        deal under `"raw"`, which does — extracted here rather than
+        changing `get_deals_since()`'s own established return shape for
+        every other caller.
+        """
+        deals = self._client.get_deals_since(since)
+        return [{**d, "magic": (d.get("raw") or {}).get("magic")} for d in deals]
+
     def _attempt_connect(self, backoff: float) -> tuple[bool, float]:
         result = self._client.connect()
         if result.ok:
             logger.info("connected to MT5 terminal")
+            if self._config.autonomous_execution_enabled:
+                # Points the executor at THIS connection's real handle
+                # (native import or RPyC bridge proxy) — not knowable at
+                # construction time, and re-pointed on every reconnect
+                # since a bridge reconnect gets a genuinely new proxy object.
+                self._executor.set_mt5_module(self._client.get_mt5_module())
+                # Audit finding: wires deal-history reconciliation (see
+                # executor.py's own `set_deals_lookup` comment) through
+                # `Mt5Client.get_deals_since`, which already handles a real,
+                # verified-live MT5-under-Wine quirk (history_deals_get()
+                # needs broker-timezone-aware epoch seconds, not datetime
+                # objects) — reusing it here instead of a second,
+                # independent implementation of the same lookup.
+                self._executor.set_deals_lookup(self._deals_lookup_adapter)
             return True, self._config.reconnect_initial_backoff_seconds
 
         logger.warning(
@@ -181,6 +213,82 @@ class CollectorApp:
             "open_positions": len(positions),
             "push_ok": push_ok,
         })
+
+    def _poll_and_execute_pending_order(self) -> None:
+        """Autonomous demo trading (v2), Phase 6 — the collector asking the
+        backend "is there anything approved for me to execute," and, if so,
+        actually placing it. Only ever reached when
+        autonomous_execution_enabled is explicitly true (an existing
+        deployment's behavior is otherwise unchanged). Every failure mode
+        here is caught and logged, never left to crash the main loop — the
+        SAME posture collector-ingress.controller.ts's own rule-evaluation
+        step already takes on the backend side ("one component's failure
+        must never take down another").
+        """
+        try:
+            response = self._api.get_pending_order(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("pending-order poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        order = response.get("order")
+        if not order:
+            return
+
+        logger.info("pending order claimed, attempting execution", extra={
+            "decision_id": order["decisionId"], "side": order["side"], "volume": order["volume"],
+        })
+
+        try:
+            result = self._executor.send_bracket_order(
+                side=order["side"],
+                volume=order["volume"],
+                stop_loss_points=order["stopLossPoints"],
+                take_profit_points=order["takeProfitPoints"],
+                magic=order["magic"],
+                comment=order["comment"],
+            )
+        except DemoAccountRequiredError as exc:
+            # The single most severe event this process can encounter — logged
+            # at CRITICAL specifically so it stands out from ordinary warnings,
+            # and still reported back (never left stuck as SENT forever), but
+            # never silently swallowed like an ordinary execution failure.
+            logger.critical("DEMO ACCOUNT CHECK FAILED — refusing to trade", extra={"error": str(exc)})
+            self._report_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("order execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("order execution result", extra={
+            "decision_id": order["decisionId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_execution_result(
+            order["decisionId"], ok=result.ok, ticket=result.ticket,
+            filled_price=result.price, error_message=result.error_message,
+        )
+
+    def _report_execution_result(
+        self, decision_id: str, *, ok: bool, ticket: int | None = None,
+        filled_price: float | None = None, error_message: str | None = None,
+    ) -> None:
+        payload: dict = {"ok": ok}
+        if ticket is not None:
+            payload["ticket"] = ticket
+        if filled_price is not None:
+            payload["filledPrice"] = filled_price
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_execution_result(self._config.collector_account_id, decision_id, payload)
+        except ApiClientError as exc:
+            # The order itself already happened (or definitively failed) on
+            # MT5's side by this point — a failure to REPORT that back is a
+            # visibility problem, not a trading-safety one, but it does mean
+            # the decision row stays stuck as SENT until this is noticed.
+            logger.error("failed to report execution result back to backend", extra={"decision_id": decision_id, "error": str(exc)})
 
     def _trade_sync_due(self) -> bool:
         if self._last_trade_sync_at is None:

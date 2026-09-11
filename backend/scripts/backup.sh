@@ -10,9 +10,9 @@ set -euo pipefail
 # Usage: ./backup.sh   (reads POSTGRES_CONTAINER/POSTGRES_USER/POSTGRES_DB/
 #                        BACKUP_DIR env vars, all optional — dev defaults below)
 
-CONTAINER="${POSTGRES_CONTAINER:-trading-monitor-postgres}"
-DB_USER="${POSTGRES_USER:-trading_monitor}"
-DB_NAME="${POSTGRES_DB:-trading_monitor}"
+CONTAINER="${POSTGRES_CONTAINER:-autonomous-trading-postgres}"
+DB_USER="${POSTGRES_USER:-autonomous_trading}"
+DB_NAME="${POSTGRES_DB:-autonomous_trading}"
 BACKUP_DIR="${BACKUP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/backups}"
 
 mkdir -p "$BACKUP_DIR"

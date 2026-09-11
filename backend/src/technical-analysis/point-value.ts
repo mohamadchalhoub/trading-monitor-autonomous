@@ -22,9 +22,18 @@
 export const EURUSD_POINT_SIZE = 0.00001;
 export const EURUSD_PIP_SIZE = EURUSD_POINT_SIZE * 10;
 
-/** Absolute price distance between two prices, expressed in EURUSD points. */
+/**
+ * Absolute price distance between two prices, expressed in EURUSD points.
+ * Rounded to 6 decimal places of POINTS (i.e. noise far below any
+ * meaningful fractional point) — found live in this session: dividing a
+ * floating-point price difference by the tiny 0.00001 point size amplifies
+ * ordinary binary floating-point representation error (e.g. `1.105 -
+ * 1.1045` is `0.0004999999999999449`, not exactly `0.0005`), which was
+ * enough to make an exact-threshold comparison like "retraced >= 50
+ * points" fail on inputs that are mathematically exactly 50.
+ */
 export function priceDistanceInPoints(priceA: number, priceB: number): number {
-  return Math.abs(priceA - priceB) / EURUSD_POINT_SIZE;
+  return Math.round((Math.abs(priceA - priceB) / EURUSD_POINT_SIZE) * 1e6) / 1e6;
 }
 
 export function pointsToPrice(points: number): number {

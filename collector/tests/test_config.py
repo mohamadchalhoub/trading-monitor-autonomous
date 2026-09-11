@@ -23,6 +23,14 @@ def test_defaults_with_no_credentials():
     assert cfg.initial_sync_days == 90
     assert cfg.history_sync_overlap_minutes == 5
     assert cfg.mt5_broker_timezone == "EET"
+    assert cfg.autonomous_execution_enabled is False
+
+
+def test_autonomous_execution_enabled_is_parsed_from_env():
+    cfg = Config.from_env({**BACKEND_ENV, "AUTONOMOUS_EXECUTION_ENABLED": "true"})
+    assert cfg.autonomous_execution_enabled is True
+    cfg_off = Config.from_env({**BACKEND_ENV, "AUTONOMOUS_EXECUTION_ENABLED": "false"})
+    assert cfg_off.autonomous_execution_enabled is False
 
 
 def test_mt5_broker_timezone_is_configurable():

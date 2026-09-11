@@ -109,6 +109,16 @@ class Config:
     candle_sync_interval_seconds: int
     candle_initial_sync_days: int
 
+    # Autonomous demo trading (v2), Phase 6 — off by default, same posture
+    # as CANDLE_SYMBOLS above and this codebase's TypeScript side's
+    # AI_ENABLED/MARKET_EVENTS_ENABLED: an existing, already-running
+    # collector's behavior is completely unchanged unless a trader
+    # explicitly opts in. When true, the collector's own normal poll loop
+    # additionally checks the backend for an approved pending order (for
+    # THIS collector's own collector_account_id) and, if there is one,
+    # executes it via executor.py — see runner.py's own comment on this.
+    autonomous_execution_enabled: bool
+
     @staticmethod
     def from_env(env: dict[str, str] | None = None) -> "Config":
         e = os.environ if env is None else env
@@ -197,6 +207,8 @@ class Config:
         candle_sync_interval = _read_positive_int(e, "CANDLE_SYNC_INTERVAL_SECONDS", default=300)
         candle_initial_sync_days = _read_positive_int(e, "CANDLE_INITIAL_SYNC_DAYS", default=730)
 
+        autonomous_execution_enabled = e.get("AUTONOMOUS_EXECUTION_ENABLED", "false").strip().lower() == "true"
+
         return Config(
             mt5_login=mt5_login,
             mt5_password=password,
@@ -220,6 +232,7 @@ class Config:
             candle_timeframes=candle_timeframes,
             candle_sync_interval_seconds=candle_sync_interval,
             candle_initial_sync_days=candle_initial_sync_days,
+            autonomous_execution_enabled=autonomous_execution_enabled,
         )
 
     @property

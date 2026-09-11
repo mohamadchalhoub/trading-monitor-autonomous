@@ -27,12 +27,14 @@ class _FakeConfig:
     candle_timeframes: tuple[str, ...] = ("M5",)
     candle_sync_interval_seconds: int = 300
     candle_initial_sync_days: int = 730
+    autonomous_execution_enabled: bool = False
 
 
 def _app(config: _FakeConfig) -> tuple[CollectorApp, MagicMock, MagicMock]:
     client = MagicMock()
     api = MagicMock()
-    app = CollectorApp(config, client, api)
+    executor = MagicMock()
+    app = CollectorApp(config, client, api, executor)
     return app, client, api
 
 

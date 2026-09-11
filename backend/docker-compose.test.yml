@@ -1,35 +1,35 @@
+# See docker-compose.yml's own comment on this field — same fix, same reason.
+name: autonomous-trading
+
 services:
   postgres-test:
     image: postgres:16-alpine
-    container_name: trading-monitor-postgres-test
+    container_name: autonomous-trading-postgres-test
     environment:
-      POSTGRES_USER: trading_monitor
-      POSTGRES_PASSWORD: trading_monitor_test_password
-      POSTGRES_DB: trading_monitor_test
+      POSTGRES_USER: autonomous_trading
+      POSTGRES_PASSWORD: autonomous_trading_test_password
+      POSTGRES_DB: autonomous_trading_test
     ports:
-      # Separate port AND separate container from the dev database (5433) —
-      # tests must never run against the developer's normal data.
-      - "5434:5432"
+      # v2-dedicated test port — distinct from both v1's dev/test Postgres
+      # (5433/5434) AND v2's own dev Postgres (5443) above.
+      - "5444:5432"
     tmpfs:
-      # RAM-backed, no named volume — genuinely disposable. Wiped whenever
-      # the container is removed (`docker compose -f docker-compose.test.yml down -v`).
+      # RAM-backed, no named volume — genuinely disposable, same convention
+      # as v1's own docker-compose.test.yml.
       - /var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U trading_monitor"]
+      test: ["CMD-SHELL", "pg_isready -U autonomous_trading"]
       interval: 3s
       timeout: 3s
       retries: 15
 
   redis-test:
     image: redis:7-alpine
-    container_name: trading-monitor-redis-test
+    container_name: autonomous-trading-redis-test
     ports:
-      # Separate port AND separate container from dev Redis (6380) — same
-      # isolation reasoning as postgres-test. No persistence flag and no
-      # named volume: genuinely disposable, wiped whenever the container is
-      # removed (`docker compose -f docker-compose.test.yml down -v`), and
-      # each test suite also FLUSHDB's/obliterates its own queue between runs.
-      - "6381:6379"
+      # v2-dedicated test port — distinct from v1's dev/test Redis
+      # (6380/6381) AND v2's own dev Redis (6480) above.
+      - "6481:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s

@@ -21,13 +21,23 @@ function confidenceFor(sampleSize: number): 'LOW' | 'MEDIUM' | 'HIGH' {
   return 'LOW';
 }
 
+/**
+ * Audit finding (reconciliation session): classifies and averages by
+ * NET P/L (`netProfit` — profit + commission + swap), not the OUT deal's
+ * raw `profit` field. A win-rate/average-P&L summary handed to the AI as
+ * "historical pattern" should reflect what the trader actually kept, not a
+ * pre-cost figure a nonzero swap can silently overstate. Breakeven
+ * (`netProfit === 0` exactly) counts toward neither wins nor losses,
+ * consistent with the independent audit's own net-position reconciliation
+ * of this account's real trade history.
+ */
 function summarizeSide(trips: RoundTripTrade[]): HistoricalPatternSide {
   const sampleSize = trips.length;
   if (sampleSize === 0) {
     return { sampleSize: 0, winRate: null, averagePnl: null, confidence: 'LOW' };
   }
-  const wins = trips.filter((t) => t.profit > 0).length;
-  const totalPnl = trips.reduce((sum, t) => sum + t.profit, 0);
+  const wins = trips.filter((t) => t.netProfit > 0).length;
+  const totalPnl = trips.reduce((sum, t) => sum + t.netProfit, 0);
   return {
     sampleSize,
     winRate: wins / sampleSize,

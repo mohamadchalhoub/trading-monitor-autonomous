@@ -9,7 +9,7 @@ export default async function globalSetup() {
   const env = { ...process.env };
   config({ path: resolve(__dirname, '../.env.test'), override: true, processEnv: env });
 
-  if (!env.DATABASE_URL?.includes('trading_monitor_test')) {
+  if (!env.DATABASE_URL?.includes('autonomous_trading_test')) {
     throw new Error(
       'Refusing to run migrations: DATABASE_URL does not look like the test database. ' +
         'Check backend/.env.test.',

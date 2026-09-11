@@ -41,6 +41,35 @@ describe('snapshot ingestion', () => {
     expect(Number(rows[0].equity)).toBe(4950);
   });
 
+  it('persists tradeMode when the collector sends it — the input to the autonomous system\'s demo-account safety check', async () => {
+    const { account, token } = await setupAccountWithToken(prisma);
+    const payload = validSnapshotPayload(account.id, { tradeMode: 'DEMO' });
+
+    await request(app, { method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${token}` }, payload });
+
+    const rows = await prisma.accountSnapshot.findMany({ where: { accountId: account.id } });
+    expect(rows[0].tradeMode).toBe('DEMO');
+  });
+
+  it('accepts a snapshot omitting tradeMode (an older collector) and leaves it null, never guessed', async () => {
+    const { account, token } = await setupAccountWithToken(prisma);
+    const payload = validSnapshotPayload(account.id);
+
+    const res = await request(app, { method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${token}` }, payload });
+
+    expect(res.statusCode).toBe(201);
+    const rows = await prisma.accountSnapshot.findMany({ where: { accountId: account.id } });
+    expect(rows[0].tradeMode).toBeNull();
+  });
+
+  it('rejects a snapshot with an invalid tradeMode value', async () => {
+    const { account, token } = await setupAccountWithToken(prisma);
+    const payload = validSnapshotPayload(account.id, { tradeMode: 'FAKE_MODE' });
+
+    const res = await request(app, { method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${token}` }, payload });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('does not duplicate a snapshot re-sent with the same capturedAt', async () => {
     const { account, token } = await setupAccountWithToken(prisma);
     const capturedAt = new Date().toISOString();

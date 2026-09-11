@@ -8,6 +8,21 @@ from datetime import datetime, timezone
 from typing import Any
 
 
+# MetaTrader5's own ACCOUNT_TRADE_MODE_* enum, hardcoded rather than
+# imported — this module is deliberately MT5-independent (see the module
+# docstring), and this mapping is a documented fact about MT5's own stable
+# wire format, not something that needs a live import to know. Autonomous
+# demo trading (v2) — the single most safety-critical field this collector
+# pushes (AUTONOMOUS_DEMO_TRADING_PLAN.md §1).
+_TRADE_MODE_LABELS = {0: "REAL", 1: "DEMO", 2: "CONTEST"}
+
+
+def _trade_mode_label(trade_mode: int | None) -> str | None:
+    if trade_mode is None:
+        return None
+    return _TRADE_MODE_LABELS.get(trade_mode)
+
+
 def build_snapshot_payload(
     account_id: str,
     account: dict[str, Any] | None,
@@ -27,6 +42,7 @@ def build_snapshot_payload(
         "freeMargin": account.get("margin_free", 0),
         "marginLevel": account.get("margin_level"),
         "profit": account.get("profit", 0),
+        "tradeMode": _trade_mode_label(account.get("trade_mode")),
         "terminal": {
             "connected": bool(mt5_connected),
             **({"lastError": last_error} if last_error else {}),

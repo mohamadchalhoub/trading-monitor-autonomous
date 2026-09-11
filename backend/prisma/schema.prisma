@@ -69,21 +69,37 @@ model TradingAccount {
   alerts      Alert[]
   importBatches ImportBatch[]
   apiCredentials ApiCredential[]
+  autonomousDecisions AutonomousDecision[]
 
   @@unique([platform, externalAccountId])
   @@map("trading_accounts")
 }
 
+// Autonomous demo trading (v2) — mirrors MT5's own ACCOUNT_TRADE_MODE_*
+// enum. Nullable: older snapshots (and any account this collector version
+// doesn't push it for) simply don't have an opinion, never defaulted to
+// either value — a risk-manager caller reading a null here must treat it
+// as "unknown, not verified," never as "assumed demo."
+enum AccountTradeMode {
+  REAL
+  DEMO
+  CONTEST
+}
+
 model AccountSnapshot {
-  id          BigInt   @id @default(autoincrement())
-  accountId   String   @map("account_id")
-  balance     Decimal  @db.Decimal(18, 2)
-  equity      Decimal  @db.Decimal(18, 2)
-  margin      Decimal  @db.Decimal(18, 2)
-  freeMargin  Decimal  @db.Decimal(18, 2) @map("free_margin")
-  marginLevel Decimal? @db.Decimal(9, 2) @map("margin_level")
-  profit      Decimal  @db.Decimal(18, 2)
-  capturedAt  DateTime @map("captured_at")
+  id          BigInt            @id @default(autoincrement())
+  accountId   String            @map("account_id")
+  balance     Decimal           @db.Decimal(18, 2)
+  equity      Decimal           @db.Decimal(18, 2)
+  margin      Decimal           @db.Decimal(18, 2)
+  freeMargin  Decimal           @db.Decimal(18, 2) @map("free_margin")
+  marginLevel Decimal?          @db.Decimal(9, 2) @map("margin_level")
+  profit      Decimal           @db.Decimal(18, 2)
+  // Autonomous demo trading (v2) — AUTONOMOUS_DEMO_TRADING_PLAN.md §1's
+  // single most safety-critical input, pushed by the collector from MT5's
+  // own account_info().trade_mode (mt5_client.py) on every snapshot cycle.
+  tradeMode   AccountTradeMode? @map("trade_mode")
+  capturedAt  DateTime          @map("captured_at")
 
   account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -624,4 +640,106 @@ model LiveTick {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("live_ticks")
+}
+
+// Autonomous demo trading (v2) — AUTONOMOUS_DEMO_TRADING_PLAN.md §7/§10 and
+// backend/src/autonomous/AUTONOMOUS_RULE_ENGINE_SPEC.md. Phase 2: a
+// deterministic, AI-free rule engine evaluates the friend's H4 weekly
+// support/resistance rule, and every decision it makes — including HOLD —
+// is logged here for audit (the plan's §10 requirement is to be able to
+// reconstruct why the system did or did NOT act, not just what it did). No
+// order is ever placed from this phase, and no AI or execution layer exists
+// yet: `source` stays RULES_ONLY until a later phase adds an AI-assisted
+// decision layer on top of this same rule engine's output.
+enum AutonomousDecisionAction {
+  OPEN_BUY
+  OPEN_SELL
+  HOLD
+}
+
+enum AutonomousDecisionSource {
+  RULES_ONLY
+  // Phase 4 — the deterministic rule engine found a candidate AND the AI
+  // confirmation/veto layer ran on top of it (AUTONOMOUS_DEMO_TRADING_PLAN.md
+  // §3). Never set when the mechanical engine itself returned HOLD — the AI
+  // is only ever invoked on an already-valid mechanical candidate, never the
+  // originator of one.
+  AI_ASSISTED
+}
+
+enum AutonomousLevelType {
+  SUPPORT
+  RESISTANCE
+}
+
+// Phase 6 — the collector's execution poller picks up the oldest row with
+// orderStatus=PENDING for its own account and attempts it; NONE means this
+// decision never became an order attempt at all (a HOLD, or the risk
+// manager rejected it) — that distinction, not just "no ticket yet," is
+// why this isn't nullable-with-no-default.
+enum AutonomousOrderStatus {
+  NONE
+  PENDING
+  SENT
+  FILLED
+  FAILED
+}
+
+// `accountId` is nullable and was absent entirely before Phase 6 — this
+// phase evaluates the rule against EURUSD candle/tick data independent of
+// any one TradingAccount, and every decision from before execution existed
+// has no account to attach to. Populated from here on, always the one
+// dedicated demo account this system executes against (never any account
+// another monitor also watches — AUTONOMOUS_DEMO_TRADING_PLAN.md §1).
+model AutonomousDecision {
+  id                 String                   @id @default(uuid())
+  evaluatedAt        DateTime                 @default(now()) @map("evaluated_at")
+  accountId          String?                  @map("account_id")
+  symbol             String                   @default("EURUSD")
+  action             AutonomousDecisionAction
+  source             AutonomousDecisionSource @default(RULES_ONLY)
+  entryPrice         Decimal?                 @map("entry_price") @db.Decimal(18, 6)
+  stopLoss           Decimal?                 @map("stop_loss") @db.Decimal(18, 6)
+  takeProfit         Decimal?                 @map("take_profit") @db.Decimal(18, 6)
+  levelUsed          AutonomousLevelType?      @map("level_used")
+  referenceWeekStart DateTime?                @map("reference_week_start")
+  reasoning          String
+  // Full assembled inputs (levels, current price, config used) at decision
+  // time — enough to reconstruct the exact causal chain later without
+  // guesswork, even for a HOLD.
+  inputSnapshot      Json                     @map("input_snapshot")
+
+  // Phase 4 — populated only when source = AI_ASSISTED. `aiRawResponse` is
+  // the provider's raw parsed JSON exactly as returned, BEFORE validation —
+  // kept even for a rejected response, since that's precisely the audit
+  // trail plan §10 asks for ("if the system ever produces an unexpected
+  // trade, the full causal chain... can be reconstructed"). `aiRejected` +
+  // `aiRejectionReason` cover the AI proposing something the deterministic
+  // validator refused (invalid schema, wrong SL/TP distance, etc.) — the
+  // resulting decision.action here is always HOLD in that case, never the
+  // AI's own rejected action.
+  aiProvider         String?                  @map("ai_provider")
+  aiModel            String?                  @map("ai_model")
+  aiRawResponse      Json?                    @map("ai_raw_response")
+  aiRejected         Boolean                  @default(false) @map("ai_rejected")
+  aiRejectionReason  String?                  @map("ai_rejection_reason")
+
+  // Phase 6 — risk-manager.ts's independent verdict on a confirmed
+  // OPEN_BUY/OPEN_SELL decision (plan §4). Always populated when a trade
+  // was confirmed by the AI (or by the mechanical engine alone, rules-only
+  // mode); left at its defaults (false/null) for a HOLD, since there's
+  // nothing for the risk manager to approve.
+  riskManagerApproved       Boolean               @default(false) @map("risk_manager_approved")
+  riskManagerRejectionReason String?              @map("risk_manager_rejection_reason")
+  orderStatus               AutonomousOrderStatus @default(NONE) @map("order_status")
+  mt5Ticket                 Int?                  @map("mt5_ticket")
+  filledPrice               Decimal?              @map("filled_price") @db.Decimal(18, 6)
+  filledAt                  DateTime?             @map("filled_at")
+  executionError            String?               @map("execution_error")
+
+  account TradingAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([evaluatedAt(sort: Desc)])
+  @@index([accountId, orderStatus])
+  @@map("autonomous_decisions")
 }

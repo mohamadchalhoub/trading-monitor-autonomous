@@ -52,6 +52,9 @@ export class SnapshotDto {
   @IsOptional() @IsNumber() marginLevel?: number;
   @IsNumber() profit!: number;
 
+  /** Autonomous demo trading (v2) — from MT5's own account_info().trade_mode. Optional: an older collector, or one not yet updated to read it, simply omits this rather than guessing. */
+  @IsOptional() @IsIn(['REAL', 'DEMO', 'CONTEST']) tradeMode?: 'REAL' | 'DEMO' | 'CONTEST';
+
   // @IsDefined() is required alongside @ValidateNested() here — class-validator
   // skips nested validation entirely when the property itself is `undefined`
   // (a request body that omits `terminal` altogether), which previously let a
