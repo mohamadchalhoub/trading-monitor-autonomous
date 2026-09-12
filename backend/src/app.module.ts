@@ -15,6 +15,7 @@ import { MarketEventsModule } from './market-events/market-events.module';
 import { HistoricalChartsModule } from './historical-charts/historical-charts.module';
 import { XtbImportModule } from './xtb-import/xtb-import.module';
 import { AutonomousModule } from './autonomous/autonomous.module';
+import { TrendBreakoutModule } from './trend-breakout/trend-breakout.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -35,6 +36,7 @@ import { AppController } from './app.controller';
     MarketEventsModule,
     HistoricalChartsModule,
     AutonomousModule,
+    TrendBreakoutModule,
   ],
   controllers: [AppController],
 })

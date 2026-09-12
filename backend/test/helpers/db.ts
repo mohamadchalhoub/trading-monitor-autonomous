@@ -4,6 +4,13 @@ import { PrismaClient } from '@prisma/client';
 // each test starts from a genuinely empty, known state — repeatable, no
 // ordering dependencies between tests.
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
+  await prisma.trendBreakoutSlotLock.deleteMany();
+  await prisma.trendBreakoutDecision.deleteMany();
+  await prisma.trendBreakoutEmergencyIncident.deleteMany();
+  await prisma.trendBreakoutRiskState.deleteMany();
+  await prisma.trendBreakoutVolumeAudit.deleteMany();
+  await prisma.trendBreakoutVolumeSetting.deleteMany();
+  await prisma.symbolMetadata.deleteMany();
   await prisma.historicalCandle.deleteMany();
   await prisma.marketEvent.deleteMany();
   await prisma.healthIncident.deleteMany();

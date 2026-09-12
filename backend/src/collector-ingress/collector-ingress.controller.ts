@@ -5,7 +5,9 @@ import { RuleEngineService } from '../alerts/rule-engine.service';
 import { HistoricalCandleService } from '../market-data/historical-candle.service';
 import { TradingDataService } from '../trading-data/trading-data.service';
 import { CandlesPushDto } from '../market-data/dto/candles-push.dto';
+import { SymbolMetadataService } from '../trend-breakout/symbol-metadata.service';
 import { SnapshotDto } from './dto/snapshot.dto';
+import { SymbolMetadataPushDto } from './dto/symbol-metadata-push.dto';
 import { TradesPushDto } from './dto/trades.dto';
 
 const VALID_TIMEFRAMES = ['M5', 'M15', 'H1', 'M30', 'H4', 'D1', 'W1', 'MN1'] as const;
@@ -42,6 +44,7 @@ export class CollectorIngressController {
     private readonly tradingData: TradingDataService,
     private readonly ruleEngine: RuleEngineService,
     private readonly historicalCandles: HistoricalCandleService,
+    private readonly symbolMetadata: SymbolMetadataService,
   ) {}
 
   @Post('snapshot')
@@ -146,5 +149,18 @@ export class CollectorIngressController {
     const timeframe = parseTimeframe(timeframeRaw);
     const latestOpenTime = await this.historicalCandles.getLatestOpenTime(symbol, timeframe);
     return { latestOpenTime };
+  }
+
+  // trend-breakout strategy (v3) — broker symbol metadata (volume min/max/
+  // step, price increment, contract size, profit currency), same "no
+  // accountId" posture as candles above: one symbol's metadata is shared
+  // across every account/collector that trades it. Every volume/price-
+  // rounding validation in the new strategy fails closed until a row
+  // exists here — see SymbolMetadataService's own doc comment.
+  @Post('symbol-metadata')
+  async postSymbolMetadata(@Body() dto: SymbolMetadataPushDto) {
+    await this.symbolMetadata.upsert(dto);
+    this.logger.log(`symbol metadata accepted symbol=${dto.symbol} volumeMin=${dto.volumeMin} volumeMax=${dto.volumeMax} volumeStep=${dto.volumeStep} point=${dto.point}`);
+    return { ok: true };
   }
 }

@@ -8,13 +8,14 @@ const ACCOUNT_SCOPED_ROUTES = [
   { label: "Alerts", segment: "alerts" },
   { label: "History", segment: "history" },
   { label: "Rules", segment: "rules" },
+  { label: "Trend Breakout", segment: "trend-breakout" },
   { label: "Imports", segment: "imports" },
   { label: "EURUSD Charts", segment: "eurusd-charts" },
   { label: "Technical Analysis", segment: "technical-analysis" },
 ];
 
 function currentAccountId(pathname: string): string | null {
-  const match = pathname.match(/^\/(dashboard|alerts|history|rules|imports|eurusd-charts|technical-analysis)\/([^/]+)/);
+  const match = pathname.match(/^\/(dashboard|alerts|history|rules|trend-breakout|imports|eurusd-charts|technical-analysis)\/([^/]+)/);
   return match ? match[2] : null;
 }
 

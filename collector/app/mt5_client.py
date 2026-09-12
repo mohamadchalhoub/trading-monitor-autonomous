@@ -223,6 +223,39 @@ class Mt5Client:
             "time": _mt5_time_to_utc(d.get("time"), self._config.mt5_broker_timezone),
         }
 
+    def get_symbol_info(self, symbol: str) -> dict[str, Any] | None:
+        """trend-breakout strategy (v3) — read-only broker symbol metadata
+        (volume min/max/step, price increment, contract size, profit
+        currency). Fully in keeping with this file's own read-only
+        invariant (see the module docstring): `symbol_info()` never places,
+        modifies, or closes anything.
+
+        This is the piece §2/§9/§10 of the new strategy's spec needed and
+        this project never had before ("no symbol-metadata fetch exists
+        anywhere in this system" — technical-analysis/point-value.ts's own
+        comment, from before this phase): the old EURUSD-only strategy got
+        away with a single hardcoded point-size constant; a genuinely
+        multi-instrument strategy (EURUSD AND gold, with materially
+        different point sizes and contract specs) cannot.
+        """
+        info = self._mt5.symbol_info(symbol)
+        if info is None:
+            code, message = self._mt5.last_error()
+            if code != 1:
+                logger.warning("symbol_info returned None", extra={"mt5_error": message, "symbol": symbol})
+            return None
+        d = info._asdict()
+        return {
+            "symbol": symbol,
+            "volume_min": d.get("volume_min"),
+            "volume_max": d.get("volume_max"),
+            "volume_step": d.get("volume_step"),
+            "digits": d.get("digits"),
+            "point": d.get("point"),
+            "contract_size": d.get("trade_contract_size"),
+            "profit_currency": d.get("currency_profit"),
+        }
+
     def get_open_positions(self) -> list[dict[str, Any]]:
         positions = self._mt5.positions_get()
         if positions is None:

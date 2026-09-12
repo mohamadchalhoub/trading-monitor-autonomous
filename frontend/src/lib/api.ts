@@ -263,6 +263,71 @@ export interface TechnicalAnalysisReport {
   timestamp: string;
 }
 
+export interface TrendBreakoutVolumeSetting {
+  instrument: 'EURUSD' | 'XAUUSD';
+  volumeLots: number;
+  version: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface TrendBreakoutInstrumentSettings {
+  instrument: 'EURUSD' | 'XAUUSD';
+  brokerSymbol: string;
+  volume: TrendBreakoutVolumeSetting;
+  slotOccupied: boolean;
+  slotState: 'PENDING' | 'OPEN' | 'UNKNOWN' | null;
+  symbolMetadataKnown: boolean;
+}
+
+export interface TrendBreakoutRiskPolicy {
+  version: number;
+  maxTradeRiskPct: number;
+  maxCombinedRiskPct: number;
+  dailyLossPct: number;
+  drawdownPct: number;
+  maxSpreadPctOfD: number;
+  maxQuoteAgeSeconds: number;
+}
+
+export interface TrendBreakoutSettings {
+  strategyVersion: string;
+  instruments: TrendBreakoutInstrumentSettings[];
+  entryWindow: { timezone: string; start: string; end: string };
+  entryWindowCurrentlyOpen: boolean;
+  riskPolicy: TrendBreakoutRiskPolicy;
+  executionMode: string;
+}
+
+export interface TrendBreakoutVolumeAuditEntry {
+  id: string;
+  instrument: string;
+  oldVolume: string | null;
+  newVolume: string;
+  newVersion: number;
+  changedBy: string;
+  changedAt: string;
+}
+
+export interface TrendBreakoutDecision {
+  id: string;
+  instrument: string;
+  signalCloseAt: string;
+  decisionAtUtc: string;
+  decisionAtBeirut: string;
+  action: 'OPEN_BUY' | 'OPEN_SELL' | 'HOLD';
+  atr14: string | null;
+  volumeUsed: string | null;
+  estimatedStopRiskAmount: string | null;
+  estimatedStopRiskCcy: string | null;
+  intendedEntryPrice: string | null;
+  intendedStopLoss: string | null;
+  intendedTakeProfit: string | null;
+  gateResults: { gate: string; passed: boolean; reason: string }[];
+  rejectionReason: string | null;
+  orderStatus: 'NONE' | 'PENDING' | 'SENT' | 'FILLED' | 'FAILED';
+}
+
 export const api = {
   listAccounts: () => apiFetch<Account[]>('/accounts'),
   getAccount: (id: string) => apiFetch<Account>(`/accounts/${id}`),
@@ -291,4 +356,23 @@ export const api = {
   eurUsdTradeChart: (accountId: string, positionId: string) =>
     apiFetch<TradeChartWindow>(`/accounts/${accountId}/eurusd-trades/${encodeURIComponent(positionId)}/chart`),
   technicalAnalysis: (accountId: string) => apiFetch<TechnicalAnalysisReport | null>(`/accounts/${accountId}/technical-analysis`),
+  trendBreakoutSettings: (accountId: string) => apiFetch<TrendBreakoutSettings>(`/accounts/${accountId}/trend-breakout/settings`),
+  trendBreakoutVolumeAudit: (accountId: string, instrument: string) =>
+    apiFetch<TrendBreakoutVolumeAuditEntry[]>(`/accounts/${accountId}/trend-breakout/volume-audit/${instrument}`),
+  trendBreakoutDecisions: (accountId: string, params: { instrument?: string; limit?: number } = {}) =>
+    apiFetch<TrendBreakoutDecision[]>(
+      `/accounts/${accountId}/trend-breakout/decisions?limit=${params.limit ?? 30}${params.instrument ? `&instrument=${params.instrument}` : ''}`,
+    ),
+  updateTrendBreakoutVolume: (accountId: string, instrument: string, input: { volumeLots: number; changedBy: string }) =>
+    apiFetch<{ ok: boolean; error?: string; warning?: string }>(`/accounts/${accountId}/trend-breakout/volume/${instrument}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }),
+  resetTrendBreakoutDrawdown: (accountId: string, resetBy: string) =>
+    apiFetch<{ ok: boolean }>(`/accounts/${accountId}/trend-breakout/drawdown-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resetBy }),
+    }),
 };

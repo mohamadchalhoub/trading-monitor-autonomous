@@ -533,3 +533,78 @@ class TestClosePosition:
         result = Executor(fake).close_position(ticket=1, side="BUY", volume=0.01)
         assert result.ok is False
         assert len(fake.order_send_calls) == 1
+
+    def test_uses_the_given_symbol_instead_of_the_eurusd_default(self):
+        fake = FakeMt5()
+        Executor(fake).close_position(ticket=1, side="BUY", volume=0.01, symbol="XAUUSD")
+        assert fake.order_send_calls[0]["symbol"] == "XAUUSD"
+
+
+class TestMultiSymbolSupport:
+    """trend-breakout strategy (v3) — gold (XAUUSD) has a materially
+    different point size than EURUSD; every method that used to hardcode
+    EURUSD's symbol/point size must be explicitly told a different
+    instrument's values, never silently reuse EURUSD's."""
+
+    def test_send_bracket_order_defaults_to_eurusd_symbol_and_point_size(self):
+        fake = FakeMt5(tick_bid=1.0995, tick_ask=1.09952)
+        Executor(fake).send_bracket_order(side="BUY", volume=0.01, stop_loss_points=180, take_profit_points=180, magic=1, comment="x")
+        sent = fake.order_send_calls[0]
+        assert sent["symbol"] == "EURUSD"
+        # 180 points x EURUSD's 0.00001 point size = 0.0018
+        assert sent["sl"] == pytest.approx(1.09952 - 0.0018)
+        assert sent["tp"] == pytest.approx(1.09952 + 0.0018)
+
+    def test_send_bracket_order_uses_golds_own_symbol_and_point_size(self):
+        fake = FakeMt5(tick_bid=2650.00, tick_ask=2650.05)
+        Executor(fake).send_bracket_order(
+            side="BUY", volume=0.01, stop_loss_points=150, take_profit_points=300,
+            magic=2, comment="gold", symbol="XAUUSD", point_size=0.01,
+        )
+        sent = fake.order_send_calls[0]
+        assert sent["symbol"] == "XAUUSD"
+        # 150 points x gold's 0.01 point size = 1.5 — NOT 0.0015 (EURUSD's own point size would silently corrupt this).
+        assert sent["sl"] == pytest.approx(2650.05 - 1.5)
+        assert sent["tp"] == pytest.approx(2650.05 + 3.0)
+
+    def test_duplicate_prevention_checks_the_given_symbol_only(self):
+        # An existing EURUSD position under this magic number must NOT block a gold order under the same magic — they're different instruments.
+        fake = FakeMt5()
+        fake.set_open_positions([open_position(magic=2)])
+        Executor(fake).send_bracket_order(
+            side="BUY", volume=0.01, stop_loss_points=150, take_profit_points=300,
+            magic=2, comment="gold", symbol="XAUUSD", point_size=0.01,
+        )
+        # positions_get was queried with symbol="XAUUSD" — FakeMt5 doesn't
+        # itself filter by symbol, but this asserts the CALL was scoped
+        # correctly, which is what a real MT5 terminal would filter on.
+        assert any(c["symbol"] == "XAUUSD" for c in fake.positions_get_calls)
+
+
+class TestFindAnyPosition:
+    """§3 — "account-wide positions... including manual or other-strategy
+    activity, must block an additional strategy entry." Unlike
+    find_open_position, this must find a position regardless of its magic
+    number."""
+
+    def test_finds_a_position_regardless_of_magic_number(self):
+        fake = FakeMt5()
+        fake.set_open_positions([open_position(magic=999)])  # some OTHER system's/manual position
+        result = Executor(fake).find_any_position("EURUSD")
+        assert result is not None
+        assert result.magic == 999
+
+    def test_returns_none_when_genuinely_no_position_exists(self):
+        fake = FakeMt5()
+        assert Executor(fake).find_any_position("EURUSD") is None
+
+    def test_raises_on_a_genuine_query_failure_rather_than_inferring_none(self):
+        fake = FakeMt5()
+        fake._positions_get_should_fail = True
+        with pytest.raises(ReconciliationQueryFailed):
+            Executor(fake).find_any_position("EURUSD")
+
+    def test_queries_with_the_given_symbol(self):
+        fake = FakeMt5()
+        Executor(fake).find_any_position("XAUUSD")
+        assert fake.positions_get_calls[-1]["symbol"] == "XAUUSD"

@@ -4,6 +4,7 @@ import { AlertsModule } from '../alerts/alerts.module';
 import { AuthModule } from '../auth/auth.module';
 import { MarketDataModule } from '../market-data/market-data.module';
 import { TradingDataModule } from '../trading-data/trading-data.module';
+import { TrendBreakoutModule } from '../trend-breakout/trend-breakout.module';
 import { CollectorIngressController } from './collector-ingress.controller';
 
 // AlertsModule (→ RuleEngineService) is imported here per RULE_ENGINE_SPEC.md
@@ -14,7 +15,7 @@ import { CollectorIngressController } from './collector-ingress.controller';
 // MarketDataModule (historical chart reconstruction phase) — the collector
 // pushes candles through this same controller, same one-way architecture.
 @Module({
-  imports: [AccountsModule, TradingDataModule, AuthModule, AlertsModule, MarketDataModule],
+  imports: [AccountsModule, TradingDataModule, AuthModule, AlertsModule, MarketDataModule, TrendBreakoutModule],
   controllers: [CollectorIngressController],
 })
 export class CollectorIngressModule {}

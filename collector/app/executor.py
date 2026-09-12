@@ -51,14 +51,24 @@ if not MT5_BRIDGE_HOST:
 
 logger = logging.getLogger("collector.executor")
 
-SYMBOL = "EURUSD"
+DEFAULT_SYMBOL = "EURUSD"
 # Matches technical-analysis/point-value.ts's EURUSD_POINT_SIZE exactly —
 # see that file's own comment for why this is a documented constant rather
-# than fetched from symbol_info() (no symbol-metadata call exists anywhere
-# in this system). Kept in sync by hand since Python and TypeScript can't
-# share one constant directly; a mismatch here would silently change every
-# SL/TP distance this module sends, so this comment exists specifically so
-# a future reader checks both sides together, not just one.
+# than fetched from symbol_info() for EURUSD specifically. Kept in sync by
+# hand since Python and TypeScript can't share one constant directly; a
+# mismatch here would silently change every SL/TP distance this module
+# sends for EURUSD, so this comment exists specifically so a future reader
+# checks both sides together, not just one.
+#
+# trend-breakout strategy (v3) — this is EURUSD's point size ONLY, never a
+# universal constant: gold (XAUUSD) has a materially different point size
+# (typically 0.01, two orders of magnitude larger), which is exactly why
+# every method below that used to hardcode this now takes an explicit
+# `point_size` parameter instead (backend/src/trend-breakout's own
+# SymbolMetadataService is the source of truth for a live broker's real
+# per-symbol point size; this constant remains ONLY as EURUSD's specific,
+# already-verified value and the default for backward compatibility with
+# the legacy strategy's existing calls).
 EURUSD_POINT_SIZE = 0.00001
 
 # How far back to look for a matching deal when reconciling an ambiguous
@@ -71,8 +81,8 @@ DEAL_RECONCILIATION_LOOKBACK = timedelta(minutes=15)
 OrderOutcome = Literal["FILLED", "FAILED", "UNKNOWN"]
 
 
-def _points_to_price(points: float) -> float:
-    return points * EURUSD_POINT_SIZE
+def _points_to_price(points: float, point_size: float = EURUSD_POINT_SIZE) -> float:
+    return points * point_size
 
 
 class DemoAccountRequiredError(RuntimeError):
@@ -184,11 +194,13 @@ class Executor:
         not to assume "safe to retry") report UNKNOWN rather than guess."""
         self._deals_lookup = deals_lookup
 
-    def find_open_position(self, magic: int) -> Any | None:
-        """Returns this system's own OPEN EURUSD position (matched by magic
-        number — safety-constants.ts's AUTONOMOUS_MAGIC_NUMBER, a single
-        fixed value never sourced from a decision row), or None if the
-        query genuinely confirms there isn't one.
+    def find_open_position(self, magic: int, symbol: str = DEFAULT_SYMBOL) -> Any | None:
+        """Returns this system's own OPEN position on `symbol` (matched by
+        magic number — safety-constants.ts's AUTONOMOUS_MAGIC_NUMBER for the
+        legacy strategy, its own distinct magic number for the trend-breakout
+        strategy — a single fixed value per strategy, never sourced from a
+        decision row), or None if the query genuinely confirms there isn't
+        one.
 
         Raises `ReconciliationQueryFailed` if the query itself fails —
         `positions_get()` returning `None` means MT5 could not answer the
@@ -198,7 +210,7 @@ class Executor:
         None`), which silently turned "I don't know" into "confirmed
         empty" — exactly the mistake this project was asked not to make.
         """
-        positions = self._mt5.positions_get(symbol=SYMBOL)
+        positions = self._mt5.positions_get(symbol=symbol)
         if positions is None:
             message = self._last_error_message()
             raise ReconciliationQueryFailed(f"positions_get() failed ({message}) — cannot confirm whether a position already exists.")
@@ -207,7 +219,24 @@ class Executor:
                 return position
         return None
 
-    def find_recent_deal(self, magic: int) -> dict[str, Any] | None:
+    def find_any_position(self, symbol: str) -> Any | None:
+        """trend-breakout strategy (v3), §3 — "account-wide positions and
+        pending orders on the mapped instrument, including manual or
+        other-strategy activity, must block an additional strategy entry."
+        Unlike `find_open_position`, this does NOT filter by magic number —
+        it answers "does ANY open position exist on this symbol at all,"
+        regardless of who opened it (this system's own trend-breakout
+        orders, the legacy strategy's orders, or a human's manual trade).
+        Same fail-on-query-failure semantics as `find_open_position` — never
+        infers "none" from a failed query.
+        """
+        positions = self._mt5.positions_get(symbol=symbol)
+        if positions is None:
+            message = self._last_error_message()
+            raise ReconciliationQueryFailed(f"positions_get() failed ({message}) — cannot confirm whether ANY position exists on {symbol}.")
+        return positions[0] if positions else None
+
+    def find_recent_deal(self, magic: int, symbol: str = DEFAULT_SYMBOL) -> dict[str, Any] | None:
         """Deal-history half of reconciliation — covers a position that
         filled and was ALSO already closed (SL/TP hit, or a stop-out)
         before this ran, which `find_open_position` alone can never see
@@ -221,7 +250,7 @@ class Executor:
             return None
         since = datetime.now(tz=timezone.utc) - DEAL_RECONCILIATION_LOOKBACK
         deals = self._deals_lookup(since)
-        matches = [d for d in deals if d.get("symbol") == SYMBOL and d.get("magic") == magic]
+        matches = [d for d in deals if d.get("symbol") == symbol and d.get("magic") == magic]
         return matches[-1] if matches else None
 
     def _last_error_message(self) -> str:
@@ -231,7 +260,7 @@ class Executor:
         except Exception:  # pragma: no cover - defensive only, last_error() itself should never raise
             return "mt5 error unavailable"
 
-    def _reconcile_after_ambiguous_response(self, magic: int) -> OrderResult | None:
+    def _reconcile_after_ambiguous_response(self, magic: int, symbol: str = DEFAULT_SYMBOL) -> OrderResult | None:
         """Called ONLY after an order_send response that tells us nothing
         (a bare `None`) — never after a definite rejection retcode, which
         carries no such ambiguity. Returns a FILLED result if the broker
@@ -241,7 +270,7 @@ class Executor:
         happened (safe to retry).
         """
         try:
-            existing = self.find_open_position(magic)
+            existing = self.find_open_position(magic, symbol=symbol)
         except ReconciliationQueryFailed as exc:
             return _unknown_result(f"order_send returned None and reconciliation itself failed ({exc}) — cannot determine whether a position was opened; refusing to retry blind.")
 
@@ -249,7 +278,7 @@ class Executor:
             logger.warning("order_send returned None (lost acknowledgment) but an OPEN position (ticket=%s) already exists under magic=%s — treating as filled, NOT retrying", existing.ticket, magic)
             return _filled_result(existing.ticket, existing.volume, existing.price_open)
 
-        recent_deal = self.find_recent_deal(magic)
+        recent_deal = self.find_recent_deal(magic, symbol=symbol)
         if recent_deal is not None:
             logger.warning("order_send returned None but a recent deal (ticket=%s) under magic=%s was found in closed history — treating as filled, NOT retrying", recent_deal.get("ticket"), magic)
             return _filled_result(recent_deal.get("ticket"), recent_deal.get("volume", 0.0), recent_deal.get("price", 0.0))
@@ -307,6 +336,8 @@ class Executor:
         take_profit_points: float,
         magic: int,
         comment: str,
+        symbol: str = DEFAULT_SYMBOL,
+        point_size: float = EURUSD_POINT_SIZE,
         deviation_points: int = 20,
     ) -> OrderResult:
         """SL/TP are given as POINT DISTANCES, not absolute prices — on
@@ -320,6 +351,14 @@ class Executor:
         on the retry below), keeps the bracket exactly the required
         distance from the price actually being filled at, not the price
         that happened to be current when some earlier layer decided to trade.
+
+        `symbol`/`point_size` — trend-breakout strategy (v3): both default
+        to EURUSD's own values for exact backward compatibility with every
+        existing call site (the legacy strategy never passes these
+        explicitly). A caller trading gold MUST pass gold's own point size
+        (from SymbolMetadataService) — there is no cross-symbol default,
+        on purpose: silently reusing EURUSD's point size for a different
+        instrument would silently corrupt every SL/TP distance sent for it.
         """
         with self._lock:
             self.verify_demo_account()
@@ -333,47 +372,47 @@ class Executor:
                 raise ValueError("stop_loss_points and take_profit_points are both required — this system never sends a bare order.")
 
             # Audit finding: duplicate-prevention / restart-safety. If this
-            # system's own magic number already has an open EURUSD position —
-            # e.g. a previous call actually filled but the caller crashed/lost
-            # the response before recording that, or this process restarted
-            # with a fill already on the books — refuse rather than risk a
-            # second live position from what should be a single decision. A
-            # query FAILURE here (not a confirmed-empty result) is itself
-            # reported as UNKNOWN — refusing to send is the safe default when
-            # we cannot even confirm no duplicate exists.
+            # system's own magic number already has an open position on
+            # `symbol` — e.g. a previous call actually filled but the caller
+            # crashed/lost the response before recording that, or this
+            # process restarted with a fill already on the books — refuse
+            # rather than risk a second live position from what should be a
+            # single decision. A query FAILURE here (not a confirmed-empty
+            # result) is itself reported as UNKNOWN — refusing to send is
+            # the safe default when we cannot even confirm no duplicate exists.
             try:
-                existing = self.find_open_position(magic)
+                existing = self.find_open_position(magic, symbol=symbol)
             except ReconciliationQueryFailed as exc:
                 return _unknown_result(f"cannot verify no duplicate position exists before sending ({exc}) — refusing to send until this is resolved.")
 
             if existing is not None:
                 logger.warning(
-                    "refusing to open a new %s position — an open position (ticket=%s) already exists under this system's magic number %s",
-                    side, existing.ticket, magic,
+                    "refusing to open a new %s position on %s — an open position (ticket=%s) already exists under this system's magic number %s",
+                    side, symbol, existing.ticket, magic,
                 )
                 return OrderResult(
                     ok=False,
                     outcome="FAILED",
-                    error_message=f"An open position (ticket={existing.ticket}) already exists under magic={magic} — refusing to open a second one.",
+                    error_message=f"An open position (ticket={existing.ticket}) already exists under magic={magic} on {symbol} — refusing to open a second one.",
                 )
 
             result = self._send_with_one_retry(
                 side=side, volume=volume, stop_loss_points=stop_loss_points,
                 take_profit_points=take_profit_points, magic=magic, comment=comment,
-                deviation_points=deviation_points,
+                symbol=symbol, point_size=point_size, deviation_points=deviation_points,
             )
             return self._verify_protective_stop(result)
 
-    def close_position(self, *, ticket: int, side: str, volume: float) -> OrderResult:
+    def close_position(self, *, ticket: int, side: str, volume: float, symbol: str = DEFAULT_SYMBOL) -> OrderResult:
         """Closes an existing position — the kill switch's "close all open
         positions" effect, and the only other way this module ever touches
         a live account besides opening a new bracketed order."""
         with self._lock:
             self.verify_demo_account()
 
-            tick = self._mt5.symbol_info_tick(SYMBOL)
+            tick = self._mt5.symbol_info_tick(symbol)
             if tick is None:
-                return OrderResult(ok=False, outcome="FAILED", error_message=f"No live tick for {SYMBOL} — cannot close.")
+                return OrderResult(ok=False, outcome="FAILED", error_message=f"No live tick for {symbol} — cannot close.")
 
             # Closing a BUY means selling it back, and vice versa.
             close_type = self._mt5.ORDER_TYPE_SELL if side == "BUY" else self._mt5.ORDER_TYPE_BUY
@@ -381,7 +420,7 @@ class Executor:
 
             request = {
                 "action": self._mt5.TRADE_ACTION_DEAL,
-                "symbol": SYMBOL,
+                "symbol": symbol,
                 "volume": volume,
                 "type": close_type,
                 "position": ticket,
@@ -397,26 +436,26 @@ class Executor:
 
     def _build_bracket_request(
         self, *, side: str, volume: float, stop_loss_points: float, take_profit_points: float,
-        magic: int, comment: str, deviation_points: int,
+        magic: int, comment: str, deviation_points: int, symbol: str = DEFAULT_SYMBOL, point_size: float = EURUSD_POINT_SIZE,
     ) -> dict | None:
         """Builds one order_send request from a FRESH live tick — called
         once per attempt (not once per call), so a retry always prices its
         SL/TP off the price at that retry's own moment, never a stale one
         from the first attempt."""
-        tick = self._mt5.symbol_info_tick(SYMBOL)
+        tick = self._mt5.symbol_info_tick(symbol)
         if tick is None:
             return None
 
         order_type = self._mt5.ORDER_TYPE_BUY if side == "BUY" else self._mt5.ORDER_TYPE_SELL
         price = tick.ask if side == "BUY" else tick.bid
-        sl_offset = _points_to_price(stop_loss_points)
-        tp_offset = _points_to_price(take_profit_points)
+        sl_offset = _points_to_price(stop_loss_points, point_size)
+        tp_offset = _points_to_price(take_profit_points, point_size)
         stop_loss = price - sl_offset if side == "BUY" else price + sl_offset
         take_profit = price + tp_offset if side == "BUY" else price - tp_offset
 
         return {
             "action": self._mt5.TRADE_ACTION_DEAL,
-            "symbol": SYMBOL,
+            "symbol": symbol,
             "volume": volume,
             "type": order_type,
             "price": price,
@@ -431,16 +470,16 @@ class Executor:
 
     def _send_with_one_retry(
         self, *, side: str, volume: float, stop_loss_points: float, take_profit_points: float,
-        magic: int, comment: str, deviation_points: int,
+        magic: int, comment: str, deviation_points: int, symbol: str = DEFAULT_SYMBOL, point_size: float = EURUSD_POINT_SIZE,
     ) -> OrderResult:
         build_kwargs = dict(
             side=side, volume=volume, stop_loss_points=stop_loss_points, take_profit_points=take_profit_points,
-            magic=magic, comment=comment, deviation_points=deviation_points,
+            magic=magic, comment=comment, deviation_points=deviation_points, symbol=symbol, point_size=point_size,
         )
 
         request = self._build_bracket_request(**build_kwargs)
         if request is None:
-            return OrderResult(ok=False, outcome="FAILED", error_message=f"No live tick for {SYMBOL} — cannot determine an entry price.")
+            return OrderResult(ok=False, outcome="FAILED", error_message=f"No live tick for {symbol} — cannot determine an entry price.")
 
         raw_result = self._mt5.order_send(request)
         outcome = self._result_from_response(raw_result)
@@ -454,7 +493,7 @@ class Executor:
         # reconciliation is skipped there to avoid an extra round-trip on
         # the common case.
         if raw_result is None:
-            reconciled = self._reconcile_after_ambiguous_response(magic)
+            reconciled = self._reconcile_after_ambiguous_response(magic, symbol=symbol)
             if reconciled is not None:
                 return reconciled  # FILLED or UNKNOWN — never retry past this
 
@@ -469,7 +508,7 @@ class Executor:
         # same way again.
         retry_request = self._build_bracket_request(**build_kwargs)
         if retry_request is None:
-            return OrderResult(ok=False, outcome="FAILED", error_message=f"No live tick for {SYMBOL} on retry — cannot determine an entry price.")
+            return OrderResult(ok=False, outcome="FAILED", error_message=f"No live tick for {symbol} on retry — cannot determine an entry price.")
 
         raw_retry_result = self._mt5.order_send(retry_request)
         retry_outcome = self._result_from_response(raw_retry_result)
@@ -478,7 +517,7 @@ class Executor:
             # otherwise a second lost acknowledgment leaves a real fill
             # permanently unreconciled and misreported as a definite failure.
             if raw_retry_result is None:
-                reconciled = self._reconcile_after_ambiguous_response(magic)
+                reconciled = self._reconcile_after_ambiguous_response(magic, symbol=symbol)
                 if reconciled is not None:
                     return reconciled
             logger.error(

@@ -146,3 +146,41 @@ def test_get_candles_handles_missing_tick_volume(monkeypatch):
     client = Mt5Client(_FakeConfig())
     result = client.get_candles("EURUSD", "H1", now - timedelta(hours=3), now)
     assert result[0]["volume"] is None
+
+
+class _FakeSymbolInfo:
+    def __init__(self, **kwargs):
+        self._d = kwargs
+
+    def _asdict(self):
+        return self._d
+
+
+def test_get_symbol_info_maps_broker_fields_for_gold(monkeypatch):
+    monkeypatch.setattr(
+        mt5_client_module.mt5,
+        "symbol_info",
+        lambda symbol: _FakeSymbolInfo(
+            volume_min=0.01, volume_max=50.0, volume_step=0.01,
+            digits=2, point=0.01, trade_contract_size=100.0, currency_profit="USD",
+        ),
+    )
+    client = Mt5Client(_FakeConfig())
+    result = client.get_symbol_info("XAUUSD")
+    assert result == {
+        "symbol": "XAUUSD",
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01,
+        "digits": 2,
+        "point": 0.01,
+        "contract_size": 100.0,
+        "profit_currency": "USD",
+    }
+
+
+def test_get_symbol_info_returns_none_when_mt5_does_not_know_the_symbol(monkeypatch):
+    monkeypatch.setattr(mt5_client_module.mt5, "symbol_info", lambda symbol: None)
+    monkeypatch.setattr(mt5_client_module.mt5, "last_error", lambda: (4301, "unknown symbol"))
+    client = Mt5Client(_FakeConfig())
+    assert client.get_symbol_info("NOT_A_REAL_SYMBOL") is None
