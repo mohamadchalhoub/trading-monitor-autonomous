@@ -387,6 +387,47 @@ describe('scenario 13 — the entry/touch candle is processed explicitly, not sk
     expect(result.status).toBe('AMBIGUOUS');
   });
 
+  it('counterexample to naive two-path sampling: BUY touch 4340, TP 4350, SL 4330, O=4345 H=4352 L=4328 C=4348 — both simplified extreme-order paths agree on LOSS, but a third, equally compatible path (4345 -> 4340 entry -> 4350 TP -> 4352 -> 4328 -> 4348) produces WIN, so this must be AMBIGUOUS', () => {
+    // Sampling exactly two hypotheses (open->high->low->close and
+    // open->low->high->close) is NOT proof every OHLC-compatible path
+    // agrees — a path with an extra reversal (touch, then immediately up
+    // through TP and on to the high, THEN down to the low, THEN up to the
+    // close) is equally consistent with this exact OHLC row and produces
+    // a different outcome. Both two-leg samples land on LOSS here (in
+    // both, the touch is found on a leg heading toward the low, and SL
+    // sits between the touch and the low), but WIN is reachable too (see
+    // resolveOhlcCandle's own docstring for why: SL is always reachable
+    // here since the low clears it, but TP is ALSO reachable via a path
+    // that reaches the high immediately after the touch rather than
+    // before it or only via the low-first leg) — so this must be
+    // AMBIGUOUS, not silently resolved by whichever two paths happen to
+    // get sampled.
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4345, 4352, 4328, 4348);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('AMBIGUOUS');
+    expect(result.raceCandleUtc?.toISOString()).toBe(entryCandle.openTime.toISOString());
+  });
+
+  it('SELL counterpart of the two-path-sampling counterexample: touch 4340, TP 4330, SL 4350, O=4335 H=4352 L=4328 C=4332 — both simplified paths agree on LOSS, but a third path produces WIN', () => {
+    // Exact mirror of the BUY counterexample above (favorable direction is
+    // down for a SELL, so the roles of the real high/low swap accordingly).
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4335, 4352, 4328, 4332);
+
+    const result = resolvePriceRace({
+      direction: 'SELL', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('AMBIGUOUS');
+  });
+
   it('a definite WIN established from OHLC despite the same before/after-entry detour shape: the close itself is already past TP, so both orderings agree', () => {
     // Same shape as the docstring example (O above touch, H clears TP) but
     // C (4351) is ALSO past TP — so even the "H was hit before entry"
@@ -460,15 +501,15 @@ describe('scenario 13 — the entry/touch candle is processed explicitly, not sk
     expect(result.resolvedAtUtc?.toISOString()).toBe(later.openTime.toISOString());
   });
 
-  it('with ticks covering the entry candle, the actual sequence is used directly instead of the OHLC inference', () => {
+  it('with a genuinely dense, verified tick sequence covering the entry candle, the actual sequence is used directly instead of the OHLC inference', () => {
     // Same OHLC shape as the docstring example (would be AMBIGUOUS on OHLC
-    // alone), but ticks show SL was actually reached first.
+    // alone), but a densely-spaced (well under the sufficiency gap
+    // threshold) tick sequence shows SL was actually reached first.
     const entryCandle = candle('2026-01-02T00:00:00.000Z', 4345, 4352, 4338, 4342);
     const ticks = [
-      tick('2026-01-02T00:00:10.000Z', 4340, 4340.2), // the touch
-      tick('2026-01-02T00:00:20.000Z', 4335, 4335.2),
-      tick('2026-01-02T00:00:30.000Z', 4330, 4330.2), // SL reached
-      tick('2026-01-02T00:00:40.000Z', 4352, 4352.2), // TP-side price only AFTER SL — irrelevant, already stopped out
+      tick('2026-01-02T00:00:02.000Z', 4340, 4340.2), // the touch
+      tick('2026-01-02T00:00:04.000Z', 4335, 4335.2),
+      tick('2026-01-02T00:00:06.000Z', 4330, 4330.2), // SL reached
     ];
 
     const result = resolvePriceRace({
@@ -478,7 +519,48 @@ describe('scenario 13 — the entry/touch candle is processed explicitly, not sk
     });
 
     expect(result.status).toBe('LOSS');
-    expect(result.resolvedAtUtc?.toISOString()).toBe('2026-01-02T00:00:30.000Z');
+    expect(result.resolvedAtUtc?.toISOString()).toBe('2026-01-02T00:00:06.000Z');
+  });
+
+  it('a SPARSE tick sample (gaps too large to trust) never overrides OHLC ambiguity, even if it happens to show a crossing', () => {
+    // Same shape again, but this tick sample has a >5s gap between the
+    // touch and the next print — exactly the kind of partial coverage
+    // that must fall back to the OHLC inference (AMBIGUOUS here) rather
+    // than be trusted at face value.
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4345, 4352, 4338, 4342);
+    const ticks = [
+      tick('2026-01-02T00:00:01.000Z', 4340, 4340.2), // the touch
+      tick('2026-01-02T00:00:20.000Z', 4330, 4330.2), // 19s later — far past the sufficiency threshold
+    ];
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks, gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('AMBIGUOUS');
+  });
+
+  it('dense ticks that genuinely cover the whole candle with NO crossing are trusted as verified-clean, overriding what would otherwise be OHLC AMBIGUOUS', () => {
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4345, 4352, 4338, 4342);
+    // Continuous coverage (4s spacing, no gap anywhere near the 5s
+    // threshold) from just after open to just before close, oscillating
+    // near the touch but never actually reaching TP or SL.
+    const ticks: ReturnType<typeof tick>[] = [];
+    for (let sec = 4; sec <= 56; sec += 4) {
+      const price = 4340 + (sec % 8 === 0 ? 2 : -1); // stays well inside (4330, 4350)
+      ticks.push(tick(`2026-01-02T00:00:${String(sec).padStart(2, '0')}.000Z`, price, price + 0.2));
+    }
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks, gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    // Verified-clean this candle, falls through — nothing left to race with here, so UNRESOLVED, not AMBIGUOUS.
+    expect(result.status).toBe('UNRESOLVED');
   });
 
   it('ticks entirely outside the entry candle (an earlier or later window) never substitute for real entry-candle tick coverage — still falls back to the OHLC inference', () => {

@@ -332,6 +332,51 @@ function ticksWithin(ticks: Tick[], startUtc: Date, endUtc: Date): Tick[] {
   return ticks.filter((t) => t.timestamp.getTime() >= startUtc.getTime() && t.timestamp.getTime() < endUtc.getTime());
 }
 
+/**
+ * "Ticks cover the candle" must mean genuinely verified, near-continuous
+ * sequence coverage from `from` through either a found crossing or `to` —
+ * not merely "at least one tick exists somewhere in this window." A
+ * sparse/partial sample can conceal a crossing inside its own gaps just as
+ * easily as OHLC can, and must never be trusted to override an
+ * OHLC-established AMBIGUOUS result. MAX_TICK_GAP_MS is a disclosed,
+ * adjustable heuristic, not a proof of coverage — this project has already
+ * confirmed gold tick retrieval for its own demo account is unreliable
+ * elsewhere in this repo, so this deliberately assumes sparse rather than
+ * dense by default. Returns 'INSUFFICIENT' when coverage doesn't meet
+ * that bar (caller must fall back to the OHLC inference), null when
+ * coverage IS sufficient and genuinely shows no crossing, or the resolved
+ * crossing itself.
+ */
+const MAX_TICK_GAP_MS = 5_000;
+
+function verifiedTickCrossing(
+  ticks: Tick[],
+  from: Date,
+  to: Date,
+  direction: EntryDirection,
+  tp: number,
+  sl: number,
+): { status: 'WIN' | 'LOSS'; atUtc: Date; price: number } | null | 'INSUFFICIENT' {
+  const sorted = [...ticks].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  if (sorted.length === 0) return 'INSUFFICIENT';
+  if (sorted[0].timestamp.getTime() - from.getTime() > MAX_TICK_GAP_MS) return 'INSUFFICIENT';
+
+  let cursor = from.getTime();
+  for (const t of sorted) {
+    if (t.timestamp.getTime() - cursor > MAX_TICK_GAP_MS) return 'INSUFFICIENT';
+    cursor = t.timestamp.getTime();
+    const price = direction === 'BUY' ? t.bid : t.ask;
+    const tpHit = direction === 'BUY' ? price >= tp : price <= tp;
+    const slHit = direction === 'BUY' ? price <= sl : price >= sl;
+    if (tpHit) return { status: 'WIN', atUtc: t.timestamp, price };
+    if (slHit) return { status: 'LOSS', atUtc: t.timestamp, price };
+  }
+  // No crossing found — only trustworthy as genuine "verified clean" if
+  // coverage also extends without a gap all the way to `to`.
+  if (to.getTime() - cursor > MAX_TICK_GAP_MS) return 'INSUFFICIENT';
+  return null;
+}
+
 export interface ResolvePriceRaceParams {
   direction: EntryDirection;
   entryPrice: number;
@@ -383,6 +428,59 @@ export interface ResolvePriceRaceParams {
  * been reached before OR after the touch," which depends on where the
  * unreachable-from-OHLC-alone excursion to the opposite extreme falls.
  */
+/**
+ * Corrected 2026-09-13 — the previous version sampled exactly two
+ * hypothetical intrabar paths (open->high->low->close and
+ * open->low->high->close) and declared the candle "determinate" whenever
+ * those two happened to agree. That is NOT proof every OHLC-compatible
+ * path agrees: a real path may reverse direction more than once, and a
+ * third, equally compatible path can disagree with both samples. Live
+ * counterexample (BUY, touch 4340, TP 4350, SL 4330, O=4345 H=4352 L=4328
+ * C=4348): both two-leg samples land on LOSS, yet
+ * 4345 -> 4340 (entry) -> 4350 (TP) -> 4352 -> 4328 -> 4348 is equally
+ * compatible with this OHLC row and resolves WIN. No finite sample of
+ * paths can be exhaustive, so this function no longer samples paths at
+ * all — it proves, directly from OHLC, which outcomes are REACHABLE by
+ * ANY compatible path, via the following state-reachability argument
+ * (stated here so the conditions below aren't "magic"):
+ *
+ * Normalize to a signed axis where the favorable direction (toward TP) is
+ * always "larger" — this collapses BUY/SELL into one set of comparisons.
+ * In this axis, sTouch always sits strictly between sSl and sTp (a
+ * genuine mid-candle touch), and sOpen is always >= sTouch (this is a
+ * structural fact of how the touch/approach direction is defined, not an
+ * assumption). Call the extreme with the larger signed value
+ * `favExtreme` (the real high for BUY, the real low for SELL) and the
+ * other `advExtreme`.
+ *
+ * - `advExtreme` is UNREACHABLE before the touch: reaching it requires
+ *   first crossing sTouch (it's on the opposite side), and the FIRST such
+ *   crossing is, by definition, the touch itself. So advExtreme is
+ *   necessarily visited by a post-touch continuation of the SAME leg the
+ *   touch happens on, immediately available to any path — LOSS is
+ *   therefore reachable whenever advExtreme is at/beyond SL (the
+ *   continuation from touch to advExtreme necessarily passes through SL
+ *   first, by the intermediate value theorem, if SL lies between them).
+ * - `favExtreme` sits on the SAME side as the open. When there is real
+ *   pre-touch room (sOpen > sTouch strictly), a path is always free to
+ *   visit favExtreme entirely BEFORE the touch (a simple move from open
+ *   further in its own direction, never needing to approach sTouch at
+ *   all) — so WIN is reachable whenever favExtreme is at/beyond TP
+ *   (route it immediately post-touch instead), and INDEPENDENTLY, a
+ *   "nothing happens" continuation is reachable whenever favExtreme CAN
+ *   be relegated pre-touch and the close itself never reaches TP (route
+ *   post-touch as touch -> advExtreme -> close directly, skipping
+ *   favExtreme entirely since it was already used pre-touch).
+ * - When there is no pre-touch room (open == touch, or this candle is
+ *   already fully after entry), favExtreme cannot be relegated — it will
+ *   be visited post-touch in EVERY path, so "nothing happens" is only
+ *   reachable when favExtreme itself never reaches TP.
+ *
+ * More than one reachable outcome (the same candle admits a compatible
+ * path to each) is genuine ambiguity — not a sampling gap, a proof that
+ * OHLC alone cannot decide it. Exactly one reachable outcome is a
+ * genuine, provable determinate result.
+ */
 function resolveOhlcCandle(params: {
   open: number; high: number; low: number; close: number;
   direction: EntryDirection;
@@ -390,66 +488,39 @@ function resolveOhlcCandle(params: {
   tp: number; sl: number;
 }): 'WIN' | 'LOSS' | 'NONE' | 'AMBIGUOUS' {
   const { open, high, low, close, direction, touchPrice, tp, sl } = params;
-  // Working in a "sign-normalized" axis where the favorable direction is
-  // always increasing collapses BUY/SELL into one piece of logic instead
-  // of doubling every comparison — tp is always the larger signed value,
-  // sl always the smaller, regardless of which real-world direction that
-  // corresponds to.
   const sign = direction === 'BUY' ? 1 : -1;
   const s = (v: number) => v * sign;
   const sTp = s(tp);
   const sSl = s(sl);
+  const sOpen = s(open);
+  const sClose = s(close);
+  const sTouch = touchPrice == null ? sOpen : s(touchPrice);
 
-  const startPrice = touchPrice ?? open;
-  const sStart = s(startPrice);
-  // Decisive at the touch instant itself (only possible when touchPrice is
-  // null, i.e. entry already happened in an earlier candle and THIS
-  // candle's own open is the reopening/gap print) — identical under both
-  // hypotheses by construction, so resolved before any path-walk at all.
-  if (sStart >= sTp) return 'WIN';
-  if (sStart <= sSl) return 'LOSS';
+  // Decisive at the touch instant itself — only possible when touchPrice
+  // is null (this candle is already fully post-entry and its own open is
+  // the reopening/gap print). A genuine mid-candle touch can never be
+  // decisive here by construction (the touch price is always strictly
+  // between sl and tp).
+  if (sTouch >= sTp) return 'WIN';
+  if (sTouch <= sSl) return 'LOSS';
 
-  function firstBoundary(a: number, b: number): 'TP' | 'SL' | null {
-    const sa = s(a);
-    const sb = s(b);
-    const increasing = sb >= sa;
-    const passes = (level: number) => (increasing ? level >= sa && level <= sb : level <= sa && level >= sb);
-    const tpOk = passes(sTp);
-    const slOk = passes(sSl);
-    if (!tpOk && !slOk) return null;
-    if (tpOk && !slOk) return 'TP';
-    if (slOk && !tpOk) return 'SL';
-    // Both fall on this one monotonic leg — whichever this direction of
-    // travel reaches first (tp and sl are never on the same side of the
-    // touch, so this is well-defined, not itself a source of ambiguity).
-    return increasing ? (sTp < sSl ? 'TP' : 'SL') : (sTp > sSl ? 'TP' : 'SL');
-  }
+  const sFavExtreme = Math.max(s(high), s(low));
+  const sAdvExtreme = Math.min(s(high), s(low));
+  const hasPreTouchRoom = touchPrice != null && sOpen > sTouch;
 
-  function walk(knots: number[]): 'WIN' | 'LOSS' | 'NONE' {
-    let touched = touchPrice == null;
-    for (let i = 0; i < knots.length - 1; i++) {
-      let a = knots[i];
-      const b = knots[i + 1];
-      if (!touched) {
-        const sa = s(a);
-        const sb = s(b);
-        const sTouch = s(touchPrice as number);
-        const increasing = sb >= sa;
-        const crosses = increasing ? sTouch >= sa && sTouch <= sb : sTouch <= sa && sTouch >= sb;
-        if (!crosses) continue;
-        touched = true;
-        a = touchPrice as number;
-      }
-      const hit = firstBoundary(a, b);
-      if (hit === 'TP') return 'WIN';
-      if (hit === 'SL') return 'LOSS';
-    }
-    return 'NONE';
-  }
+  const winReachable = sFavExtreme >= sTp;
+  const lossReachable = sAdvExtreme <= sSl;
+  // Only relevant/checked when loss is NOT reachable — see docstring: when
+  // advExtreme is at/beyond SL, every path's mandatory post-touch visit to
+  // it crosses SL, so "nothing happens" cannot survive to the close.
+  const noneCap = hasPreTouchRoom ? sClose : sFavExtreme;
+  const noneReachable = !lossReachable && noneCap < sTp;
 
-  const outcomeHighFirst = walk([open, high, low, close]);
-  const outcomeLowFirst = walk([open, low, high, close]);
-  return outcomeHighFirst === outcomeLowFirst ? outcomeHighFirst : 'AMBIGUOUS';
+  const reachable = [winReachable, lossReachable, noneReachable].filter(Boolean).length;
+  if (reachable > 1) return 'AMBIGUOUS';
+  if (winReachable) return 'WIN';
+  if (lossReachable) return 'LOSS';
+  return 'NONE';
 }
 
 /**
@@ -568,13 +639,16 @@ export function resolvePriceRace(params: ResolvePriceRaceParams): OutcomeResolut
     // was found above), so ticksWithin's own [openTime, closeTime) bound
     // already excludes anything before the touch — no separate filter needed.
     const entryCandleTicks = ticksWithin(ticks, entryCandle.openTime, entryCandle.closeTime);
-    if (entryCandleTicks.length > 0) {
-      // Ticks establish the actual sequence directly — no inference needed.
-      const crossing = scanTicksForCrossing(entryCandleTicks, direction, tp, sl);
-      for (const t of entryCandleTicks) trackAdverse(direction === 'BUY' ? t.bid : t.ask);
-      if (crossing) return finalize(crossing.status, crossing.atUtc, crossing.price);
-      // Ticks covered the remainder of this candle and showed no crossing — fall through and keep racing.
+    for (const t of entryCandleTicks) trackAdverse(direction === 'BUY' ? t.bid : t.ask);
+    const verified = verifiedTickCrossing(entryCandleTicks, entryCandle.openTime, entryCandle.closeTime, direction, tp, sl);
+    if (verified !== 'INSUFFICIENT') {
+      // A verified, sufficiently-covered tick sequence establishes the
+      // actual order directly — no inference needed, ambiguous or not.
+      if (verified) return finalize(verified.status, verified.atUtc, verified.price);
+      // Genuinely verified clean coverage, no crossing — fall through and keep racing.
     } else {
+      // No ticks, or too sparse to trust — a partial sample must never
+      // silently override what OHLC alone can or cannot establish.
       const ohlcResult = resolveOhlcCandle({
         open: entryCandle.open, high: entryCandle.high, low: entryCandle.low, close: entryCandle.close,
         direction, touchPrice: entryPrice, tp, sl,
