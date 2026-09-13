@@ -4,6 +4,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { TradingDataModule } from './trading-data/trading-data.module';
 import { CollectorIngressModule } from './collector-ingress/collector-ingress.module';
+import { MarketDataModule } from './market-data/market-data.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { RulesModule } from './rules/rules.module';
 import { AlertsModule } from './alerts/alerts.module';
@@ -25,6 +26,7 @@ import { AppController } from './app.controller';
     AccountsModule,
     TradingDataModule,
     CollectorIngressModule,
+    MarketDataModule,
     AnalyticsModule,
     RulesModule,
     AlertsModule,

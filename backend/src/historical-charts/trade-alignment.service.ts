@@ -69,6 +69,11 @@ const CANDLE_DURATION_MS: Record<CandleTimeframe, number> = {
   D1: 24 * 60 * 60_000,
   W1: 7 * 24 * 60 * 60_000,
   MN1: 30 * 24 * 60 * 60_000,
+  // Gold historical-collection phase — M1 added to CandleTimeframe for the
+  // tick/candle backfill's finest granularity. chooseTimeframe() below
+  // never selects it (unchanged: still only M5/M15/H1); this entry exists
+  // only because this Record must stay exhaustive over the full enum.
+  M1: 60_000,
 };
 
 // How many bars of context to show before entry / after exit — proportional

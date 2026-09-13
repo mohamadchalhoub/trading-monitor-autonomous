@@ -2,7 +2,7 @@
 // so these calls run on the Next.js server and talk to the backend
 // directly (server-to-server), never from the browser. That sidesteps CORS
 // entirely and means the backend API is never exposed to the client bundle.
-const BASE_URL = process.env.BACKEND_API_URL ?? 'http://localhost:3000';
+const BASE_URL = process.env.BACKEND_API_URL ?? 'http://localhost:8420';
 
 // Dashboard authentication (production-readiness review — Option B). Read
 // from a server-only env var — deliberately NOT NEXT_PUBLIC_*, which Next.js
@@ -190,6 +190,19 @@ export interface Candle {
   volume: number | null;
 }
 
+export interface MarketDataCoverage {
+  symbol: string;
+  candles: Array<{
+    timeframe: string;
+    count: number;
+    earliest: string | null;
+    latest: string | null;
+    intervalStatusCounts: Record<string, number>;
+  }>;
+  ticks: { count: number; earliest: string | null; latest: string | null; intervalStatusCounts: Record<string, number> };
+  symbolMetadata: { present: boolean; updatedAt: string | null };
+}
+
 export interface TradeChartFeatures {
   preEntry: { returnPct: number | null; volatilityPct: number | null; recentHigh: number | null; recentLow: number | null; candleCount: number };
   duringTrade: { maxFavorableExcursionPct: number | null; maxAdverseExcursionPct: number | null; volatilityPct: number | null; candleCount: number };
@@ -375,4 +388,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ resetBy }),
     }),
+  marketCandles: (symbol: string, timeframe: string, from: string, to: string) =>
+    apiFetch<{ symbol: string; timeframe: string; candles: Candle[] }>(
+      `/market-data/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+  marketCoverage: (symbol: string) =>
+    apiFetch<MarketDataCoverage>(`/market-data/coverage?symbol=${encodeURIComponent(symbol)}`),
 };

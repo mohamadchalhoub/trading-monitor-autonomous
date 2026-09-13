@@ -54,6 +54,48 @@ class ApiClient:
     def get_latest_candle_time(self, symbol: str, timeframe: str) -> dict[str, Any]:
         return self._get(f"/collector/candles/latest?symbol={symbol}&timeframe={timeframe}")
 
+    # Gold historical-data-collection project — ticks carry no account_id,
+    # same "shared market data" posture as candles above.
+    def post_ticks(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post("/collector/ticks", payload)
+
+    def get_ticks_coverage(self, symbol: str) -> dict[str, Any]:
+        return self._get(f"/collector/ticks/coverage?symbol={symbol}")
+
+    # The backfill-intervals ledger — upsert is keyed server-side on
+    # source+symbol+dataType+timeframe+rangeStart+rangeEnd (this client
+    # sends whichever of those fields the caller supplies; it never
+    # computes or guesses the key itself).
+    def upsert_backfill_interval(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post("/collector/backfill-intervals", payload)
+
+    def get_backfill_intervals(
+        self,
+        symbol: str,
+        data_type: str,
+        timeframe: str | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        query = f"symbol={symbol}&dataType={data_type}"
+        if timeframe is not None:
+            query += f"&timeframe={timeframe}"
+        if statuses:
+            query += f"&status={','.join(statuses)}"
+        # _get's own return type is whatever the endpoint actually returns
+        # (a dict for most routes, an array here) — see its own body.
+        return self._get(f"/collector/backfill-intervals?{query}")  # type: ignore[return-value]
+
+    def get_storage_health(self) -> dict[str, Any]:
+        return self._get("/collector/storage-health")
+
+    # trend-breakout strategy (v3) — EXISTING route; the DTO now also
+    # accepts the new, fully-optional instrument-verification fields (see
+    # api_mapper.py's build_symbol_metadata_payload) but this wrapper's own
+    # shape (a single-attempt POST, same as every other push here) is
+    # unchanged.
+    def post_symbol_metadata(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post("/collector/symbol-metadata", payload)
+
     # Autonomous demo trading (v2), Phase 6 — the ONE reverse-direction pair
     # in this client: every other method here pushes data the collector
     # already has; these two are the collector asking the backend "is there

@@ -128,3 +128,81 @@ def build_candles_payload(symbol: str, timeframe: str, candles: list[dict[str, A
             for c in candles
         ],
     }
+
+
+# Gold historical-data-collection project — same "no account_id" posture as
+# candles above (ticks are symbol/timeframe-less market data, shared across
+# every account/collector). brokerSymbol/server/feedId are all optional on
+# the wire — omitted entirely rather than sent as null, same conditional-
+# spread idiom build_candles_payload already uses for `volume`.
+def build_ticks_payload(
+    symbol: str,
+    broker_symbol: str | None,
+    server: str | None,
+    feed_id: str | None,
+    ticks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "symbol": symbol,
+        **({"brokerSymbol": broker_symbol} if broker_symbol is not None else {}),
+        **({"server": server} if server is not None else {}),
+        **({"feedId": feed_id} if feed_id is not None else {}),
+        "ticks": [
+            {
+                "timestamp": t["timestamp"],
+                "bid": t["bid"],
+                "ask": t["ask"],
+                **({"last": t["last"]} if t.get("last") is not None else {}),
+                **({"volume": t["volume"]} if t.get("volume") is not None else {}),
+                **({"volumeReal": t["volume_real"]} if t.get("volume_real") is not None else {}),
+                "flags": t["flags"],
+                "batchSeq": t["batch_seq"],
+            }
+            for t in ticks
+        ],
+    }
+
+
+# Gold historical-data-collection project — the ORIGINAL required fields
+# (symbol/volumeMin/volumeMax/volumeStep/digits/point/contractSize/
+# profitCurrency, matching the already-deployed SymbolMetadataPushDto and
+# get_symbol_info()'s own established shape) stay always-present and
+# unconditional; every other field below is a NEW, strictly-optional
+# extension sent only when Mt5Client.get_instrument_verification() actually
+# has a value for it — same conditional-spread idiom as build_candles_payload's
+# `volume` handling. `info` is that method's flat return dict; `broker_symbol`
+# is a separate param (not read off `info`, which has no such concept) since
+# it's the caller's own broker-specific symbol string, mirroring
+# build_ticks_payload's own broker_symbol/server parameters.
+def build_symbol_metadata_payload(info: dict[str, Any], broker_symbol: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "symbol": info["symbol"],
+        "volumeMin": info.get("volume_min"),
+        "volumeMax": info.get("volume_max"),
+        "volumeStep": info.get("volume_step"),
+        "digits": info.get("digits"),
+        "point": info.get("point"),
+        "contractSize": info.get("contract_size"),
+        "profitCurrency": info.get("currency_profit"),
+    }
+    optional_fields = {
+        "brokerSymbol": broker_symbol,
+        "server": info.get("server"),
+        "path": info.get("path"),
+        "currencyBase": info.get("currency_base"),
+        "currencyProfit": info.get("currency_profit"),
+        "currencyMargin": info.get("currency_margin"),
+        "tradeTickSize": info.get("trade_tick_size"),
+        "tradeTickValue": info.get("trade_tick_value"),
+        "tradeStopsLevel": info.get("trade_stops_level"),
+        "tradeFreezeLevel": info.get("trade_freeze_level"),
+        "tradeMode": info.get("trade_mode"),
+        "swapMode": info.get("swap_mode"),
+        "swapLong": info.get("swap_long"),
+        "swapShort": info.get("swap_short"),
+        "swapRollover3Days": info.get("swap_rollover3days"),
+        "expirationMode": info.get("expiration_mode"),
+        "expirationTime": info.get("expiration_time"),
+    }
+    payload.update({k: v for k, v in optional_fields.items() if v is not None})
+    return payload

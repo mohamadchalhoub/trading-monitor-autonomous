@@ -12,6 +12,10 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.trendBreakoutVolumeSetting.deleteMany();
   await prisma.symbolMetadata.deleteMany();
   await prisma.historicalCandle.deleteMany();
+  // Gold historical-collection phase — no FKs, but must still be cleared
+  // between tests same as historicalCandle above.
+  await prisma.historicalTick.deleteMany();
+  await prisma.backfillInterval.deleteMany();
   await prisma.marketEvent.deleteMany();
   await prisma.healthIncident.deleteMany();
   await prisma.healthStatus.deleteMany();

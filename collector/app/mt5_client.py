@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -417,6 +418,281 @@ class Mt5Client:
             })
         return result
 
+    def get_ticks(self, symbol: str, date_from: datetime, date_to: datetime) -> list[dict[str, Any]]:
+        """Gold historical-data-collection project — tick-level history via
+        `copy_ticks_range`.
+
+        Deliberately does NOT mirror `get_candles()`'s "degrade to an empty
+        list on any error" shape. Live evidence from the gold tick backfill
+        (2026-09-13) showed why that shape is wrong for ticks specifically:
+        a genuine hard failure (`last_error()` code -1, "Terminal: Call
+        failed") and a genuine confirmed-empty result (code 1 "Success",
+        zero rows) both produced `[]` from this method, so the caller could
+        not tell "the broker has no ticks here" from "the call itself
+        failed" — they were recorded identically (EMPTY_UNCONFIRMED/
+        EMPTY_CONFIRMED) even though only one of those is actually evidence
+        about the data. This method now raises on a genuine error (code !=
+        1) and only returns `[]` for a real code-1 empty result. All three
+        current call sites (`backfill_gold_history.py`'s tick fetch/recheck
+        and representative-day probe, and `runner.py`'s `_sync_ticks`
+        ongoing-sync cycle) already wrap this call in `try/except` and
+        record FAILED on an exception — this fix makes that existing
+        handling actually reachable instead of dead code. `get_candles()`
+        is intentionally left as-is: its only unguarded caller
+        (`runner.py`'s live candle-sync loop) has no try/except around it
+        and documents relying on the empty-list degrade to avoid crashing
+        that loop — changing it would risk the live trading data collector,
+        which is out of scope here.
+
+        `time_msc` (milliseconds since epoch) IS already true UTC — unlike
+        the position/deal `time` fields `_mt5_time_to_utc()` exists to
+        correct for (see that function's own docstring). Do NOT apply that
+        broker-timezone correction here: ticks don't need it, and doing so
+        would silently corrupt every tick timestamp by the broker's UTC
+        offset. This is a deliberate omission, not a gap to "fix" later.
+        """
+        ticks = self._mt5.copy_ticks_range(symbol, date_from, date_to, self._mt5.COPY_TICKS_ALL)
+        if ticks is None:
+            code, message = self._mt5.last_error()
+            if code != 1:
+                logger.warning("copy_ticks_range returned None", extra={
+                    "symbol": symbol, "mt5_error": message,
+                })
+                raise RuntimeError(f"copy_ticks_range failed: {message} (code={code})")
+            return []
+
+        result = []
+        for i, t in enumerate(ticks):
+            # MT5 uses 0.0, not null/NaN, to mean "no last-trade price on
+            # this tick" (common for pure quote ticks on a CFD/FX symbol) —
+            # falsy-0.0 check deliberately, not `is not None`.
+            last = float(t["last"]) if t["last"] else None
+            result.append({
+                "timestamp": datetime.fromtimestamp(t["time_msc"] / 1000, tz=timezone.utc).isoformat(),
+                "bid": float(t["bid"]),
+                "ask": float(t["ask"]),
+                "last": last,
+                "volume": float(t["volume"]) if t["volume"] is not None else None,
+                "volume_real": float(t["volume_real"]) if t["volume_real"] is not None else None,
+                "flags": int(t["flags"]),
+                "batch_seq": i,  # 0-based index within THIS returned array/call
+            })
+        return result
+
+    def get_ticks_diagnostic(self, symbol: str, date_from: datetime, date_to: datetime) -> dict[str, Any]:
+        """Gold historical-data-collection project — a bounded, one-shot
+        diagnostic for a failing `copy_ticks_range` (never called from the
+        normal collection path; a human/investigation script calls this
+        directly, exactly once per invocation, never in a retry loop —
+        bounded retries are the CALLER's responsibility, this method makes
+        exactly one call per invocation so the caller controls the bound).
+
+        Captures everything needed to distinguish broker-side unavailability
+        from a terminal-sync condition, a bridge/IPC timeout, or an
+        unresolved cause, without guessing: the raw return value's type,
+        `last_error()` CODE and message captured immediately after the call
+        (not just the message — the original `get_ticks()` dropped the
+        code), wall-clock elapsed time, the request bounds actually sent,
+        terminal build, the installed MetaTrader5 package version, and
+        whether a bridge is in play. Also makes a SECOND, independent call
+        via `copy_ticks_from` (count-based, not range-based) over the same
+        window as a cross-check — if one API shape succeeds where the other
+        fails, that itself is diagnostic (points at something specific to
+        the range-query path rather than tick history in general).
+        """
+        import MetaTrader5 as _mt5_module  # only for __version__ — self._mt5 may be a bridge proxy
+
+        term = self.get_terminal_info()
+        diag: dict[str, Any] = {
+            "symbol": symbol,
+            "requested_from_utc": date_from.isoformat(),
+            "requested_to_utc": date_to.isoformat(),
+            "requested_span_seconds": (date_to - date_from).total_seconds(),
+            "bridge_involved": bool(os.environ.get("MT5_BRIDGE_HOST")),
+            "terminal_build": term.get("build") if term else None,
+            "package_version": getattr(_mt5_module, "__version__", "unknown"),
+        }
+
+        t0 = time.monotonic()
+        range_result = self._mt5.copy_ticks_range(symbol, date_from, date_to, self._mt5.COPY_TICKS_ALL)
+        range_elapsed = time.monotonic() - t0
+        range_error_code, range_error_message = self._mt5.last_error()
+        diag["copy_ticks_range"] = {
+            "returned_type": type(range_result).__name__,
+            "returned_none": range_result is None,
+            "row_count": None if range_result is None else len(range_result),
+            "elapsed_seconds": round(range_elapsed, 2),
+            "last_error_code": range_error_code,
+            "last_error_message": range_error_message,
+        }
+
+        # Cross-check: same window, count-based API instead of range-based.
+        t0 = time.monotonic()
+        from_result = self._mt5.copy_ticks_from(symbol, date_from, 1000, self._mt5.COPY_TICKS_ALL)
+        from_elapsed = time.monotonic() - t0
+        from_error_code, from_error_message = self._mt5.last_error()
+        diag["copy_ticks_from"] = {
+            "returned_type": type(from_result).__name__,
+            "returned_none": from_result is None,
+            "row_count": None if from_result is None else len(from_result),
+            "elapsed_seconds": round(from_elapsed, 2),
+            "last_error_code": from_error_code,
+            "last_error_message": from_error_message,
+        }
+
+        # A best-supported (not certain) classification from the pattern of
+        # evidence above — stated as a hypothesis with its basis, never as
+        # a confirmed root cause MT5's own generic error text doesn't
+        # actually assert.
+        range_failed = diag["copy_ticks_range"]["returned_none"] or diag["copy_ticks_range"]["row_count"] == 0
+        from_failed = diag["copy_ticks_from"]["returned_none"] or diag["copy_ticks_from"]["row_count"] == 0
+        if diag["bridge_involved"] and (range_failed or from_failed):
+            diag["hypothesis"] = "BRIDGE_IPC_TIMEOUT_POSSIBLE — a bridge is in play; rule this out first."
+        elif range_failed and from_failed and range_elapsed > 30 and from_elapsed > 30:
+            diag["hypothesis"] = (
+                "BROKER_SIDE_UNAVAILABILITY_LIKELY — both APIs failed after a long, consistent delay "
+                "(a terminal-sync 'not ready yet' condition normally returns fast/empty, not a long "
+                "timeout; no bridge is configured here, ruling out bridge/IPC timeout) — consistent "
+                "with the trade server simply not responding to historical tick-data requests for "
+                "this demo account/symbol. Not a certainty: MT5's own error text is generic."
+            )
+        elif range_failed and not from_failed:
+            diag["hypothesis"] = (
+                "SPECIFIC_TO_RANGE_QUERY — copy_ticks_from succeeded where copy_ticks_range failed on "
+                "the identical window; points at something specific to the range-query code path, not "
+                "tick history in general."
+            )
+        elif not range_failed:
+            diag["hypothesis"] = "NO_FAILURE — copy_ticks_range returned real data for this window."
+        else:
+            diag["hypothesis"] = "UNRESOLVED — evidence does not clearly match any of the above patterns."
+
+        return diag
+
+    def get_instrument_verification(self, symbol: str) -> dict[str, Any]:
+        """Gold historical-data-collection project — a one-time-per-run
+        sanity check (called from `backfill_gold_history.py` before any
+        bulk data moves, and periodically from `runner.py`'s own
+        symbol-metadata sync) that surfaces exactly which account/broker/
+        server/instrument this collector is actually talking to, so a
+        wrong-account or wrong-instrument mistake is visible immediately
+        rather than silently backfilling the wrong data.
+
+        Combines `get_account_info()` (login/server/account-level
+        trade_mode) with a FULLER read of the same `symbol_info()` object
+        `get_symbol_info()` already reads — that method's own narrower
+        shape is relied on elsewhere (trend-breakout's volume/point/
+        contract-size validation, and its own test) and is left completely
+        unchanged; this is a separate, additive read of the same
+        underlying MT5 object, not a replacement.
+
+        Being a CFD is completely normal for a broker-traded gold/XAUUSD
+        product and is NEVER treated as a red flag here — nothing below
+        rejects or warns on CFD classification. The two actual red flags
+        this method surfaces (as plain informational fields for a caller
+        to log/decide on — never a hard rejection here) are a real,
+        dated-contract expiration (`expiration_mode`/`expiration_time`
+        actually set) and a non-USD `currency_profit`/`currency_margin` —
+        either would mean this isn't the intended spot-style gold-vs-USD
+        product.
+        """
+        account = self.get_account_info() or {}
+
+        info = self._mt5.symbol_info(symbol)
+        if info is None:
+            code, message = self._mt5.last_error()
+            if code != 1:
+                logger.warning("symbol_info returned None for instrument verification", extra={
+                    "symbol": symbol, "mt5_error": message,
+                })
+            d: dict[str, Any] = {}
+        else:
+            d = info._asdict()
+
+        def field(*names: str) -> Any:
+            # Tries each name in order, returning the first one actually
+            # present on THIS installed MetaTrader5 package's symbol_info()
+            # object. Different package versions have been observed to
+            # split/rename a few fields (trade_tick_value vs
+            # trade_tick_value_profit/_loss being the specific case this
+            # task flagged) — this reads whichever one this build actually
+            # exposes instead of hardcoding one and crashing on the other.
+            for name in names:
+                if name in d:
+                    return d[name]
+            return None
+
+        if info is not None:
+            # Logged once, not raised — an absent optional field degrades
+            # to None (see build below), it never crashes this method.
+            expected_optional_fields = (
+                "path", "description", "currency_base", "currency_margin",
+                "trade_tick_size", "trade_tick_value", "trade_tick_value_profit",
+                "trade_stops_level", "trade_freeze_level", "swap_mode",
+                "swap_long", "swap_short", "swap_rollover3days",
+                "expiration_mode", "expiration_time",
+            )
+            missing = [name for name in expected_optional_fields if name not in d]
+            if missing:
+                logger.warning(
+                    "symbol_info is missing some expected fields on this MT5 package/version",
+                    extra={"symbol": symbol, "missing_fields": missing},
+                )
+
+        expiration_time_raw = field("expiration_time")
+        # 0 (or the field being entirely absent) means "no expiration"
+        # (GTC) per MT5 — never decoded as a real 1970-01-01 timestamp.
+        expiration_time = (
+            datetime.fromtimestamp(expiration_time_raw, tz=timezone.utc).isoformat()
+            if expiration_time_raw else None
+        )
+
+        currency_profit = field("currency_profit")
+        currency_margin = field("currency_margin")
+        non_usd_currencies = [c for c in (currency_profit, currency_margin) if c is not None and c != "USD"]
+
+        return {
+            # Account-level — verification/logging only; NOT part of the
+            # per-symbol /collector/symbol-metadata payload (that row has
+            # no accountId, same posture as candles — see api_mapper.py's
+            # build_symbol_metadata_payload).
+            "login": account.get("login"),
+            "server": account.get("server"),
+            "account_trade_mode": account.get("trade_mode"),
+            # Symbol-level — the fuller symbol_info() read.
+            "symbol": symbol,
+            "path": field("path"),
+            "description": field("description"),
+            "currency_base": field("currency_base"),
+            "currency_profit": currency_profit,
+            "currency_margin": currency_margin,
+            "trade_tick_size": field("trade_tick_size"),
+            # Prefer the more precise profit-side variant when this package
+            # version splits it out; fall back to the single combined field
+            # otherwise (see `field()`'s own comment and this method's
+            # docstring).
+            "trade_tick_value": field("trade_tick_value_profit", "trade_tick_value"),
+            "trade_stops_level": field("trade_stops_level"),
+            "trade_freeze_level": field("trade_freeze_level"),
+            "trade_mode": field("trade_mode"),  # SYMBOL_TRADE_MODE_* — distinct from account_trade_mode above
+            "swap_mode": field("swap_mode"),
+            "swap_long": field("swap_long"),
+            "swap_short": field("swap_short"),
+            "swap_rollover3days": field("swap_rollover3days"),
+            "expiration_mode": field("expiration_mode"),
+            "expiration_time": expiration_time,
+            "volume_min": field("volume_min"),
+            "volume_max": field("volume_max"),
+            "volume_step": field("volume_step"),
+            "digits": field("digits"),
+            "point": field("point"),
+            "contract_size": field("trade_contract_size"),
+            # Informational red flags only — see docstring. Never used to
+            # reject/abort anything in this file.
+            "has_real_expiration": expiration_time is not None,
+            "non_usd_currencies": non_usd_currencies,
+        }
+
     # Historical chart reconstruction phase — maps this project's own
     # timeframe strings (config.py's CANDLE_TIMEFRAMES, also the backend's
     # CandleTimeframe enum) to MetaTrader5's TIMEFRAME_* constants.
@@ -435,6 +711,7 @@ class Mt5Client:
             "D1": self._mt5.TIMEFRAME_D1,
             "W1": self._mt5.TIMEFRAME_W1,
             "MN1": self._mt5.TIMEFRAME_MN1,
+            "M1": self._mt5.TIMEFRAME_M1,
         }
 
 

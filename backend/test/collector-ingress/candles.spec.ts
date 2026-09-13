@@ -93,8 +93,8 @@ describe('historical candle ingestion (/collector/candles)', () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it.each(['M30', 'H4', 'D1', 'W1', 'MN1'] as const)(
-    'accepts %s — the technical-analysis timeframes added alongside M5/M15/H1',
+  it.each(['M30', 'H4', 'D1', 'W1', 'MN1', 'M1'] as const)(
+    'accepts %s — M1 is the gold historical-collection phase\'s finest-granularity addition, the rest are the earlier technical-analysis timeframes',
     async (timeframe) => {
       const { token } = await setupAccountWithToken(prisma);
       const res = await request(app, {

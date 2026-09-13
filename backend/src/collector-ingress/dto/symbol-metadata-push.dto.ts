@@ -1,4 +1,4 @@
-import { IsInt, IsNumber, IsPositive, IsString, Matches, Min } from 'class-validator';
+import { IsInt, IsISO8601, IsNumber, IsOptional, IsPositive, IsString, Matches, Min } from 'class-validator';
 
 // No accountId — same "market data, not account data" posture as
 // CandlesPushDto: symbol metadata is shared across every account/collector
@@ -18,4 +18,25 @@ export class SymbolMetadataPushDto {
   // (a plausible ISO-4217-looking code), not which currencies this
   // system currently knows how to convert.
   @IsString() @Matches(/^[A-Z]{3}$/) profitCurrency!: string;
+
+  // Gold historical-collection phase — instrument-verification fields
+  // (§A1/A2 of the collection plan). All additive/optional, fully backward
+  // compatible with every existing collector push that doesn't send them.
+  @IsOptional() @IsString() brokerSymbol?: string;
+  @IsOptional() @IsString() server?: string;
+  @IsOptional() @IsString() path?: string;
+  @IsOptional() @IsString() currencyBase?: string;
+  @IsOptional() @IsString() currencyProfit?: string;
+  @IsOptional() @IsString() currencyMargin?: string;
+  @IsOptional() @IsNumber() tradeTickSize?: number;
+  @IsOptional() @IsNumber() tradeTickValue?: number;
+  @IsOptional() @IsInt() tradeStopsLevel?: number;
+  @IsOptional() @IsInt() tradeFreezeLevel?: number;
+  @IsOptional() @IsInt() tradeMode?: number;
+  @IsOptional() @IsInt() swapMode?: number;
+  @IsOptional() @IsNumber() swapLong?: number;
+  @IsOptional() @IsNumber() swapShort?: number;
+  @IsOptional() @IsInt() swapRollover3Days?: number;
+  @IsOptional() @IsInt() expirationMode?: number;
+  @IsOptional() @IsISO8601() expirationTime?: string;
 }

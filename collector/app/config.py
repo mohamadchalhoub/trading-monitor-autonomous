@@ -28,7 +28,11 @@ _LOG_FORMATS = {"json", "text"}
 # candles, not resampled from finer timeframes, same reasoning as the
 # original three. W1/MN1 added for Ichimoku breakout alerts on the weekly
 # and monthly timeframes, same reasoning again.
-_VALID_CANDLE_TIMEFRAMES = {"M5", "M15", "H1", "M30", "H4", "D1", "W1", "MN1"}
+# Gold historical-data-collection project — M1 added for the tick/candle
+# backfill's finest granularity (backfill_gold_history.py). Nothing in this
+# project's own indicators/warm-up requirements uses M1 (see that script's
+# own comment); it exists purely as raw stored history.
+_VALID_CANDLE_TIMEFRAMES = {"M5", "M15", "H1", "M30", "H4", "D1", "W1", "MN1", "M1"}
 # Single source of truth for "how long does one bar of this timeframe
 # span" — mt5_client.py (filtering out a still-forming bar) and runner.py
 # (the candle-sync overlap window) both need this and must never disagree.
@@ -46,6 +50,7 @@ CANDLE_DURATION_BY_TIMEFRAME = {
     "D1": timedelta(days=1),
     "W1": timedelta(weeks=1),
     "MN1": timedelta(days=31),
+    "M1": timedelta(minutes=1),
 }
 
 

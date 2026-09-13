@@ -18,7 +18,13 @@ from datetime import datetime, timedelta, timezone
 from types import FrameType
 
 from app.api_client import ApiClient, ApiClientError
-from app.api_mapper import build_candles_payload, build_snapshot_payload, build_trades_payload
+from app.api_mapper import (
+    build_candles_payload,
+    build_snapshot_payload,
+    build_symbol_metadata_payload,
+    build_ticks_payload,
+    build_trades_payload,
+)
 from app.config import CANDLE_DURATION_BY_TIMEFRAME, Config
 from app.executor import DemoAccountRequiredError, Executor
 from app.formatting import (
@@ -65,6 +71,58 @@ _MIN_INITIAL_SYNC_DAYS_BY_TIMEFRAME: dict[str, int] = {
     "W1": 1825,   # ~5 years / ~260 weekly candles — well past the 78 minimum
     "MN1": 5475,  # ~15 years / ~180 monthly candles — same reasoning
 }
+# Gold historical-data-collection project — get_instrument_verification()
+# reads broker-reported specs (volume/point/contract size/swap/expiration)
+# that essentially never change intraday; once at startup (see
+# _attempt_connect) plus a slow daily refresh is enough to catch a broker-
+# side spec change without adding meaningful load to either MT5 or the
+# backend.
+SYMBOL_METADATA_SYNC_INTERVAL_SECONDS = 86400
+# Gold historical-data-collection project — ongoing (forward-looking) tick
+# sync: a small, recent window pulled every cycle, independent of and never
+# gating the one-off historical `backfill_gold_history.py` script. Wired
+# and running even while historical copy_ticks_range calls for OLD dates
+# are confirmed failing (diagnosed 2026-09-13: hard failures for ~2024
+# dates, but clean — if occasionally slow — empty-or-real responses for
+# recent dates) — this exists so the moment real tick data becomes
+# available going forward, it's captured, with zero code change needed.
+#
+# ISOLATION (revised 2026-09-13 — this used to be a disclosed trade-off
+# instead of a fix; live evidence made that no longer acceptable). The same
+# live diagnosis found copy_ticks_range/copy_ticks_from can each take up to
+# ~106s to hard-fail. Originally this ran inline in the main loop, so a
+# failing tick call froze snapshot/candle/trade-sync AND the shutdown-signal
+# check for the full ~106s every time it happened. It now runs on its own
+# background thread (see _maybe_start_tick_sync), serialized against the
+# main loop's own MT5 calls with `_mt5_call_lock` — the MetaTrader5 Python
+# module is documented as not thread-safe for concurrent calls on one
+# connection, so true parallel MT5 calls are never allowed, but the main
+# loop only does a NON-BLOCKING lock attempt: if tick sync is mid-call, the
+# main loop skips that one ~poll_interval_seconds cycle's MT5 work and
+# checks again next cycle, rather than blocking synchronously for the
+# tick call's entire duration. Net effect: the loop keeps cycling and stays
+# responsive to shutdown throughout a slow/failing tick call, and normal
+# work resumes on the very next cycle once the tick call finishes — instead
+# of one uninterruptible ~106s freeze.
+TICK_SYNC_INTERVAL_SECONDS = 300
+# Bounded failure cooldown ("do not repeat the same unsuccessful query
+# every five minutes indefinitely"): each consecutive FAILED tick-sync
+# attempt (a real MT5/push error — EMPTY_UNCONFIRMED does not count, that's
+# a legitimate "asked, got zero" answer, not a failure) doubles the
+# effective wait before the next attempt, capped here. Evidence is still
+# recorded on every attempt (including the ones this skips due to
+# backoff — those simply don't happen, they are not disguised as
+# untried). Any non-failure result resets the counter back to the normal
+# TICK_SYNC_INTERVAL_SECONDS cadence.
+TICK_SYNC_MAX_BACKOFF_SECONDS = 3600
+# Small overlap so a tick landing right at a previous cycle's boundary is
+# never silently skipped — mirrors CANDLE_SYNC_OVERLAP_BARS' own reasoning.
+TICK_SYNC_OVERLAP_SECONDS = 30
+# Provenance (Preserve source provenance, gold-collection plan): distinct
+# from the one-off backfill script's own "gold_backfill_script" source, so
+# the BackfillInterval ledger always shows which process actually attempted
+# a given range.
+TICK_SYNC_SOURCE = "collector_live_sync"
 
 
 class CollectorApp:
@@ -76,6 +134,15 @@ class CollectorApp:
         self._stop_event = threading.Event()
         self._last_trade_sync_at: datetime | None = None
         self._last_candle_sync_at: datetime | None = None
+        self._last_symbol_metadata_sync_at: datetime | None = None
+        self._last_tick_sync_at: datetime | None = None
+        # Isolation: serializes every MT5 call this app makes (main loop
+        # AND the tick-sync background thread) against each other, never
+        # against a truly external process — see TICK_SYNC_INTERVAL_SECONDS'
+        # own comment for why concurrent calls on one connection aren't safe.
+        self._mt5_call_lock = threading.Lock()
+        self._tick_sync_thread: threading.Thread | None = None
+        self._tick_sync_consecutive_failures = 0
 
     def install_signal_handlers(self) -> None:
         signal.signal(signal.SIGINT, self._handle_signal)
@@ -100,23 +167,46 @@ class CollectorApp:
         backoff = self._config.reconnect_initial_backoff_seconds
         try:
             while not self._stop_event.is_set():
-                if not self._client.is_connected():
-                    connected, backoff = self._attempt_connect(backoff)
-                    if not connected:
-                        continue
+                if not self._mt5_call_lock.acquire(blocking=False):
+                    # Isolation fix: the tick-sync thread is mid MT5-call.
+                    # Skip this cycle's MT5 work rather than block waiting
+                    # for it — see TICK_SYNC_INTERVAL_SECONDS' own comment.
+                    logger.info("main loop cycle skipped — tick sync holds the MT5 connection")
+                    self._maybe_start_tick_sync()
+                    self._stop_event.wait(timeout=self._config.poll_interval_seconds)
+                    continue
 
-                self._push_and_print_snapshot()
-                if self._trade_sync_due():
-                    self._sync_trades()
-                if self._candle_sync_due():
-                    self._sync_candles()
-                if self._config.autonomous_execution_enabled:
-                    self._poll_and_execute_pending_order()
+                try:
+                    if not self._client.is_connected():
+                        connected, backoff = self._attempt_connect(backoff)
+                        if not connected:
+                            continue
 
+                    self._push_and_print_snapshot()
+                    if self._trade_sync_due():
+                        self._sync_trades()
+                    if self._candle_sync_due():
+                        self._sync_candles()
+                    if self._symbol_metadata_sync_due():
+                        self._sync_symbol_metadata()
+                    if self._config.autonomous_execution_enabled:
+                        self._poll_and_execute_pending_order()
+                finally:
+                    self._mt5_call_lock.release()
+
+                self._maybe_start_tick_sync()
                 backoff = self._config.reconnect_initial_backoff_seconds
                 self._stop_event.wait(timeout=self._config.poll_interval_seconds)
         finally:
             logger.info("collector shutting down, disconnecting from terminal")
+            if self._tick_sync_thread is not None and self._tick_sync_thread.is_alive():
+                # Best-effort only — a tick call can take up to ~106s and
+                # shutdown must not hang that long. The thread is a daemon
+                # thread, so if it's still running when the process exits
+                # the interpreter tears it down; this join just gives a
+                # currently-fast/finishing call a brief chance to record its
+                # own outcome (and release the lock) before disconnect().
+                self._tick_sync_thread.join(timeout=5)
             self._client.disconnect()
 
         logger.info("collector stopped cleanly")
@@ -153,6 +243,12 @@ class CollectorApp:
                 # objects) — reusing it here instead of a second,
                 # independent implementation of the same lookup.
                 self._executor.set_deals_lookup(self._deals_lookup_adapter)
+            # Once per successful connect (covers both process startup and
+            # any later reconnect) — see SYMBOL_METADATA_SYNC_INTERVAL_SECONDS'
+            # own comment for why a slow periodic refresh (wired into the
+            # main loop below) is enough on top of this for a connection
+            # that stays up for a long time without ever reconnecting.
+            self._sync_symbol_metadata()
             return True, self._config.reconnect_initial_backoff_seconds
 
         logger.warning(
@@ -387,6 +483,177 @@ class CollectorApp:
                 "symbol": symbol, "timeframe": timeframe,
                 "batch_size": len(batch), "upserted": result.get("upserted"),
             })
+
+    def _symbol_metadata_sync_due(self) -> bool:
+        if not self._config.candle_symbols:
+            return False  # off by default — same posture as _candle_sync_due
+        if self._last_symbol_metadata_sync_at is None:
+            return True
+        elapsed = (datetime.now(tz=timezone.utc) - self._last_symbol_metadata_sync_at).total_seconds()
+        return elapsed >= SYMBOL_METADATA_SYNC_INTERVAL_SECONDS
+
+    def _sync_symbol_metadata(self) -> None:
+        """Gold historical-data-collection project — pushes broker-reported
+        instrument specs for every configured candle symbol. Called once
+        per successful connect (see _attempt_connect) and once per
+        SYMBOL_METADATA_SYNC_INTERVAL_SECONDS thereafter via the main loop's
+        own due-check, same two-trigger shape. A no-op when CANDLE_SYMBOLS
+        is empty (existing deployments completely unaffected). One symbol
+        failing (an MT5-side read error, or a push rejected by the backend)
+        never stops the others from being attempted this cycle — same
+        "one component's failure must never take down another" posture as
+        the rest of this class.
+        """
+        for symbol in self._config.candle_symbols:
+            try:
+                info = self._client.get_instrument_verification(symbol)
+            except Exception as exc:  # noqa: BLE001 — MT5-boundary call, must never crash the main loop
+                logger.warning("instrument verification failed, skipping symbol-metadata push", extra={
+                    "symbol": symbol, "error": str(exc),
+                })
+                continue
+
+            # get_instrument_verification() degrades to None fields (rather
+            # than raising) when symbol_info() itself returned None (e.g.
+            # the symbol isn't in Market Watch yet) — the DTO's required
+            # fields would be null in that case, so skip the push entirely
+            # rather than send a payload the backend will reject anyway.
+            if info.get("volume_min") is None or info.get("point") is None:
+                logger.warning("symbol_info unavailable, skipping symbol-metadata push this cycle", extra={
+                    "symbol": symbol,
+                })
+                continue
+
+            payload = build_symbol_metadata_payload(info)
+            try:
+                self._api.post_symbol_metadata(payload)
+                logger.info("symbol metadata pushed", extra={"symbol": symbol})
+            except ApiClientError as exc:
+                logger.warning("symbol-metadata push failed, will retry next sync", extra={
+                    "symbol": symbol, "error": str(exc),
+                })
+
+        self._last_symbol_metadata_sync_at = datetime.now(tz=timezone.utc)
+
+    def _tick_sync_due(self) -> bool:
+        if not self._config.candle_symbols:
+            return False  # off by default — same posture as _candle_sync_due
+        if self._tick_sync_thread is not None and self._tick_sync_thread.is_alive():
+            return False  # previous cycle's sync is still running on its own thread — never overlap two
+        if self._last_tick_sync_at is None:
+            return True
+        effective_interval = TICK_SYNC_INTERVAL_SECONDS
+        if self._tick_sync_consecutive_failures > 0:
+            # Bounded failure cooldown — see TICK_SYNC_MAX_BACKOFF_SECONDS'
+            # own comment. Doubles per consecutive failure, capped.
+            effective_interval = min(
+                TICK_SYNC_INTERVAL_SECONDS * (2 ** self._tick_sync_consecutive_failures),
+                TICK_SYNC_MAX_BACKOFF_SECONDS,
+            )
+        elapsed = (datetime.now(tz=timezone.utc) - self._last_tick_sync_at).total_seconds()
+        return elapsed >= effective_interval
+
+    def _maybe_start_tick_sync(self) -> None:
+        """Launches _sync_ticks() on its own daemon thread when due — see
+        TICK_SYNC_INTERVAL_SECONDS' own comment for why this must not run
+        inline in the main loop. Never starts a second thread while one is
+        still running (_tick_sync_due already checks this).
+        """
+        if not self._tick_sync_due():
+            return
+        self._tick_sync_thread = threading.Thread(target=self._sync_ticks_isolated, daemon=True)
+        self._tick_sync_thread.start()
+
+    def _sync_ticks_isolated(self) -> None:
+        """Thread entry point: serializes the actual MT5 call(s) against the
+        main loop's own MT5 calls via `_mt5_call_lock` (blocking acquire is
+        fine here — this is a background thread, not the main loop, so
+        waiting briefly for a fast main-loop cycle to finish costs nothing
+        the main loop's own liveness cares about), then updates the
+        consecutive-failure counter that `_tick_sync_due` uses for backoff.
+        """
+        with self._mt5_call_lock:
+            any_failure = self._sync_ticks()
+        self._tick_sync_consecutive_failures = self._tick_sync_consecutive_failures + 1 if any_failure else 0
+
+    def _sync_ticks(self) -> bool:
+        """Gold historical-data-collection project — ongoing tick sync, one
+        small recent window per configured symbol per cycle. See
+        TICK_SYNC_INTERVAL_SECONDS' own comment for the latency trade-off
+        this accepts, and for why this runs regardless of whether historical
+        backfilling has succeeded (they are independent — see that same
+        comment). Records every attempt into the same BackfillInterval
+        ledger `backfill_gold_history.py` uses (a different `source`, see
+        TICK_SYNC_SOURCE), so a genuine failure here is visible as FAILED/
+        EMPTY_UNCONFIRMED evidence — never indistinguishable from
+        never-having-tried.
+
+        Returns True if any symbol's attempt this cycle ended FAILED (used
+        by `_sync_ticks_isolated` to drive the bounded backoff cooldown —
+        EMPTY_UNCONFIRMED is a legitimate answer, not a failure, and does
+        not count).
+        """
+        now = datetime.now(tz=timezone.utc)
+        window_start = (
+            now - timedelta(seconds=TICK_SYNC_INTERVAL_SECONDS + TICK_SYNC_OVERLAP_SECONDS)
+            if self._last_tick_sync_at is None
+            else self._last_tick_sync_at - timedelta(seconds=TICK_SYNC_OVERLAP_SECONDS)
+        )
+        any_failure = False
+
+        for symbol in self._config.candle_symbols:
+            range_payload = {
+                "source": TICK_SYNC_SOURCE, "symbol": symbol, "dataType": "TICK",
+                "rangeStart": window_start.isoformat(), "rangeEnd": now.isoformat(),
+            }
+            try:
+                ticks = self._client.get_ticks(symbol, window_start, now)
+            except Exception as exc:  # noqa: BLE001 — MT5-boundary call, must never crash the main loop
+                logger.warning("ongoing tick sync: MT5 call raised, will retry next cycle", extra={
+                    "symbol": symbol, "error": str(exc),
+                })
+                any_failure = True
+                try:
+                    self._api.upsert_backfill_interval({
+                        **range_payload, "status": "FAILED", "evidence": f"live sync MT5 error: {exc}",
+                    })
+                except ApiClientError:
+                    pass  # ledger visibility is best-effort; never block the main loop over it
+                continue
+
+            if not ticks:
+                try:
+                    self._api.upsert_backfill_interval({
+                        **range_payload, "status": "EMPTY_UNCONFIRMED", "recordCount": 0,
+                        "evidence": "live sync: 0 rows, no MT5 error",
+                    })
+                except ApiClientError:
+                    pass
+                continue
+
+            try:
+                payload = build_ticks_payload(symbol, None, None, None, ticks)
+                result = self._api.post_ticks(payload)
+                logger.info("ongoing tick sync pushed", extra={
+                    "symbol": symbol, "row_count": len(ticks), "inserted": result.get("inserted"),
+                })
+                self._api.upsert_backfill_interval({
+                    **range_payload, "status": "COMPLETED", "recordCount": len(ticks),
+                })
+            except ApiClientError as exc:
+                any_failure = True
+                logger.warning("ongoing tick sync push failed, will retry next cycle", extra={
+                    "symbol": symbol, "error": str(exc),
+                })
+                try:
+                    self._api.upsert_backfill_interval({
+                        **range_payload, "status": "FAILED", "evidence": f"live sync push failed: {exc}",
+                    })
+                except ApiClientError:
+                    pass
+
+        self._last_tick_sync_at = now
+        return any_failure
 
     def _fetch_candles_chunked(self, symbol: str, timeframe: str, date_from: datetime, date_to: datetime) -> list[dict]:
         """Splits [date_from, date_to) into CANDLE_FETCH_CHUNK_DAYS-sized

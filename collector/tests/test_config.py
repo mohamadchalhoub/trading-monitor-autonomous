@@ -166,3 +166,10 @@ def test_w1_mn1_timeframes_are_valid():
     # Ichimoku breakout alerts on the weekly/monthly timeframes.
     cfg = Config.from_env({**BACKEND_ENV, "CANDLE_TIMEFRAMES": "W1,MN1"})
     assert cfg.candle_timeframes == ("W1", "MN1")
+
+
+def test_m1_timeframe_is_valid():
+    # Gold historical-data-collection project — finest granularity, used
+    # only by backfill_gold_history.py's tick/candle backfill.
+    cfg = Config.from_env({**BACKEND_ENV, "CANDLE_TIMEFRAMES": "M1"})
+    assert cfg.candle_timeframes == ("M1",)

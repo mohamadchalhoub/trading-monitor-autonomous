@@ -19,6 +19,7 @@
     "evaluate-autonomous-rule": "tsx scripts/evaluate-autonomous-rule.ts",
     "backtest-autonomous-rule": "tsx scripts/backtest-autonomous-rule.ts",
     "backtest-trend-breakout": "tsx scripts/backtest-trend-breakout.ts",
+    "report-xauusd-coverage": "tsx scripts/report-xauusd-coverage.ts",
     "test:db:up": "docker compose -f docker-compose.test.yml up -d --wait",
     "test:db:down": "docker compose -f docker-compose.test.yml down -v",
     "test": "npm run test:db:up && vitest run",

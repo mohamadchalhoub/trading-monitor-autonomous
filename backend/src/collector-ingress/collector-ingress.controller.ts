@@ -1,16 +1,22 @@
 import { BadRequestException, Body, Controller, Get, Logger, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { BackfillDataType, BackfillIntervalStatus, CandleTimeframe } from '@prisma/client';
 import { CollectorTokenGuard } from '../auth/collector-token.guard';
 import { AccountsService } from '../accounts/accounts.service';
 import { RuleEngineService } from '../alerts/rule-engine.service';
 import { HistoricalCandleService } from '../market-data/historical-candle.service';
+import { HistoricalTickService } from '../market-data/historical-tick.service';
+import { BackfillIntervalService } from '../market-data/backfill-interval.service';
 import { TradingDataService } from '../trading-data/trading-data.service';
 import { CandlesPushDto } from '../market-data/dto/candles-push.dto';
+import { TicksPushDto } from '../market-data/dto/ticks-push.dto';
+import { BackfillIntervalPushDto } from '../market-data/dto/backfill-interval-push.dto';
 import { SymbolMetadataService } from '../trend-breakout/symbol-metadata.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { SnapshotDto } from './dto/snapshot.dto';
 import { SymbolMetadataPushDto } from './dto/symbol-metadata-push.dto';
 import { TradesPushDto } from './dto/trades.dto';
 
-const VALID_TIMEFRAMES = ['M5', 'M15', 'H1', 'M30', 'H4', 'D1', 'W1', 'MN1'] as const;
+const VALID_TIMEFRAMES = ['M1', 'M5', 'M15', 'H1', 'M30', 'H4', 'D1', 'W1', 'MN1'] as const;
 type Timeframe = (typeof VALID_TIMEFRAMES)[number];
 
 function parseTimeframe(raw: string | undefined): Timeframe {
@@ -19,6 +25,17 @@ function parseTimeframe(raw: string | undefined): Timeframe {
   }
   return raw as Timeframe;
 }
+
+const VALID_BACKFILL_DATA_TYPES = ['CANDLE', 'TICK'] as const;
+const VALID_BACKFILL_STATUSES = [
+  'PENDING',
+  'COMPLETED',
+  'EMPTY_UNCONFIRMED',
+  'EMPTY_CONFIRMED',
+  'FAILED',
+  'INCOMPLETE',
+  'SUSPECTED_TRUNCATED',
+] as const;
 
 // MT5 deal tickets are always numeric, so BigInt comparison is the correct
 // way to find the highest one — but this field is a free-form string in
@@ -44,7 +61,10 @@ export class CollectorIngressController {
     private readonly tradingData: TradingDataService,
     private readonly ruleEngine: RuleEngineService,
     private readonly historicalCandles: HistoricalCandleService,
+    private readonly historicalTicks: HistoricalTickService,
+    private readonly backfillIntervals: BackfillIntervalService,
     private readonly symbolMetadata: SymbolMetadataService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Post('snapshot')
@@ -162,5 +182,106 @@ export class CollectorIngressController {
     await this.symbolMetadata.upsert(dto);
     this.logger.log(`symbol metadata accepted symbol=${dto.symbol} volumeMin=${dto.volumeMin} volumeMax=${dto.volumeMax} volumeStep=${dto.volumeStep} point=${dto.point}`);
     return { ok: true };
+  }
+
+  // Gold historical-collection phase — ticks carry no accountId, same "no
+  // accountId" posture as candles/symbol-metadata above.
+  @Post('ticks')
+  async postTicks(@Body() dto: TicksPushDto) {
+    const result = await this.historicalTicks.upsertTicks(
+      dto.symbol,
+      dto.brokerSymbol ?? null,
+      dto.server ?? null,
+      dto.feedId ?? null,
+      dto.ticks,
+    );
+    this.logger.log(`ticks accepted symbol=${dto.symbol} received=${dto.ticks.length} inserted=${result.inserted}`);
+    return { ok: true, ...result };
+  }
+
+  @Get('ticks/coverage')
+  async getTicksCoverage(@Query('symbol') symbol: string) {
+    if (!symbol) throw new BadRequestException('symbol is required');
+    return this.historicalTicks.getCoverage(symbol);
+  }
+
+  // Gold historical-collection phase — the coverage/checkpoint ledger push.
+  // No accountId, same posture as every other market-data route here.
+  @Post('backfill-intervals')
+  async postBackfillInterval(@Body() dto: BackfillIntervalPushDto) {
+    const row = await this.backfillIntervals.upsertInterval({
+      source: dto.source,
+      symbol: dto.symbol,
+      brokerSymbol: dto.brokerSymbol,
+      server: dto.server,
+      dataType: dto.dataType as BackfillDataType,
+      timeframe: dto.timeframe as CandleTimeframe | undefined,
+      rangeStart: new Date(dto.rangeStart),
+      rangeEnd: new Date(dto.rangeEnd),
+      status: dto.status as BackfillIntervalStatus,
+      recordCount: dto.recordCount,
+      evidence: dto.evidence,
+    });
+    this.logger.log(
+      `backfill interval accepted symbol=${dto.symbol} dataType=${dto.dataType} status=${dto.status} range=${dto.rangeStart}..${dto.rangeEnd}`,
+    );
+    // BackfillInterval.id is a BigInt (Fastify's JSON serializer can't
+    // handle those natively, same issue already documented in
+    // trading-data.controller.ts) — stringify it, the only field affected.
+    return { ...row, id: row.id.toString() };
+  }
+
+  @Get('backfill-intervals')
+  async getBackfillIntervals(
+    @Query('symbol') symbol: string,
+    @Query('dataType') dataTypeRaw: string,
+    @Query('timeframe') timeframeRaw: string | undefined,
+    @Query('status') statusRaw: string | undefined,
+  ) {
+    if (!symbol) throw new BadRequestException('symbol is required');
+    if (!dataTypeRaw || !(VALID_BACKFILL_DATA_TYPES as readonly string[]).includes(dataTypeRaw)) {
+      throw new BadRequestException(`dataType must be one of ${VALID_BACKFILL_DATA_TYPES.join(', ')}`);
+    }
+    const timeframe = timeframeRaw ? parseTimeframe(timeframeRaw) : undefined;
+    let statuses: BackfillIntervalStatus[] | undefined;
+    if (statusRaw) {
+      const parts = statusRaw.split(',').map((s) => s.trim());
+      for (const part of parts) {
+        if (!(VALID_BACKFILL_STATUSES as readonly string[]).includes(part)) {
+          throw new BadRequestException(`status must be a comma-separated list of ${VALID_BACKFILL_STATUSES.join(', ')}`);
+        }
+      }
+      statuses = parts as BackfillIntervalStatus[];
+    }
+
+    const rows = await this.backfillIntervals.queryIntervals({
+      symbol,
+      dataType: dataTypeRaw as BackfillDataType,
+      timeframe: timeframe as CandleTimeframe | undefined,
+      statuses,
+    });
+    // Same BigInt-id stringification as postBackfillInterval above.
+    return rows.map((row) => ({ ...row, id: row.id.toString() }));
+  }
+
+  // Reliability/ops visibility — never throws over the WAL-size probe: on
+  // most managed/permission-restricted Postgres setups pg_ls_waldir() isn't
+  // available, and that must never fail this otherwise-cheap health check.
+  @Get('storage-health')
+  async getStorageHealth() {
+    const [dbSizeRow] = await this.prisma.$queryRaw<{ db_size: bigint }[]>`SELECT pg_database_size(current_database()) as db_size`;
+    let walSizeBytes: number | null = null;
+    try {
+      const [walRow] = await this.prisma.$queryRaw<{ sum: unknown | null }[]>`SELECT sum(size) as sum FROM pg_ls_waldir()`;
+      walSizeBytes = walRow?.sum != null ? Number(walRow.sum) : null;
+    } catch (err) {
+      this.logger.warn(`storage-health: WAL size unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      walSizeBytes = null;
+    }
+    return {
+      databaseSizeBytes: Number(dbSizeRow.db_size),
+      walSizeBytes,
+      checkedAt: new Date().toISOString(),
+    };
   }
 }

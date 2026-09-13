@@ -586,6 +586,12 @@ model MarketEvent {
 // own field, in case a second candle provider is ever needed for symbols/
 // history depth the connected MT5 terminal can't cover.
 enum CandleTimeframe {
+  // Gold historical-collection phase — added alongside a dedicated
+  // HistoricalTick table and BackfillInterval coverage ledger (see below).
+  // Ships in its own migration: Postgres requires one `ALTER TYPE ADD
+  // VALUE` per migration when adding a single enum value (same constraint
+  // already hit by the M30/H4/D1 migration below).
+  M1
   M5
   M15
   H1
@@ -605,19 +611,34 @@ enum CandleTimeframe {
 }
 
 model HistoricalCandle {
-  id        BigInt          @id @default(autoincrement())
-  symbol    String
-  timeframe CandleTimeframe
-  openTime  DateTime        @map("open_time")
-  open      Decimal         @db.Decimal(18, 6)
-  high      Decimal         @db.Decimal(18, 6)
-  low       Decimal         @db.Decimal(18, 6)
-  close     Decimal         @db.Decimal(18, 6)
+  id           BigInt          @id @default(autoincrement())
+  symbol       String
+  timeframe    CandleTimeframe
+  openTime     DateTime        @map("open_time")
+  open         Decimal         @db.Decimal(18, 6)
+  high         Decimal         @db.Decimal(18, 6)
+  low          Decimal         @db.Decimal(18, 6)
+  close        Decimal         @db.Decimal(18, 6)
   // Tick volume, not real traded volume (MT5/forex has no central
   // exchange-reported volume) — nullable since not every source gives one.
-  volume    Decimal?        @db.Decimal(18, 2)
-  source    String          @default("MT5")
-  createdAt DateTime        @default(now()) @map("created_at")
+  volume       Decimal?        @db.Decimal(18, 2)
+  // MT5's own `real_volume` field on the candle — genuinely distinct from
+  // `volume` (tick volume) above; nullable since not every broker/symbol
+  // populates it. Never conflate the two when reading this table.
+  realVolume   Decimal?        @map("real_volume") @db.Decimal(18, 2)
+  // MT5's `spread` field on the candle, in broker points — nullable/
+  // documented as "not populated by every broker," never assumed present.
+  spread       Int?
+  // Per-row provenance: the actual broker symbol string / MT5 server /
+  // (future) feed identifier this bar was fetched from. Nullable and left
+  // NULL on every row collected before this column existed — provenance for
+  // those rows is genuinely unknown and is recorded as unknown, never
+  // back-filled with whichever account happens to be connected today.
+  brokerSymbol String?         @map("broker_symbol")
+  server       String?
+  feedId       String?         @map("feed_id")
+  source       String          @default("MT5")
+  createdAt    DateTime        @default(now()) @map("created_at")
 
   // One row per (symbol, timeframe, candle open time) — the collector's own
   // periodic re-fetch of recent candles (to heal a bar that was still
@@ -625,6 +646,155 @@ model HistoricalCandle {
   @@unique([symbol, timeframe, openTime])
   @@index([symbol, timeframe, openTime(sort: Desc)])
   @@map("historical_candles")
+}
+
+// Gold historical-collection phase — genuinely new: LiveTick (above) is a
+// single row per symbol, always overwritten, and preserves no history at
+// all. This table stores every individual broker tick returned by MT5's
+// `copy_ticks_range`, append-only.
+//
+// Tick identity is stated honestly rather than assumed lossless: MT5's
+// Python API exposes no broker-side sequence number distinct from the
+// order ticks are returned in a given `copy_ticks_range` call. `batchSeq`
+// records that within-call order as a diagnostic aid only — it is NOT part
+// of this row's identity, because the same underlying tick fetched again in
+// an overlapping/repeated chunk would land at a different array position
+// and therefore a different `batchSeq`, which would defeat deduplication
+// rather than help it.
+//
+// Real identity/dedup is a Postgres EXPRESSION UNIQUE INDEX (created via
+// raw SQL in this table's migration — Prisma's schema DSL has no
+// expression-index syntax) on every broker-given field:
+//   (symbol, broker_symbol, timestamp, bid, ask,
+//    COALESCE(last, -1), COALESCE(volume, -1), COALESCE(volume_real, -1), flags)
+// The COALESCE sentinels exist because Postgres treats NULL <> NULL even
+// inside a unique index — a plain `@@unique` across nullable columns would
+// silently admit duplicate rows for the very common no-`last`-price tick on
+// every overlap re-fetch. Ingestion uses `INSERT ... ON CONFLICT (<that
+// same expression list>) DO NOTHING`, which is atomic and safe under
+// concurrent/repeated batch pushes (unlike a check-then-insert
+// `WHERE NOT EXISTS`, which races). Intra-batch duplicates (two rows in the
+// SAME incoming payload identical to each other) are also deduplicated in
+// application code first, mirroring HistoricalCandleService.upsertCandles's
+// existing JS-side Map-based intra-batch dedupe.
+//
+// DISCLOSED LIMITATION, not a bug: two genuinely distinct broker events
+// identical in every one of the fields above collapse into a single stored
+// row. This is a real gap in event-level precision inherent to what MT5's
+// API exposes, restated in the coverage report — never presented as
+// lossless tick capture.
+model HistoricalTick {
+  id           BigInt   @id @default(autoincrement())
+  symbol       String
+  brokerSymbol String?  @map("broker_symbol")
+  server       String?
+  feedId       String?  @map("feed_id")
+  // UTC, millisecond precision — derived from MT5's `time_msc`.
+  timestamp    DateTime
+  bid          Decimal  @db.Decimal(18, 6)
+  ask          Decimal  @db.Decimal(18, 6)
+  // Last-traded price — nullable; many ticks are pure bid/ask updates with
+  // no accompanying trade.
+  last         Decimal? @db.Decimal(18, 6)
+  volume       Decimal? @db.Decimal(18, 2)
+  volumeReal   Decimal? @map("volume_real") @db.Decimal(18, 2)
+  // Raw MT5 tick flag bitmask (TICK_FLAG_BID/ASK/LAST/VOLUME/BUY/SELL).
+  flags        Int
+  // This tick's 0-based position within the single copy_ticks_range() call
+  // that returned it — a same-batch ordering aid only, see the model
+  // comment above. NOT part of this row's identity/uniqueness.
+  batchSeq     Int      @map("batch_seq")
+  source       String   @default("MT5")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // The real dedup constraint is the raw-SQL expression unique index
+  // described above (created in this model's migration), not this
+  // ordinary index — kept for query performance on range scans.
+  @@index([symbol, timestamp])
+  @@map("historical_ticks")
+}
+
+// Gold historical-collection phase — the coverage/checkpoint ledger. A
+// `COMPLETED` status here proves only "what MT5 returned for this specific
+// request was ingested," never "this is everything the broker has for this
+// range" — that distinction is deliberate (see the status descriptions
+// below) and is what lets the coverage report ever say something honest
+// about partial/truncated/unconfirmed-empty results instead of inferring
+// completeness from min/max timestamps alone.
+enum BackfillDataType {
+  CANDLE
+  TICK
+}
+
+enum BackfillIntervalStatus {
+  PENDING
+  COMPLETED
+  // A zero-row response. Starts here, not at CONFIRMED — an empty result is
+  // never treated as proof of market closure or unavailable history on its
+  // own.
+  EMPTY_UNCONFIRMED
+  // Promoted from EMPTY_UNCONFIRMED only after a defined recheck policy:
+  // re-attempted on a separate connection/session at least once more, with
+  // an ordinary weekend/market-closed window allowed to corroborate (never
+  // by itself decide) the confirmation.
+  EMPTY_CONFIRMED
+  FAILED
+  // A crash/stop left this interval only partly ingested, or a resource
+  // guard (disk/WAL) paused mid-interval.
+  INCOMPLETE
+  // The returned row count landed at or near a previously-observed MT5
+  // per-call return cap — plausibly truncated by the terminal rather than a
+  // genuine "that's all there is." Queued for a narrower re-check, never
+  // trusted at face value as COMPLETED.
+  SUSPECTED_TRUNCATED
+}
+
+model BackfillInterval {
+  id           BigInt                 @id @default(autoincrement())
+  source       String                 @default("MT5")
+  symbol       String
+  brokerSymbol String?                @map("broker_symbol")
+  server       String?
+  dataType     BackfillDataType       @map("data_type")
+  // Only meaningful for dataType = CANDLE; null for TICK.
+  timeframe    CandleTimeframe?
+  // NOT NULL companion to `timeframe`, always set by the application: the
+  // timeframe's own name for CANDLE rows, the literal "_TICK_" for TICK
+  // rows. Exists purely so the uniqueness constraint below can be a plain,
+  // ordinary index instead of a nullable-column expression index — an
+  // earlier attempt at `COALESCE(timeframe::text, '')` failed migration
+  // validation because Postgres's enum-to-text cast function is STABLE,
+  // not IMMUTABLE, and therefore cannot appear in an index expression.
+  timeframeKey String                 @map("timeframe_key")
+  // The REQUESTED chunk bounds (UTC) — not necessarily what MT5 actually
+  // returned; `recordCount`/`evidence` capture the actual outcome.
+  rangeStart   DateTime               @map("range_start")
+  rangeEnd     DateTime               @map("range_end")
+  status       BackfillIntervalStatus @default(PENDING)
+  recordCount  Int?                   @map("record_count")
+  // Free-form: an MT5 error on FAILED, "queried, terminal returned 0 rows,
+  // no error" on an empty result, "matches a previously observed per-call
+  // cap" on SUSPECTED_TRUNCATED, or a resource-guard explanation on
+  // INCOMPLETE.
+  evidence     String?
+  attemptedAt  DateTime               @default(now()) @map("attempted_at")
+  completedAt  DateTime?              @map("completed_at")
+
+  // Checkpointing is only ever written AFTER successful ingestion, never
+  // after a bare fetch — a crash between fetch and ingest leaves this
+  // interval PENDING/INCOMPLETE on resume, never falsely COMPLETED.
+  //
+  // Uses `timeframeKey` (NOT NULL) rather than the nullable `timeframe`
+  // directly, so this can be an ordinary Postgres unique index — needed
+  // because concurrent writers (the live incremental sync and a one-off
+  // backfill script running at the same time — see the collection plan's
+  // "ongoing collection runs independently of the backfill" requirement)
+  // both upsert into this ledger via `INSERT ... ON CONFLICT (source,
+  // symbol, data_type, timeframe_key, range_start, range_end) DO UPDATE`,
+  // which must be atomic and NULL-safe.
+  @@unique([source, symbol, dataType, timeframeKey, rangeStart, rangeEnd])
+  @@index([symbol, dataType, timeframe, status])
+  @@map("backfill_intervals")
 }
 
 // One row per symbol, always overwritten in place — a genuine live bid/ask,
@@ -820,16 +990,50 @@ model TrendBreakoutVolumeAudit {
 // validation error or blocked entry" applies equally to "we don't actually
 // know the broker's real limits yet."
 model SymbolMetadata {
-  symbol         String   @id
-  volumeMin      Decimal  @map("volume_min") @db.Decimal(10, 4)
-  volumeMax      Decimal  @map("volume_max") @db.Decimal(10, 2)
-  volumeStep     Decimal  @map("volume_step") @db.Decimal(10, 4)
-  digits         Int
-  point          Decimal  @db.Decimal(18, 8)
-  contractSize   Decimal  @map("contract_size") @db.Decimal(18, 4)
-  profitCurrency String   @map("profit_currency")
-  source         String   @default("MT5")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  symbol            String    @id
+  volumeMin         Decimal   @map("volume_min") @db.Decimal(10, 4)
+  volumeMax         Decimal   @map("volume_max") @db.Decimal(10, 2)
+  volumeStep        Decimal   @map("volume_step") @db.Decimal(10, 4)
+  digits            Int
+  point             Decimal   @db.Decimal(18, 8)
+  contractSize      Decimal   @map("contract_size") @db.Decimal(18, 4)
+  profitCurrency    String    @map("profit_currency")
+  // Gold historical-collection phase — instrument-verification fields
+  // (§A1/A2 of the collection plan). `point` above is the price increment;
+  // `tradeTickSize` is the broker's minimum PRICE-MOVEMENT-THAT-COUNTS,
+  // which is not always equal to `point` and must never be assumed to be.
+  brokerSymbol      String?   @map("broker_symbol")
+  server            String?
+  // MT5 symbol_info().path — its category path (e.g. "Metals\XAUUSD"),
+  // used to help confirm this is spot-style gold-vs-USD rather than a
+  // dated futures contract or an unrelated cross. Being a CFD is normal
+  // and is never by itself a disqualifying signal.
+  path              String?
+  currencyBase      String?   @map("currency_base")
+  currencyProfit    String?   @map("currency_profit")
+  currencyMargin    String?   @map("currency_margin")
+  tradeTickSize     Decimal?  @map("trade_tick_size") @db.Decimal(18, 8)
+  tradeTickValue    Decimal?  @map("trade_tick_value") @db.Decimal(18, 8)
+  tradeStopsLevel   Int?      @map("trade_stops_level")
+  tradeFreezeLevel  Int?      @map("trade_freeze_level")
+  // Raw MT5 SYMBOL_TRADE_MODE_* int (disabled/long-only/short-only/
+  // close-only/full).
+  tradeMode         Int?      @map("trade_mode")
+  swapMode          Int?      @map("swap_mode")
+  swapLong          Decimal?  @map("swap_long") @db.Decimal(18, 6)
+  swapShort         Decimal?  @map("swap_short") @db.Decimal(18, 6)
+  swapRollover3Days Int?      @map("swap_rollover_3_days")
+  // A real, non-none expiration marks a dated futures contract — excluded
+  // from "spot-style gold-vs-USD." Null/none is expected and accepted for
+  // the intended CFD product.
+  expirationMode    Int?      @map("expiration_mode")
+  expirationTime    DateTime? @map("expiration_time")
+  // Deliberately NOT collected here: MT5's per-day trading-session data
+  // (symbol_info_session_trade), a much larger 7-day API surface. Disclosed
+  // as out of scope, not silently omitted — see the collector's own
+  // instrument-verification code comment.
+  source            String    @default("MT5")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   @@map("symbol_metadata")
 }

@@ -25,6 +25,30 @@ export interface SymbolMetadataRow {
   updatedAt: Date;
 }
 
+// Gold historical-collection phase — instrument-verification fields
+// (§A1/A2 of the collection plan). All optional/nullable: not every
+// broker/symbol populates every one of these, and rows written before this
+// phase existed simply don't have them.
+export interface SymbolMetadataUpsertInput extends Omit<SymbolMetadataRow, 'updatedAt'> {
+  brokerSymbol?: string | null;
+  server?: string | null;
+  path?: string | null;
+  currencyBase?: string | null;
+  currencyProfit?: string | null;
+  currencyMargin?: string | null;
+  tradeTickSize?: number | null;
+  tradeTickValue?: number | null;
+  tradeStopsLevel?: number | null;
+  tradeFreezeLevel?: number | null;
+  tradeMode?: number | null;
+  swapMode?: number | null;
+  swapLong?: number | null;
+  swapShort?: number | null;
+  swapRollover3Days?: number | null;
+  expirationMode?: number | null;
+  expirationTime?: string | Date | null;
+}
+
 @Injectable()
 export class SymbolMetadataService {
   constructor(private readonly prisma: PrismaService) {}
@@ -46,11 +70,16 @@ export class SymbolMetadataService {
   }
 
   /** Upserted by the collector-ingress route (`collector-ingress.controller.ts`) on its normal push cadence — see that file for the `CollectorTokenGuard`-protected endpoint. */
-  async upsert(row: Omit<SymbolMetadataRow, 'updatedAt'>): Promise<void> {
+  async upsert(row: SymbolMetadataUpsertInput): Promise<void> {
+    const { symbol, expirationTime, ...rest } = row;
+    const data = {
+      ...rest,
+      expirationTime: expirationTime != null ? new Date(expirationTime) : null,
+    };
     await this.prisma.symbolMetadata.upsert({
-      where: { symbol: row.symbol },
-      create: { ...row, source: 'MT5' },
-      update: { ...row },
+      where: { symbol },
+      create: { symbol, ...data, source: 'MT5' },
+      update: { ...data },
     });
   }
 }

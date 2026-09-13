@@ -28,6 +28,13 @@ const TIMEFRAME_LOOKBACK_DAYS: Record<CandleTimeframe, number> = {
   D1: 500,
   W1: 1095,
   MN1: 3650,
+  // Gold historical-collection phase — M1 added to CandleTimeframe for the
+  // tick/candle backfill's finest granularity (not used by this module's
+  // own support/resistance/Ichimoku/Fibonacci features — see
+  // technical-analysis.config.ts's own separate, unchanged timeframe
+  // lists); this entry exists only because this Record must stay
+  // exhaustive over the full enum.
+  M1: 1,
 };
 
 // User's Rule 1 fixes these three timeframes explicitly (not configurable
