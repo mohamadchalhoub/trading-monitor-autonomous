@@ -207,6 +207,69 @@ describe('scenario 10 — a post-entry data gap forces INDETERMINATE, even when 
   });
 });
 
+describe('scenario 12 — a candle whose OPEN alone already lies beyond a boundary resolves immediately, never ambiguous just because its later range also reaches the opposite boundary', () => {
+  it('resolves WIN off the open when the open already prints beyond TP, even though the same candle later dips beyond SL too', () => {
+    const clean = candle('2026-01-02T00:01:00.000Z', 2000, 2002, 1998, 2001);
+    // Opens at 2012 (already >= TP=2010) then swings all the way down to 1985 (beyond SL=1990) later in
+    // the SAME candle. The open already tells us TP was reached first — the later dip must not flip this
+    // to AMBIGUOUS, because a real order would already have been filled at the open-side gap.
+    const raceCandle = candle('2026-01-02T00:02:00.000Z', 2012, 2018, 1985, 1990);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 2000, entryTimeUtc: ENTRY_TIME,
+      candles: [clean, raceCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('WIN');
+    expect(result.resolvedAtUtc?.toISOString()).toBe(raceCandle.openTime.toISOString());
+    expect(result.resolutionPrice).toBe(2010); // idealized (default): the nominal TP, not the gap print
+  });
+
+  it('resolves LOSS off the open, symmetric case (open already beyond SL, later range also reaches TP)', () => {
+    const clean = candle('2026-01-02T00:01:00.000Z', 2000, 2002, 1998, 2001);
+    const raceCandle = candle('2026-01-02T00:02:00.000Z', 1988, 2015, 1980, 2005);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 2000, entryTimeUtc: ENTRY_TIME,
+      candles: [clean, raceCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('LOSS');
+    expect(result.resolutionPrice).toBe(1990); // idealized: the nominal SL
+  });
+
+  it('uses the real open print, not the nominal level, when realisticGapFills is set (the executable path)', () => {
+    const clean = candle('2026-01-02T00:01:00.000Z', 2000, 2002, 1998, 2001);
+    const raceCandle = candle('2026-01-02T00:02:00.000Z', 2012, 2018, 1985, 1990);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 2000, entryTimeUtc: ENTRY_TIME,
+      candles: [clean, raceCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+      realisticGapFills: true,
+    });
+
+    expect(result.status).toBe('WIN');
+    expect(result.resolutionPrice).toBe(2012); // the real print it gapped to, never a price that never traded
+  });
+
+  it('still resolves AMBIGUOUS when the open itself is neutral but the range straddles both boundaries — the fix only short-circuits a DECISIVE open', () => {
+    const clean = candle('2026-01-02T00:01:00.000Z', 2000, 2002, 1998, 2001);
+    // Open (2000) is neutral — beyond neither TP (2010) nor SL (1990) — so no shortcut applies here.
+    const raceCandle = candle('2026-01-02T00:02:00.000Z', 2000, 2015, 1985, 2005);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 2000, entryTimeUtc: ENTRY_TIME,
+      candles: [clean, raceCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('AMBIGUOUS');
+  });
+});
+
 describe('scenario 11 — a gap-through entry produces DIFFERENT idealized vs executable results', () => {
   it('keeps the idealized (entry-at-level) and executable (entry-at-reachable-price) paths structurally separate and numerically different', () => {
     const source = h4Candle('2026-01-01T00:00:00.000Z', 2005, 2015, 1995, 2010);

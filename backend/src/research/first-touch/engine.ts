@@ -344,18 +344,31 @@ export interface ResolvePriceRaceParams {
   gaps: DataGap[];
   symbol: string;
   frozenEndUtc: Date;
+  /**
+   * Only ever true on the EXECUTABLE call from `resolveOutcome` — see that
+   * function. When a candle's own OPEN print already lies beyond a
+   * boundary (a gap straight through it, whether or not a `DataGap`
+   * precedes this candle), the realistic fill for a real order is the
+   * actual print it gapped to, not the nominal TP/SL level it never
+   * traded at. false (default) keeps the idealized convention: always
+   * resolve at the exact nominal TP/SL price, mirroring how
+   * `idealEntryPrice` is used on the entry side regardless of
+   * `gappedThrough`.
+   */
+  realisticGapFills?: boolean;
 }
 
 /**
- * The core TP/SL race, reused unchanged for both the idealized and
- * executable paths (each with its own entry price -> its own TP/SL). Uses
- * candle WICKS (high/low), not bodies — this is a stop/limit order fill
- * model, a deliberately different rule from the body-only first-touch
- * detection above (a real TP/SL order fills the instant price reaches it,
- * it does not wait for a candle to close beyond it).
+ * The core TP/SL race, reused for both the idealized and executable paths
+ * (each with its own entry price -> its own TP/SL, and the executable call
+ * additionally passing `realisticGapFills: true`). Uses candle WICKS
+ * (high/low), not bodies — this is a stop/limit order fill model, a
+ * deliberately different rule from the body-only first-touch detection
+ * above (a real TP/SL order fills the instant price reaches it, it does
+ * not wait for a candle to close beyond it).
  */
 export function resolvePriceRace(params: ResolvePriceRaceParams): OutcomeResolution {
-  const { direction, entryPrice, entryTimeUtc, ticks, symbol, frozenEndUtc } = params;
+  const { direction, entryPrice, entryTimeUtc, ticks, symbol, frozenEndUtc, realisticGapFills = false } = params;
   const tp = direction === 'BUY' ? entryPrice + 10 : entryPrice - 10;
   const sl = direction === 'BUY' ? entryPrice - 10 : entryPrice + 10;
 
@@ -429,11 +442,12 @@ export function resolvePriceRace(params: ResolvePriceRaceParams): OutcomeResolut
    * ever traded there to cross anything — there is no "path" through a
    * closure to model, only a single discrete jump from the last
    * pre-closure price to the reopen candle's own open, and that reopen
-   * candle's wicks are checked for a TP/SL hit exactly like any other
-   * candle once this function returns 'clean' (including the existing
-   * same-candle-both-boundaries -> AMBIGUOUS path if the reopen candle's
-   * own range straddles both). An UNCONFIRMED window still requires tick
-   * coverage to rule out a hidden crossing, exactly as before.
+   * candle is then checked exactly like any other candle by the main loop
+   * below — OPEN first (resolves immediately if the reopen print alone
+   * already lies beyond a boundary), then high/low, then AMBIGUOUS only if
+   * the open was neutral and the range still straddles both. An
+   * UNCONFIRMED window still requires tick coverage to rule out a hidden
+   * crossing, exactly as before.
    */
   const tryGap = (gap: DataGap, windowEnd: Date): { kind: 'resolved'; outcome: OutcomeResolution } | { kind: 'clean' } | { kind: 'unresolved' } => {
     if (gap.kind === 'CONFIRMED_CLOSURE') return { kind: 'clean' };
@@ -457,6 +471,30 @@ export function resolvePriceRace(params: ResolvePriceRaceParams): OutcomeResolut
     }
 
     trackAdverse(direction === 'BUY' ? candle.low : candle.high);
+
+    // Reopening/gap-through fix: the candle's own OPEN print is the first
+    // price this candle actually offers — check it BEFORE the rest of the
+    // candle's high/low. If the open alone already lies beyond one
+    // boundary, that boundary was necessarily reached at-or-before this
+    // candle even opened, so the order is already known and must not be
+    // reclassified as ambiguous just because the candle's later range also
+    // reaches the opposite boundary (open cannot be beyond both at once —
+    // tp and sl sit on opposite sides of entryPrice by construction, so
+    // this check alone never itself needs disambiguating). Applies to any
+    // candle whose open gaps past a boundary, not only a reopen after a
+    // DataGap — a sudden real print can do the same thing.
+    const openBeyondTp = direction === 'BUY' ? candle.open >= tp : candle.open <= tp;
+    const openBeyondSl = direction === 'BUY' ? candle.open <= sl : candle.open >= sl;
+    if (openBeyondTp || openBeyondSl) {
+      const status = openBeyondTp ? 'WIN' : 'LOSS';
+      const nominalPrice = openBeyondTp ? tp : sl;
+      // Idealized always resolves at the exact nominal level (unchanged
+      // convention, matching idealEntryPrice on the entry side).
+      // Executable reflects the real print it gapped to — never a price
+      // that was never actually traded.
+      const price = realisticGapFills ? candle.open : nominalPrice;
+      return finalize(status, candle.openTime, price);
+    }
 
     const tpHit = direction === 'BUY' ? candle.high >= tp : candle.low <= tp;
     const slHit = direction === 'BUY' ? candle.low <= sl : candle.high >= sl;
@@ -547,6 +585,7 @@ export function resolveOutcome(params: {
     gaps,
     symbol,
     frozenEndUtc,
+    realisticGapFills: true,
   });
 
   const idealEnd = idealized.resolvedAtUtc ?? frozenEndUtc;
