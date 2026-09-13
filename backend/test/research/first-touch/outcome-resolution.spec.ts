@@ -349,3 +349,155 @@ describe('scenario 12 — re-processing identical input twice produces identical
     expect(run()).toEqual(run());
   });
 });
+
+describe('scenario 13 — the entry/touch candle is processed explicitly, not skipped', () => {
+  // The hypothetical entry happens the instant price first reaches the
+  // touch price, not at this candle's close — a TP or SL reached later in
+  // the SAME minute must be accounted for, and OHLC alone cannot always
+  // say whether it happened before or after entry.
+
+  it('the docstring example: BUY touch 4340, TP 4350, SL 4330, entry candle O=4345 H=4352 L=4338 C=4342 — AMBIGUOUS even though SL is never reached at all', () => {
+    // H (4352) clears TP, but O (4345) sits ABOVE the touch (4340), so price
+    // could have spiked up to 4352 BEFORE ever coming down to touch (TP hit
+    // pre-entry, doesn't count — the remaining path only reaches L=4338,
+    // never re-crossing TP, so the race would still be open after this
+    // candle) OR touched first and only THEN risen to 4352 (TP hit
+    // post-entry — WIN). Both are equally consistent with this OHLC row.
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4345, 4352, 4338, 4342);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('AMBIGUOUS');
+    expect(result.raceCandleUtc?.toISOString()).toBe(entryCandle.openTime.toISOString());
+  });
+
+  it('mirrored SELL case: touch 4340, TP 4330, SL 4350, entry candle O=4335 H=4342 L=4328 C=4338 — AMBIGUOUS, TP only reachable via a before/after-entry detour', () => {
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4335, 4342, 4328, 4338);
+
+    const result = resolvePriceRace({
+      direction: 'SELL', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('AMBIGUOUS');
+  });
+
+  it('a definite WIN established from OHLC despite the same before/after-entry detour shape: the close itself is already past TP, so both orderings agree', () => {
+    // Same shape as the docstring example (O above touch, H clears TP) but
+    // C (4351) is ALSO past TP — so even the "H was hit before entry"
+    // reading still finds TP reached again on the way to this close. Both
+    // hypotheses agree: this must resolve WIN, not be discarded as ambiguous.
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4341, 4355, 4335, 4351);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('WIN');
+    expect(result.resolvedAtUtc?.toISOString()).toBe(entryCandle.openTime.toISOString());
+    expect(result.resolutionPrice).toBe(4350);
+  });
+
+  it('a definite LOSS established from OHLC, mirrored: SL is reached immediately after entry in every ordering, before TP could ever be reached', () => {
+    // O is above touch (natural approach), and the immediate post-entry
+    // continuation toward L passes straight through SL (4330) before any
+    // detour to H could matter — SL sits BETWEEN the touch and L in both
+    // hypotheses, so it is always reached first regardless of order.
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4341, 4345, 4322, 4325);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('LOSS');
+    expect(result.resolutionPrice).toBe(4330);
+  });
+
+  it('opening exactly at the touch price with both boundaries reachable is the classic same-candle race — still AMBIGUOUS, no pre-entry detour needed to explain it', () => {
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4340, 4355, 4320, 4340);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('AMBIGUOUS');
+  });
+
+  it('opening exactly at the touch price with only ONE boundary ever reachable resolves cleanly — no ambiguity when there is nothing to be ambiguous about', () => {
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4340, 4345, 4325, 4335); // never reaches TP=4350
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('LOSS');
+  });
+
+  it('neither boundary reached in the entry candle: falls through and lets a later candle resolve the race, rather than getting stuck', () => {
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4341, 4348, 4335, 4344); // established NONE either way
+    const later = candle('2026-01-02T00:01:00.000Z', 4344, 4351, 4343, 4350); // clean WIN
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle, later], ticks: [], gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('WIN');
+    expect(result.resolvedAtUtc?.toISOString()).toBe(later.openTime.toISOString());
+  });
+
+  it('with ticks covering the entry candle, the actual sequence is used directly instead of the OHLC inference', () => {
+    // Same OHLC shape as the docstring example (would be AMBIGUOUS on OHLC
+    // alone), but ticks show SL was actually reached first.
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4345, 4352, 4338, 4342);
+    const ticks = [
+      tick('2026-01-02T00:00:10.000Z', 4340, 4340.2), // the touch
+      tick('2026-01-02T00:00:20.000Z', 4335, 4335.2),
+      tick('2026-01-02T00:00:30.000Z', 4330, 4330.2), // SL reached
+      tick('2026-01-02T00:00:40.000Z', 4352, 4352.2), // TP-side price only AFTER SL — irrelevant, already stopped out
+    ];
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks, gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('LOSS');
+    expect(result.resolvedAtUtc?.toISOString()).toBe('2026-01-02T00:00:30.000Z');
+  });
+
+  it('ticks entirely outside the entry candle (an earlier or later window) never substitute for real entry-candle tick coverage — still falls back to the OHLC inference', () => {
+    const entryCandle = candle('2026-01-02T00:00:00.000Z', 4345, 4352, 4338, 4342);
+    const ticks = [
+      tick('2026-01-01T23:59:00.000Z', 4360, 4360.2), // an entirely earlier minute, not this candle
+      tick('2026-01-02T00:05:00.000Z', 4300, 4300.2), // an entirely later minute, not this candle
+    ];
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 4340, entryTimeUtc: ENTRY_TIME,
+      candles: [entryCandle], ticks, gaps: [], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    // No ticks fall inside [entryCandle.openTime, entryCandle.closeTime), so
+    // this must fall back to the OHLC inference (AMBIGUOUS for this same
+    // shape as the docstring example), never borrow a tick from outside
+    // this candle's own window.
+    expect(result.status).toBe('AMBIGUOUS');
+  });
+});

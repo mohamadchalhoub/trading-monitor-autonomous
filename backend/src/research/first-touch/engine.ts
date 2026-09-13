@@ -359,6 +359,100 @@ export interface ResolvePriceRaceParams {
 }
 
 /**
+ * What a single candle's OHLC actually establishes about a TP/SL race,
+ * given no tick coverage — used for the entry/touch candle (where the
+ * "entry" happens mid-candle, at `touchPrice`, not at the candle's own
+ * open) and, in principle, any other single candle once entry is behind it
+ * (`touchPrice: null` — the candle's own open is already past entry).
+ *
+ * OHLC alone never records whether a candle's high or low happened first,
+ * so this evaluates BOTH standard hypotheses independently — open then
+ * high then low then close, and open then low then high then close — each
+ * one locating the touch (the first point along that hypothesis' path that
+ * reaches `touchPrice`, or immediately at the candle's own open when
+ * `touchPrice` is null) and then checking only what happens AFTER that
+ * point for a TP/SL crossing. A boundary already decided at the touch
+ * instant itself (open beyond a level once entry is behind it — the
+ * reopening/gap-through case) resolves identically under both hypotheses,
+ * so that alone is never ambiguous. The two hypotheses are compared only
+ * at the end: agreement is a real, determinate result (including "neither
+ * boundary reached" — genuinely nothing to report, continue racing);
+ * disagreement is AMBIGUOUS. Critically, disagreement can happen even
+ * when only ONE boundary is ever in the candle's range at all — the
+ * question is not "were both reachable" but "could that one boundary have
+ * been reached before OR after the touch," which depends on where the
+ * unreachable-from-OHLC-alone excursion to the opposite extreme falls.
+ */
+function resolveOhlcCandle(params: {
+  open: number; high: number; low: number; close: number;
+  direction: EntryDirection;
+  touchPrice: number | null;
+  tp: number; sl: number;
+}): 'WIN' | 'LOSS' | 'NONE' | 'AMBIGUOUS' {
+  const { open, high, low, close, direction, touchPrice, tp, sl } = params;
+  // Working in a "sign-normalized" axis where the favorable direction is
+  // always increasing collapses BUY/SELL into one piece of logic instead
+  // of doubling every comparison — tp is always the larger signed value,
+  // sl always the smaller, regardless of which real-world direction that
+  // corresponds to.
+  const sign = direction === 'BUY' ? 1 : -1;
+  const s = (v: number) => v * sign;
+  const sTp = s(tp);
+  const sSl = s(sl);
+
+  const startPrice = touchPrice ?? open;
+  const sStart = s(startPrice);
+  // Decisive at the touch instant itself (only possible when touchPrice is
+  // null, i.e. entry already happened in an earlier candle and THIS
+  // candle's own open is the reopening/gap print) — identical under both
+  // hypotheses by construction, so resolved before any path-walk at all.
+  if (sStart >= sTp) return 'WIN';
+  if (sStart <= sSl) return 'LOSS';
+
+  function firstBoundary(a: number, b: number): 'TP' | 'SL' | null {
+    const sa = s(a);
+    const sb = s(b);
+    const increasing = sb >= sa;
+    const passes = (level: number) => (increasing ? level >= sa && level <= sb : level <= sa && level >= sb);
+    const tpOk = passes(sTp);
+    const slOk = passes(sSl);
+    if (!tpOk && !slOk) return null;
+    if (tpOk && !slOk) return 'TP';
+    if (slOk && !tpOk) return 'SL';
+    // Both fall on this one monotonic leg — whichever this direction of
+    // travel reaches first (tp and sl are never on the same side of the
+    // touch, so this is well-defined, not itself a source of ambiguity).
+    return increasing ? (sTp < sSl ? 'TP' : 'SL') : (sTp > sSl ? 'TP' : 'SL');
+  }
+
+  function walk(knots: number[]): 'WIN' | 'LOSS' | 'NONE' {
+    let touched = touchPrice == null;
+    for (let i = 0; i < knots.length - 1; i++) {
+      let a = knots[i];
+      const b = knots[i + 1];
+      if (!touched) {
+        const sa = s(a);
+        const sb = s(b);
+        const sTouch = s(touchPrice as number);
+        const increasing = sb >= sa;
+        const crosses = increasing ? sTouch >= sa && sTouch <= sb : sTouch <= sa && sTouch >= sb;
+        if (!crosses) continue;
+        touched = true;
+        a = touchPrice as number;
+      }
+      const hit = firstBoundary(a, b);
+      if (hit === 'TP') return 'WIN';
+      if (hit === 'SL') return 'LOSS';
+    }
+    return 'NONE';
+  }
+
+  const outcomeHighFirst = walk([open, high, low, close]);
+  const outcomeLowFirst = walk([open, low, high, close]);
+  return outcomeHighFirst === outcomeLowFirst ? outcomeHighFirst : 'AMBIGUOUS';
+}
+
+/**
  * The core TP/SL race, reused for both the idealized and executable paths
  * (each with its own entry price -> its own TP/SL, and the executable call
  * additionally passing `realisticGapFills: true`). Uses candle WICKS
@@ -376,9 +470,11 @@ export function resolvePriceRace(params: ResolvePriceRaceParams): OutcomeResolut
     .filter((g) => g.symbol === symbol)
     .sort((a, b) => a.start.getTime() - b.start.getTime());
 
-  const sortedCandles = [...params.candles]
-    .filter((c) => c.openTime.getTime() > entryTimeUtc.getTime() && c.openTime.getTime() < frozenEndUtc.getTime())
-    .sort((a, b) => a.openTime.getTime() - b.openTime.getTime());
+  const allSorted = [...params.candles].sort((a, b) => a.openTime.getTime() - b.openTime.getTime());
+  const entryCandle = allSorted.find((c) => c.openTime.getTime() === entryTimeUtc.getTime()) ?? null;
+  const sortedCandles = allSorted.filter(
+    (c) => c.openTime.getTime() > entryTimeUtc.getTime() && c.openTime.getTime() < frozenEndUtc.getTime(),
+  );
 
   let worstAdverse = 0;
   const trackAdverse = (price: number) => {
@@ -459,7 +555,42 @@ export function resolvePriceRace(params: ResolvePriceRaceParams): OutcomeResolut
     return { kind: 'clean' };
   };
 
-  let cursor = entryTimeUtc;
+  // Process the entry/touch candle explicitly — the hypothetical entry
+  // happens the instant price first reaches `entryPrice`, not at this
+  // candle's close, so a TP or SL reached later in the SAME minute must
+  // not be silently skipped just because `sortedCandles` above only
+  // starts strictly after this candle. See resolveOhlcCandle's own
+  // docstring for how OHLC-only ambiguity is actually decided here,
+  // rather than assumed whenever both boundaries merely exist somewhere
+  // in the candle.
+  if (entryCandle && entryCandle.openTime.getTime() < frozenEndUtc.getTime()) {
+    // entryTimeUtc === entryCandle.openTime always (that's how entryCandle
+    // was found above), so ticksWithin's own [openTime, closeTime) bound
+    // already excludes anything before the touch — no separate filter needed.
+    const entryCandleTicks = ticksWithin(ticks, entryCandle.openTime, entryCandle.closeTime);
+    if (entryCandleTicks.length > 0) {
+      // Ticks establish the actual sequence directly — no inference needed.
+      const crossing = scanTicksForCrossing(entryCandleTicks, direction, tp, sl);
+      for (const t of entryCandleTicks) trackAdverse(direction === 'BUY' ? t.bid : t.ask);
+      if (crossing) return finalize(crossing.status, crossing.atUtc, crossing.price);
+      // Ticks covered the remainder of this candle and showed no crossing — fall through and keep racing.
+    } else {
+      const ohlcResult = resolveOhlcCandle({
+        open: entryCandle.open, high: entryCandle.high, low: entryCandle.low, close: entryCandle.close,
+        direction, touchPrice: entryPrice, tp, sl,
+      });
+      if (ohlcResult === 'WIN') return finalize('WIN', entryCandle.openTime, tp);
+      if (ohlcResult === 'LOSS') return finalize('LOSS', entryCandle.openTime, sl);
+      if (ohlcResult === 'AMBIGUOUS') return ambiguous(entryCandle.openTime);
+      // 'NONE' — OHLC establishes neither boundary was reached after entry; fall through and keep racing.
+    }
+  }
+
+  // The entry candle (if present and not returned above) is now fully
+  // accounted for — advance the gap-scan cursor past its own close so the
+  // main loop below never re-examines the span the entry candle itself
+  // already covers.
+  let cursor = entryCandle ? entryCandle.closeTime : entryTimeUtc;
 
   for (const candle of sortedCandles) {
     const gap = findOverlappingGap(relevantGaps, symbol, cursor, candle.openTime);
