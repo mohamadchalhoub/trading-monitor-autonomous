@@ -134,6 +134,36 @@ describe('scenario 9 — a pre-touch data gap forces first-touch eligibility to 
   });
 });
 
+describe('wick-based (not body-only) first touch — corrected 2026-09-13 after a real XAUUSD discrepancy', () => {
+  it('counts a candle whose WICK reaches the zone even though its BODY never does, as the real regression: XAUUSD SUPPORT 2326.17, 2024-04-29 04:00 UTC candle O=2332.03 H=2332.03 L=2324.11 C=2327.81 (body [2327.81, 2332.03] never reaches 2326.17, but the low does)', () => {
+    const source = h4Candle('2024-04-26T16:00:00.000Z', 2344.91, 2350.35, 2328.72, 2333.6);
+    const level = createLevel({ id: 'lvl', role: 'SUPPORT', price: 2326.17, sourceCandles: [source], establishedAt: source.closeTime, methodVersion: 'v1' });
+
+    const bodyMissesButWickReaches = candle('2024-04-29T04:00:00.000Z', 2332.03, 2332.03, 2324.11, 2327.81);
+    const laterBodyTouch = candle('2024-04-29T04:15:00.000Z', 2326.49, 2326.49, 2322.4, 2322.87);
+
+    const detection = findFirstTouch({
+      level,
+      candles: [source, bodyMissesButWickReaches, laterBodyTouch],
+      gaps: [],
+      symbol: SYMBOL,
+    });
+
+    expect(detection.status).toBe('TOUCHED');
+    expect(detection.touchCandle?.openTime.toISOString()).toBe(bodyMissesButWickReaches.openTime.toISOString());
+    expect(detection.touchCandle?.openTime.toISOString()).not.toBe(laterBodyTouch.openTime.toISOString());
+  });
+
+  it('still finds nothing when neither body nor wick ever reaches the zone', () => {
+    const source = h4Candle('2026-01-05T00:00:00.000Z', 2000, 2010, 1995, 2005);
+    const level = createLevel({ id: 'lvl', role: 'SUPPORT', price: 1900, sourceCandles: [source], establishedAt: source.closeTime, methodVersion: 'v1' });
+    const neverClose = candle('2026-01-06T05:00:00.000Z', 2005, 2006, 1994, 1996);
+
+    const detection = findFirstTouch({ level, candles: [source, neverClose], gaps: [], symbol: SYMBOL });
+    expect(detection.status).toBe('NOT_TOUCHED');
+  });
+});
+
 describe('scenario 4 (detection half) — a level is unusable before its own establishedAt', () => {
   it('ignores a zone-intersecting candle that occurs BEFORE establishedAt, and finds the real, later first touch instead', () => {
     const source = h4Candle('2026-01-05T00:00:00.000Z', 2000, 2010, 1995, 2005);

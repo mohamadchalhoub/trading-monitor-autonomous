@@ -147,12 +147,32 @@ export function isLevelActiveAt(level: Level, atUtc: Date): boolean {
 // First-touch detection.
 // ---------------------------------------------------------------------------
 
-function bodyRange(candle: Candle): { low: number; high: number } {
-  return { low: Math.min(candle.open, candle.close), high: Math.max(candle.open, candle.close) };
+/**
+ * Corrected 2026-09-13 — first-touch detection now uses the candle's WICK
+ * (high/low), not its body. It was previously body-only, which produced a
+ * real, user-caught discrepancy: XAUUSD SUPPORT 2326.17 on 2024-04-29, the
+ * 04:00 UTC M1 candle (O=2332.03 H=2332.03 L=2324.11 C=2327.81) prints a low
+ * of 2324.11 — through the level — but its body [2327.81, 2332.03] never
+ * reaches 2326.17, so the old body-only check silently skipped it and
+ * reported the 04:15 candle as "the" first touch instead, 15 minutes late.
+ * That is inconsistent with two other facts already true elsewhere in this
+ * pipeline: (1) `PROPOSED_SWING_DETECTOR` itself derives a level's PRICE
+ * from a wick extreme (`pivot.high`/`pivot.low`), never a body extreme; (2)
+ * `resolvePriceRace` below fills TP/SL off wicks specifically because "a
+ * real TP/SL order fills the instant price reaches it, it does not wait for
+ * a candle to close beyond it" — the identical logic applies to a resting
+ * limit/stop entry order sitting at a support/resistance price: it fills
+ * the instant the wick reaches it, not when some later candle's body does.
+ * Body-only touch detection had no comparable justification in this
+ * codebase; wick-based is the consistent choice across level construction,
+ * entry, and exit.
+ */
+function wickRange(candle: Candle): { low: number; high: number } {
+  return { low: candle.low, high: candle.high };
 }
 
-function bodyIntersectsZone(candle: Candle, zone: LevelZone): boolean {
-  const { low, high } = bodyRange(candle);
+function wickIntersectsZone(candle: Candle, zone: LevelZone): boolean {
+  const { low, high } = wickRange(candle);
   return high >= zone.lower && low <= zone.upper;
 }
 
@@ -200,7 +220,7 @@ export function findFirstTouch(params: {
       scanEndReason = 'LEVEL_DEACTIVATED';
       break;
     }
-    if (bodyIntersectsZone(candle, zone)) {
+    if (wickIntersectsZone(candle, zone)) {
       candidate = candle;
       break;
     }
@@ -527,10 +547,11 @@ function resolveOhlcCandle(params: {
  * The core TP/SL race, reused for both the idealized and executable paths
  * (each with its own entry price -> its own TP/SL, and the executable call
  * additionally passing `realisticGapFills: true`). Uses candle WICKS
- * (high/low), not bodies — this is a stop/limit order fill model, a
- * deliberately different rule from the body-only first-touch detection
- * above (a real TP/SL order fills the instant price reaches it, it does
- * not wait for a candle to close beyond it).
+ * (high/low), not bodies — this is a stop/limit order fill model (a real
+ * TP/SL order fills the instant price reaches it, it does not wait for a
+ * candle to close beyond it). First-touch detection above now uses the same
+ * wick-based rule, for the same reason — see `wickIntersectsZone`'s
+ * docstring.
  */
 export function resolvePriceRace(params: ResolvePriceRaceParams): OutcomeResolution {
   const { direction, entryPrice, entryTimeUtc, ticks, symbol, frozenEndUtc, realisticGapFills = false } = params;
