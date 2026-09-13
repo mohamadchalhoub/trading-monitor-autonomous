@@ -129,9 +129,9 @@ describe('scenario 8 — same-M1-candle race is AMBIGUOUS without ticks, resolve
 });
 
 describe('scenario 10 — a post-entry data gap forces INDETERMINATE, even when the first visible price after the gap is already beyond TP', () => {
-  it('never takes the forbidden shortcut of inferring a WIN just because price is beyond TP right after the gap', () => {
+  it('never takes the forbidden shortcut of inferring a WIN just because price is beyond TP right after the gap (UNCONFIRMED gap)', () => {
     const clean = candle('2026-01-02T00:01:00.000Z', 2000, 2002, 1998, 2001); // ordinary, resolves nothing
-    const gap: DataGap = { symbol: SYMBOL, start: clean.closeTime, end: new Date('2026-01-02T06:00:00.000Z') };
+    const gap: DataGap = { symbol: SYMBOL, start: clean.closeTime, end: new Date('2026-01-02T06:00:00.000Z'), kind: 'UNCONFIRMED' };
     // First visible candle after the gap: already beyond TP (2010) on its low, let alone its high.
     // The forbidden shortcut would read this as an obvious WIN — the correct answer is INDETERMINATE,
     // because the untracked path through the gap could just as easily have crossed SL (1990) first.
@@ -151,7 +151,7 @@ describe('scenario 10 — a post-entry data gap forces INDETERMINATE, even when 
 
   it('resolves normally through the same gap when tick data actually covers it', () => {
     const clean = candle('2026-01-02T00:01:00.000Z', 2000, 2002, 1998, 2001);
-    const gap: DataGap = { symbol: SYMBOL, start: clean.closeTime, end: new Date('2026-01-02T06:00:00.000Z') };
+    const gap: DataGap = { symbol: SYMBOL, start: clean.closeTime, end: new Date('2026-01-02T06:00:00.000Z'), kind: 'UNCONFIRMED' };
     const afterGap = candle('2026-01-02T06:00:00.000Z', 2015, 2020, 2011, 2018);
     const ticksThroughGap = [
       tick('2026-01-02T02:00:00.000Z', 1995, 1996),
@@ -166,6 +166,44 @@ describe('scenario 10 — a post-entry data gap forces INDETERMINATE, even when 
 
     expect(result.status).toBe('WIN');
     expect(result.resolvedAtUtc?.toISOString()).toBe('2026-01-02T04:00:00.000Z');
+  });
+
+  it('resolves normally off the reopen candle\'s own wicks across a CONFIRMED_CLOSURE, with no tick requirement', () => {
+    const clean = candle('2026-01-02T00:01:00.000Z', 2000, 2002, 1998, 2001);
+    // A verified-shut weekend/holiday closure — no trading happened inside it by definition, so there is
+    // no hidden path to worry about, only the single discrete jump from `clean`'s close to `reopen`'s open.
+    const closure: DataGap = { symbol: SYMBOL, start: clean.closeTime, end: new Date('2026-01-02T06:00:00.000Z'), kind: 'CONFIRMED_CLOSURE' };
+    // Reopens beyond TP (2010) on its low — since the closure is CONFIRMED, this is resolved directly off
+    // this candle's own wicks (a real, single reopen-gap jump), never treated as INDETERMINATE.
+    const reopen = candle('2026-01-02T06:00:00.000Z', 2015, 2020, 2011, 2018);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 2000, entryTimeUtc: ENTRY_TIME,
+      candles: [clean, reopen], ticks: [], gaps: [closure], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('WIN');
+    expect(result.resolvedAtUtc?.toISOString()).toBe(reopen.openTime.toISOString());
+    expect(result.resolutionPrice).toBe(2010); // TP price, not the reopen print — the fill model is a stop/limit order, filled at its own price
+  });
+
+  it('still marks the reopen AMBIGUOUS (never guesses) when the single reopen jump itself straddles both TP and SL', () => {
+    const clean = candle('2026-01-02T00:01:00.000Z', 2000, 2002, 1998, 2001);
+    const closure: DataGap = { symbol: SYMBOL, start: clean.closeTime, end: new Date('2026-01-02T06:00:00.000Z'), kind: 'CONFIRMED_CLOSURE' };
+    // Reopens with a huge range spanning BOTH TP (2010) and SL (1990) inside one candle — the closure being
+    // confirmed tells us nothing traded during it, but says nothing about which boundary this one visible
+    // reopen candle reached first, so this must still be AMBIGUOUS, not resolved by guessing.
+    const reopen = candle('2026-01-02T06:00:00.000Z', 2000, 2015, 1985, 2005);
+
+    const result = resolvePriceRace({
+      direction: 'BUY', entryPrice: 2000, entryTimeUtc: ENTRY_TIME,
+      candles: [clean, reopen], ticks: [], gaps: [closure], symbol: SYMBOL,
+      frozenEndUtc: new Date('2026-01-03T00:00:00.000Z'),
+    });
+
+    expect(result.status).toBe('AMBIGUOUS');
+    expect(result.raceCandleUtc?.toISOString()).toBe(reopen.openTime.toISOString());
   });
 });
 

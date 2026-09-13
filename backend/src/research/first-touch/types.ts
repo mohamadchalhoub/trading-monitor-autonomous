@@ -46,12 +46,34 @@ export interface Tick {
 // BackfillInterval ledger elsewhere in this project; here, just a plain param).
 // ---------------------------------------------------------------------------
 
+/**
+ * CONFIRMED_CLOSURE: independently verified the broker session was
+ * genuinely shut for this entire window — no trading could have happened,
+ * so nothing (a hidden touch, a hidden TP/SL crossing) can be concealed
+ * inside it. UNCONFIRMED: candles are simply missing and the cause is not
+ * established — the session could have been open with real price movement
+ * this dataset never captured, so anything that could hide inside it must
+ * still be treated as unknown.
+ *
+ * A calendar date (ordinary weekend, a known holiday) and a last-observed
+ * tick/candle immediately before the gap are corroborating evidence for
+ * CONFIRMED_CLOSURE, never sufficient alone — the caller building these
+ * (the study's data adapter, not this engine) is responsible for only
+ * setting CONFIRMED_CLOSURE when it actually has that corroboration (e.g.
+ * cross-checked against the BackfillInterval ledger's own EMPTY_CONFIRMED
+ * status, or a closure pattern independently repeating across multiple
+ * unrelated years). This engine trusts whatever `kind` it's given; it does
+ * not re-derive confirmation itself.
+ */
+export type DataGapKind = 'CONFIRMED_CLOSURE' | 'UNCONFIRMED';
+
 export interface DataGap {
   symbol: string;
   /** UTC, inclusive. */
   start: Date;
   /** UTC, exclusive. */
   end: Date;
+  kind: DataGapKind;
 }
 
 // ---------------------------------------------------------------------------

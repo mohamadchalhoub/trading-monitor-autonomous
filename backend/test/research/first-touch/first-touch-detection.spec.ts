@@ -86,12 +86,12 @@ describe('scenario 3 — Beirut DST boundary correctness for the 04:00-12:00 win
 });
 
 describe('scenario 9 — a pre-touch data gap forces first-touch eligibility to UNKNOWN, never a false NOT_TOUCHED/TOUCHED', () => {
-  it('marks UNKNOWN when a declared gap could have concealed an earlier touch', () => {
+  it('marks UNKNOWN when an UNCONFIRMED gap could have concealed an earlier touch', () => {
     const source = h4Candle('2026-01-01T00:00:00.000Z', 2000, 2010, 1995, 2005);
     const level = createLevel({ id: 'lvl', role: 'SUPPORT', price: 2000, sourceCandles: [source], establishedAt: source.closeTime, methodVersion: 'v1' });
 
-    // No data at all for ~2 days right after establishment.
-    const gap: DataGap = { symbol: SYMBOL, start: level.establishedAt, end: new Date('2026-01-03T00:00:00.000Z') };
+    // No data at all for ~2 days right after establishment, cause unknown.
+    const gap: DataGap = { symbol: SYMBOL, start: level.establishedAt, end: new Date('2026-01-03T00:00:00.000Z'), kind: 'UNCONFIRMED' };
     // The first candle we DO have is well after the gap and touches the zone.
     const candidate = candle('2026-01-03T05:00:00.000Z', 2005, 2006, 1994, 1996);
 
@@ -111,10 +111,26 @@ describe('scenario 9 — a pre-touch data gap forces first-touch eligibility to 
     const level = createLevel({ id: 'lvl', role: 'SUPPORT', price: 2000, sourceCandles: [source], establishedAt: source.closeTime, methodVersion: 'v1' });
     const candidate = candle('2026-01-03T05:00:00.000Z', 2005, 2006, 1994, 1996);
     // A gap that is entirely AFTER the candidate touch is irrelevant to it.
-    const irrelevantGap: DataGap = { symbol: SYMBOL, start: new Date('2026-01-10T00:00:00.000Z'), end: new Date('2026-01-11T00:00:00.000Z') };
+    const irrelevantGap: DataGap = { symbol: SYMBOL, start: new Date('2026-01-10T00:00:00.000Z'), end: new Date('2026-01-11T00:00:00.000Z'), kind: 'UNCONFIRMED' };
 
     const detection = findFirstTouch({ level, candles: [source, candidate], gaps: [irrelevantGap], symbol: SYMBOL });
     expect(detection.status).toBe('TOUCHED');
+  });
+
+  it('does NOT mark UNKNOWN across a CONFIRMED_CLOSURE gap — a verified-shut session conceals nothing', () => {
+    const source = h4Candle('2026-01-01T00:00:00.000Z', 2000, 2010, 1995, 2005);
+    const level = createLevel({ id: 'lvl', role: 'SUPPORT', price: 2000, sourceCandles: [source], establishedAt: source.closeTime, methodVersion: 'v1' });
+
+    // An ordinary weekend closure, independently verified shut (e.g. corroborated by the BackfillInterval ledger) — not merely inferred from the calendar.
+    const weekendClosure: DataGap = { symbol: SYMBOL, start: level.establishedAt, end: new Date('2026-01-03T00:00:00.000Z'), kind: 'CONFIRMED_CLOSURE' };
+    const candidate = candle('2026-01-03T05:00:00.000Z', 2005, 2006, 1994, 1996);
+
+    const detection = findFirstTouch({ level, candles: [source, candidate], gaps: [weekendClosure], symbol: SYMBOL });
+
+    expect(detection.status).toBe('TOUCHED');
+    expect(detection.concealingGap).toBeNull();
+    const event = buildTouchEvent({ level, detection, candles: [source, candidate], symbol: SYMBOL });
+    expect(event).not.toBeNull();
   });
 });
 

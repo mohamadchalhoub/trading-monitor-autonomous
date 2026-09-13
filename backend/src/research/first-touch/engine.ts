@@ -208,7 +208,15 @@ export function findFirstTouch(params: {
   }
 
   const rangeEnd = candidate ? candidate.openTime : scannedThroughUtc;
-  const concealingGap = findOverlappingGap(gaps, symbol, level.establishedAt, rangeEnd);
+  const overlappingGap = findOverlappingGap(gaps, symbol, level.establishedAt, rangeEnd);
+  // A CONFIRMED_CLOSURE gap conceals nothing — the session was verified
+  // shut, so no touch could have happened invisibly inside it, and
+  // scanning safely continues through the reopen candle on its own visible
+  // data (that candle's body-intersects-zone check above already handles
+  // a gapped-through reopen correctly: a body that skips the zone entirely
+  // is correctly not a touch). Only an UNCONFIRMED gap — cause unknown,
+  // session might have been open — must still force UNKNOWN.
+  const concealingGap = overlappingGap && overlappingGap.kind === 'UNCONFIRMED' ? overlappingGap : null;
 
   if (concealingGap) {
     return { status: 'UNKNOWN', touchCandle: candidate, scanEndReason, scannedThroughUtc, concealingGap };
@@ -408,8 +416,27 @@ export function resolvePriceRace(params: ResolvePriceRaceParams): OutcomeResolut
     concealingGap: null,
   });
 
-  /** Attempts to cross a [start, end) window using ticks. Returns 'resolved' (already finalized into `outcome`), 'clean' (ticks covered it, no crossing — caller should advance past it), or 'unresolved' (no tick coverage — caller must treat as INDETERMINATE). */
+  /**
+   * Attempts to cross a [start, end) window. Returns 'resolved' (already
+   * finalized into `outcome`), 'clean' (no crossing could have happened —
+   * caller should advance past it and let the reopen candle's own
+   * high/low be checked normally by the main per-candle loop below), or
+   * 'unresolved' (cause of the gap is not established — caller must treat
+   * as INDETERMINATE rather than guess).
+   *
+   * A CONFIRMED_CLOSURE window is 'clean' unconditionally, with no tick
+   * requirement: the session was verified shut, so by definition no price
+   * ever traded there to cross anything — there is no "path" through a
+   * closure to model, only a single discrete jump from the last
+   * pre-closure price to the reopen candle's own open, and that reopen
+   * candle's wicks are checked for a TP/SL hit exactly like any other
+   * candle once this function returns 'clean' (including the existing
+   * same-candle-both-boundaries -> AMBIGUOUS path if the reopen candle's
+   * own range straddles both). An UNCONFIRMED window still requires tick
+   * coverage to rule out a hidden crossing, exactly as before.
+   */
   const tryGap = (gap: DataGap, windowEnd: Date): { kind: 'resolved'; outcome: OutcomeResolution } | { kind: 'clean' } | { kind: 'unresolved' } => {
+    if (gap.kind === 'CONFIRMED_CLOSURE') return { kind: 'clean' };
     const coveringTicks = ticksWithin(ticks, gap.start, gap.end.getTime() < windowEnd.getTime() ? gap.end : windowEnd);
     if (coveringTicks.length === 0) return { kind: 'unresolved' };
     const crossing = scanTicksForCrossing(coveringTicks, direction, tp, sl);
