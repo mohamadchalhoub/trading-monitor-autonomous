@@ -1,5 +1,8 @@
 /**
- * scripts/first-touch-study.ts — NOT YET RUNNABLE.
+ * scripts/first-touch-study.ts — NOT YET RUNNABLE. SUPERSEDED (2026-09-14)
+ * by `scripts/confirmed-retest-study.ts` (`xauusd-h4-confirmed-retest-v1`);
+ * see src/research/confirmed-retest/ENGINE_AUDIT.md for why this engine's
+ * earlier results must not be cited.
  *
  * Entry-point stub for the eventual XAUUSD (gold) "first-touch" hypothesis
  * study. The engine (`src/research/first-touch/engine.ts`) and statistics
