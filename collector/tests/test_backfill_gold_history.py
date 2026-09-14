@@ -249,6 +249,18 @@ def test_run_returns_nonzero_and_skips_ticks_when_stopped_for_resources(monkeypa
     job.client.get_ticks.assert_not_called()
 
 
+def test_candles_only_never_enters_the_tick_backfill(monkeypatch, tmp_path):
+    job = _job(local_path=str(tmp_path), candles_only=True)
+    job.client.get_instrument_verification.return_value = {}
+    ran = []
+    monkeypatch.setattr(job, "run_candle_timeframe", lambda tf: ran.append(tf))
+    monkeypatch.setattr(job, "run_ticks", lambda: (_ for _ in ()).throw(AssertionError("tick backfill must not run")))
+
+    assert job.run() == 0
+    assert "M1" in ran and "H4" in ran and "D1" in ran
+    job.client.get_ticks.assert_not_called()
+
+
 # -- EMPTY_UNCONFIRMED -> one independent recheck -> EMPTY_CONFIRMED ---------
 
 def test_empty_candle_response_is_unconfirmed_then_confirmed_after_one_recheck(tmp_path):

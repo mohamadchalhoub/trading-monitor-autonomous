@@ -220,6 +220,9 @@ class GoldBackfillJob:
     candle_fetch_chunk_days: int = CANDLE_FETCH_CHUNK_DAYS_DEFAULT
     candle_push_batch_size: int = CANDLE_PUSH_BATCH_SIZE_DEFAULT
     local_path: str = "."
+    # `--candles-only`: refresh candle history without re-entering the tick
+    # backfill, whose MT5 calls have been failing ("Terminal: Call failed").
+    candles_only: bool = False
 
     def __post_init__(self) -> None:
         self._tick_chunk_days = TICK_INITIAL_CHUNK_DAYS
@@ -246,7 +249,9 @@ class GoldBackfillJob:
                 break
             self.run_candle_timeframe(timeframe)
 
-        if not self._stopped_for_resources:
+        if self.candles_only:
+            logger.warning("TICK BACKFILL SKIPPED (--candles-only)", extra={"symbol": self.symbol})
+        elif not self._stopped_for_resources:
             self.run_ticks()
 
         self.print_summary()
@@ -807,6 +812,7 @@ def main() -> int:
         candle_fetch_chunk_days=CANDLE_FETCH_CHUNK_DAYS,
         candle_push_batch_size=CANDLE_PUSH_BATCH_SIZE,
         local_path=str(Path(__file__).resolve().parent),
+        candles_only="--candles-only" in sys.argv[1:],
     )
 
     try:

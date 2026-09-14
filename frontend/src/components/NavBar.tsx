@@ -57,6 +57,14 @@ export function NavBar() {
             Market Charts
           </Link>
           <Link
+            href="/research/xauusd-confirmed-retest"
+            className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
+              pathname.startsWith("/research") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"
+            }`}
+          >
+            Gold Retest Research
+          </Link>
+          <Link
             href="/health"
             className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
               pathname.startsWith("/health") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"

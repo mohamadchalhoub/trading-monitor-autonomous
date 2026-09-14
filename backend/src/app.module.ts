@@ -17,6 +17,7 @@ import { HistoricalChartsModule } from './historical-charts/historical-charts.mo
 import { XtbImportModule } from './xtb-import/xtb-import.module';
 import { AutonomousModule } from './autonomous/autonomous.module';
 import { TrendBreakoutModule } from './trend-breakout/trend-breakout.module';
+import { ConfirmedRetestDashboardModule } from './research/confirmed-retest-dashboard/confirmed-retest.controller';
 import { AppController } from './app.controller';
 
 @Module({
@@ -39,6 +40,7 @@ import { AppController } from './app.controller';
     HistoricalChartsModule,
     AutonomousModule,
     TrendBreakoutModule,
+    ConfirmedRetestDashboardModule,
   ],
   controllers: [AppController],
 })

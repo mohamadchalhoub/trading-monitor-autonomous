@@ -27,6 +27,7 @@ export type Decision =
   | 'STOP_RISK_EXCEEDS_0_5_PCT'
   | 'COMBINED_RISK_EXCEEDS_1_PCT'
   | 'SPREAD_ASSUMPTION_EXCEEDS_1_USD'
+  | 'QUOTE_GATE_FAILED'
   | 'BRANCH_HALTED';
 
 export interface PaperTrade {
@@ -76,17 +77,23 @@ export interface PaperInput {
   endT: number;
   balance: BalanceScenario;
   cost: CostScenario;
+  /** User-set volume (watch-only, audited); defaults to the frozen 0.01 lot. Never changed by this module. */
+  volumeLots?: number;
+  /** Watch-only shadow track: true when the quote gate rejected this event at decision time (skip and consume). */
+  entryVeto?: (event: FirstReturnEvent) => boolean;
 }
 
 const USD_PER_UNIT_PER_LOT_OZ = 0.01;
 
-function lotsOz(): number {
-  return SPEC.paper.volumeLots * SPEC.paper.contractSizeOz;
+function lotsOz(volumeLots: number): number {
+  return volumeLots * SPEC.paper.contractSizeOz;
 }
 
-function pnlUsd(direction: 'BUY' | 'SELL', entry: Units, price: Units): number {
-  return (direction === 'BUY' ? price - entry : entry - price) * USD_PER_UNIT_PER_LOT_OZ * lotsOz();
+function pnlUsd(direction: 'BUY' | 'SELL', entry: Units, price: Units, volumeLots: number): number {
+  return (direction === 'BUY' ? price - entry : entry - price) * USD_PER_UNIT_PER_LOT_OZ * lotsOz(volumeLots);
 }
+
+const volumeOf = (input: PaperInput) => input.volumeLots ?? SPEC.paper.volumeLots;
 
 function lowerBound(bars: EvalBar[], t: number): number {
   let lo = 0;
@@ -111,14 +118,14 @@ function swapNights(entryT: number, exitT: number): number {
   return nights;
 }
 
-function tradeCosts(cost: CostScenario, direction: 'BUY' | 'SELL', alt: OutcomeAlternative, entryT: number, exitEndT: number) {
-  const spread = cost.spreadUsdPerOz * lotsOz();
-  const commission = cost.commissionUsdPerLotRoundTrip * SPEC.paper.volumeLots;
-  const slippage = alt.result === 'LOSS' || alt.exitType === 'GAP_OPEN' ? cost.stopAndGapSlippageUsdPerOz * lotsOz() : 0;
+function tradeCosts(cost: CostScenario, direction: 'BUY' | 'SELL', alt: OutcomeAlternative, entryT: number, exitEndT: number, volumeLots: number) {
+  const spread = cost.spreadUsdPerOz * lotsOz(volumeLots);
+  const commission = cost.commissionUsdPerLotRoundTrip * volumeLots;
+  const slippage = alt.result === 'LOSS' || alt.exitType === 'GAP_OPEN' ? cost.stopAndGapSlippageUsdPerOz * lotsOz(volumeLots) : 0;
   let swap = 0;
   if (cost.swap === 'CURRENT_BROKER_SWAP_AS_PROXY') {
     const points = direction === 'BUY' ? SPEC.swapProxy.longPointsPerLotNight : SPEC.swapProxy.shortPointsPerLotNight;
-    swap = swapNights(entryT, exitEndT) * points * SPEC.swapProxy.pointUsd * SPEC.paper.contractSizeOz * SPEC.paper.volumeLots;
+    swap = swapNights(entryT, exitEndT) * points * SPEC.swapProxy.pointUsd * SPEC.paper.contractSizeOz * volumeLots;
   }
   return { spread, commission, slippage, swap };
 }
@@ -152,9 +159,9 @@ function markPosition(b: Branch, input: PaperInput, pos: OpenPosition, untilT: n
       const bound = alt.result === 'LOSS' ? (alt.exitPrice as number) : outcome.sl;
       adverse = event.direction === 'BUY' ? Math.max(adverse, bound) : Math.min(adverse, bound);
     }
-    const adverseEquity = b.equity - pos.entryCostsUsd + pnlUsd(event.direction, outcome.entry, adverse);
+    const adverseEquity = b.equity - pos.entryCostsUsd + pnlUsd(event.direction, outcome.entry, adverse, volumeOf(input));
     if (!isExit) {
-      const closeMark = b.equity - pos.entryCostsUsd + pnlUsd(event.direction, outcome.entry, bar.c);
+      const closeMark = b.equity - pos.entryCostsUsd + pnlUsd(event.direction, outcome.entry, bar.c, volumeOf(input));
       prevCloseMark = closeMark;
       b.peak = Math.max(b.peak, closeMark);
       if (b.drawdownBlockedAtT === null && closeMark <= b.peak * (1 - SPEC.paper.drawdownBlockPct / 100)) b.drawdownBlockedAtT = bar.t + bar.dur;
@@ -170,8 +177,8 @@ function closePosition(b: Branch, input: PaperInput): void {
   const { event, alt } = pos;
   const exitEndT = (alt.exitBarT as number) + (alt.exitBarDur as number);
   markPosition(b, input, pos, alt.exitBarT as number, alt.exitBarT);
-  const costs = tradeCosts(input.cost, event.direction, alt, event.touchStartT, exitEndT);
-  const gross = pnlUsd(event.direction, event.outcome!.entry, alt.exitPrice as number);
+  const costs = tradeCosts(input.cost, event.direction, alt, event.touchStartT, exitEndT, volumeOf(input));
+  const gross = pnlUsd(event.direction, event.outcome!.entry, alt.exitPrice as number, volumeOf(input));
   const net = gross - costs.spread - costs.commission - costs.slippage + costs.swap;
   b.equity += net;
   b.realizedHistory.push({ t: exitEndT, equity: b.equity });
@@ -216,7 +223,7 @@ function gateDecision(b: Branch, input: PaperInput, event: FirstReturnEvent): De
   const dayKey = beirutDateKey(t);
   const dayStart = b.dayStartMarks[dayKey] ?? realizedEquityAt(b, beirutMidnightBefore(t));
   if (b.equity - dayStart <= -(SPEC.paper.dailyLossBlockPct / 100) * dayStart) return 'DAILY_LOSS_BLOCK_ACTIVE';
-  const stopRiskUsd = SPEC.exits.stopLossDistanceUnits * USD_PER_UNIT_PER_LOT_OZ * lotsOz();
+  const stopRiskUsd = SPEC.exits.stopLossDistanceUnits * USD_PER_UNIT_PER_LOT_OZ * lotsOz(volumeOf(input));
   if (stopRiskUsd > (SPEC.paper.maxStopRiskPctOfEquity / 100) * b.equity) return 'STOP_RISK_EXCEEDS_0_5_PCT';
   if (stopRiskUsd > (SPEC.paper.maxCombinedRiskPctOfEquity / 100) * b.equity) return 'COMBINED_RISK_EXCEEDS_1_PCT';
   if (input.cost.spreadUsdPerOz > SPEC.shadowQuotes.maxSpreadUsd) return 'SPREAD_ASSUMPTION_EXCEEDS_1_USD';
@@ -285,7 +292,7 @@ export function runPaperSimulation(input: PaperInput): PaperResult {
       } else {
         markPosition(b, input, pos, input.endT, null);
         const last = input.studyStream[input.studyStream.length - 1];
-        b.openAtEnd = { eventId: pos.event.id, floatingUsd: pnlUsd(pos.event.direction, pos.event.outcome!.entry, last.c) - pos.entryCostsUsd };
+        b.openAtEnd = { eventId: pos.event.id, floatingUsd: pnlUsd(pos.event.direction, pos.event.outcome!.entry, last.c, volumeOf(input)) - pos.entryCostsUsd };
         b.exposureMs += input.endT - pos.event.touchStartT;
       }
     }
@@ -324,6 +331,10 @@ export function runPaperSimulation(input: PaperInput): PaperResult {
         b.decisions[event.id] = 'NOT_SELECTED_NEAREST';
         continue;
       }
+      if (input.entryVeto?.(event)) {
+        b.decisions[event.id] = 'QUOTE_GATE_FAILED';
+        continue;
+      }
       const gate = gateDecision(b, input, event);
       if (gate) {
         b.decisions[event.id] = gate;
@@ -355,7 +366,7 @@ export function runPaperSimulation(input: PaperInput): PaperResult {
 
       const alts = alternativesOf(event);
       b.decisions[event.id] = 'ENTERED';
-      const entryCostsUsd = input.cost.spreadUsdPerOz * lotsOz() + input.cost.commissionUsdPerLotRoundTrip * SPEC.paper.volumeLots;
+      const entryCostsUsd = input.cost.spreadUsdPerOz * lotsOz(volumeOf(input)) + input.cost.commissionUsdPerLotRoundTrip * volumeOf(input);
       if (alts.length > 1 && leaves.length + alts.length > SPEC.paper.branchCap) {
         branchCapHit = true;
         b.halted = { t: event.touchStartT, reason: 'branch cap reached at an uncertain outcome' };

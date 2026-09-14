@@ -394,4 +394,90 @@ export const api = {
     ),
   marketCoverage: (symbol: string) =>
     apiFetch<MarketDataCoverage>(`/market-data/coverage?symbol=${encodeURIComponent(symbol)}`),
+  goldRetestResearch: () => apiFetch<GoldRetestResearch>('/research/xauusd-confirmed-retest'),
 };
+
+// xauusd-h4-confirmed-retest-v1 research artifacts (read-only; see
+// backend/src/research/confirmed-retest/). Kept loosely typed where the
+// shape is a pass-through of the run's JSON files.
+type Range = [number, number] | null;
+
+export interface RetestBucket {
+  eligibleEvents: number;
+  counts: Record<'WIN' | 'LOSS' | 'AMBIGUOUS' | 'INDETERMINATE' | 'UNRESOLVED', number>;
+  resolvedWinRate: { numerator: number; denominator: number; rate: number | null; wilson95: [number, number] | null };
+  allEligibleBounds: { low: number | null; high: number | null; lowFormula: string; highFormula: string };
+}
+
+export interface RetestPaperSummary {
+  balanceId: string;
+  costId: string;
+  startingBalanceUsd: number;
+  branches: number;
+  branchCapHit: boolean;
+  haltedBranches: number;
+  openAtEndBranches: number;
+  tradesEntered: Range;
+  wins: Range;
+  losses: Range;
+  netPnlUsd: Range;
+  netExpectancyUsdPerTrade: Range;
+  profitFactor: Range;
+  maxEquityDrawdownUsd: Range;
+  maxEquityDrawdownPct: Range;
+  exposurePct: Range;
+  decisionTally: Record<string, Range>;
+}
+
+export interface GoldRetestResearch {
+  strategyVersion: string;
+  currentSpecHash: string;
+  executionBoundary: string;
+  watch: {
+    lastCycleAtUtc: string;
+    latestStoredM1CloseUtc: string;
+    settledEndUtc: string;
+    volumeLots: number;
+    activeLevels: Array<{ id: string; role: string; price: string; activatedUtc: string; h4BarsSinceActivation: number }>;
+    counts: { levelsEver: number; eventsEver: number; forwardEvents: number; pendingOutcomes: number };
+    forwardEvents: Array<Record<string, unknown>>;
+    quoteGate: Record<string, { pass: boolean; reason: string; decidedAtUtc: string }>;
+    warnings: string[];
+    limitations: string[];
+  } | null;
+  run: {
+    runId: string;
+    specHashMatchesCurrent: boolean;
+    manifest: { frozenEndUtc: string; studyStartUtc: string; warmupStartUtc: string; dataHash: string; runCommand: string; gitCommit: string; conclusion: { conclusion: string; reason: string } };
+    eventStudy: {
+      studyEventsByKind: Record<string, number>;
+      ineligibleByReason: Record<string, number>;
+      full: RetestBucket;
+      byDirection: { BUY: RetestBucket; SELL: RetestBucket };
+      byYear: Record<string, RetestBucket>;
+      byHalfYear: Record<string, RetestBucket>;
+      dependence: { note: string };
+    };
+    formation: {
+      h4BarsProcessed: number;
+      pivotCandidates: Record<string, number>;
+      qualifiedPivots: Record<string, number>;
+      rejectedNoRejectionClose: Record<string, number>;
+      exactPriceRepeatPairsAnyDistance: Record<string, number>;
+      exactPriceRepeatPairsInDistanceWindow: Record<string, number>;
+      pairOutcomes: Record<string, number>;
+      activationsBlocked: Record<string, number>;
+      levelsActivated: Record<string, number>;
+    };
+    coverage: {
+      validations: Array<{ timeframe: string; rows: number; firstUtc: string; lastUtc: string; nonCentPrices: number; ohlcViolations: number; gridMisaligned: number; weekendServerBars: number; timezoneConversionErrors: number }>;
+      m1Gaps: { byKind: Record<string, { count: number; missingMinutes: number }>; unconfirmedList: Array<{ id: string; startUtc: string; minutes: number; kind: string; evidence: string; bridge: string | null }> };
+      substitutedM5Bars: number;
+      h4VsM1: { h4BarsChecked: number; exactMatch: number; mismatch: number; noM1Inside: number };
+      provenance: { storedTicks: number; accountSnapshots: number; backfillLogInstrumentVerification: string };
+    };
+    paper: Array<{ summary: RetestPaperSummary; decisionsByEvent: Record<string, Record<string, number>> }>;
+    levels: Array<Record<string, string | number | boolean | null>>;
+    events: Array<Record<string, unknown>>;
+  } | null;
+}
