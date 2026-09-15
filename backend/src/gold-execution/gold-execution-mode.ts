@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 /**
  * OFF / SHADOW / DEMO control for the gold strategy, read fresh from the
  * environment on every check (same "never cache a safety-relevant read"
@@ -36,6 +39,22 @@ export function getGoldExecutionMode(): GoldExecutionMode {
  * every send, per task requirement — callers must call this again right
  * before queuing, not rely on a value read earlier in the same cycle.
  */
+/**
+ * Extended (task item F) to ALSO check a file-based toggle, in addition to
+ * the original env var — `GOLD_STOP_NEW_ENTRIES` is a raw env var read from
+ * `process.env`, which is fixed at process start and cannot be flipped live
+ * without a restart. The dashboard's "stop/resume new entries" control
+ * needs a lever that takes effect on the very next check, same posture as
+ * the kill switch (`gold-kill-switch.ts`) — so a file's mere existence at
+ * `GOLD_STOP_NEW_ENTRIES_PATH` (default `GOLD_STOP_NEW_ENTRIES` under the
+ * backend working directory) is checked fresh on every call and ORed with
+ * the env var. Either one being active is enough to stop new entries.
+ */
 export function isStopNewEntriesActive(): boolean {
-  return (process.env.GOLD_STOP_NEW_ENTRIES ?? '').trim().toLowerCase() === 'true';
+  if ((process.env.GOLD_STOP_NEW_ENTRIES ?? '').trim().toLowerCase() === 'true') return true;
+  return existsSync(getStopNewEntriesFilePath());
+}
+
+export function getStopNewEntriesFilePath(): string {
+  return process.env.GOLD_STOP_NEW_ENTRIES_PATH?.trim() || join(process.cwd(), 'GOLD_STOP_NEW_ENTRIES');
 }

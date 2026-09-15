@@ -5,7 +5,6 @@ import {
   GOLD_SL_TP_TOLERANCE_POINTS,
   GOLD_STOP_RISK_CAP_PCT,
   GOLD_TP_SL_POINTS,
-  GOLD_VOLUME_LOTS,
 } from './gold-safety-constants';
 
 /** Same closed-set posture as autonomous/risk-manager.ts's AccountTradeMode — mirrors MT5's own enum, not a boolean. */
@@ -73,6 +72,18 @@ export interface GoldRiskManagerInput {
   /** Signal-time executable price vs. current executable price, both already point-distance in gold points. */
   entryDeviationPoints: number;
   maxEntryDeviationPoints: number;
+  /**
+   * The ONE validated user volume snapshot for this evaluation (from
+   * `GoldRuntimeSettingsService.getVolumeLots()`, read exactly once by the
+   * caller and passed in here — never re-read mid-evaluation, so risk
+   * calculation, the persisted decision, and the eventual broker submission
+   * all use the identical number). Replaces the formerly-hardcoded
+   * `GOLD_VOLUME_LOTS` constant; the risk CAPS themselves (stop-risk %,
+   * combined %, daily loss %, drawdown %) and the SL/TP distance logic
+   * below are completely unchanged — only the volume input to those caps
+   * is now a live, user-set value instead of a frozen literal.
+   */
+  requestedVolumeLots: number;
 }
 
 export interface GoldRiskManagerVerdict {
@@ -90,7 +101,7 @@ export interface GoldRiskManagerVerdict {
  * as the EURUSD risk manager's own header comment).
  */
 export function evaluateGoldRiskManager(input: GoldRiskManagerInput): GoldRiskManagerVerdict {
-  const { candidate, accountInfo, occupancy, volumeConstraints, killSwitchActive, entryDeviationPoints, maxEntryDeviationPoints } = input;
+  const { candidate, accountInfo, occupancy, volumeConstraints, killSwitchActive, entryDeviationPoints, maxEntryDeviationPoints, requestedVolumeLots } = input;
 
   if (killSwitchActive) {
     return { approved: false, rejectionReason: 'Kill switch is active — no new gold orders permitted.', volumeLots: null };
@@ -121,12 +132,22 @@ export function evaluateGoldRiskManager(input: GoldRiskManagerInput): GoldRiskMa
     };
   }
 
-  // Volume: user-fixed, validated against real broker step/min/max — never resized.
-  const volume = GOLD_VOLUME_LOTS;
+  // Volume: user-set (via the dashboard, GoldRuntimeSettingsService), validated
+  // against real broker step/min/max, and rejected outright before reaching
+  // any risk-cap math if it isn't even a positive finite number — never
+  // resized, never silently substituted.
+  const volume = requestedVolumeLots;
+  if (!Number.isFinite(volume) || volume <= 0) {
+    return {
+      approved: false,
+      rejectionReason: `Requested volume ${volume} is not a valid positive number — refusing before any risk calculation.`,
+      volumeLots: null,
+    };
+  }
   if (volume < volumeConstraints.minLots || volume > volumeConstraints.maxLots) {
     return {
       approved: false,
-      rejectionReason: `Fixed volume ${volume} lots is outside broker bounds [${volumeConstraints.minLots}, ${volumeConstraints.maxLots}] — skipping, never auto-resizing.`,
+      rejectionReason: `Requested volume ${volume} lots is outside broker bounds [${volumeConstraints.minLots}, ${volumeConstraints.maxLots}] — skipping, never auto-resizing.`,
       volumeLots: null,
     };
   }
@@ -134,7 +155,7 @@ export function evaluateGoldRiskManager(input: GoldRiskManagerInput): GoldRiskMa
   if (stepRemainder > 1e-6) {
     return {
       approved: false,
-      rejectionReason: `Fixed volume ${volume} lots is not a multiple of the broker's step ${volumeConstraints.stepLots} — skipping, never auto-resizing.`,
+      rejectionReason: `Requested volume ${volume} lots is not a multiple of the broker's step ${volumeConstraints.stepLots} — skipping, never auto-resizing.`,
       volumeLots: null,
     };
   }

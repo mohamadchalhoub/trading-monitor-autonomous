@@ -13,6 +13,7 @@ import { resolve } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { GoldAccountStateService } from '../src/gold-execution/gold-account-state.service';
 import { GoldExecutionCoordinatorService } from '../src/gold-execution/gold-execution-coordinator.service';
+import { GoldRuntimeSettingsService } from '../src/gold-execution/gold-runtime-settings.service';
 import { getGoldExecutionMode } from '../src/gold-execution/gold-execution-mode';
 import { GOLD_MAX_ENTRY_DEVIATION_POINTS, GOLD_POINT_SIZE, GOLD_SYMBOL } from '../src/gold-execution/gold-safety-constants';
 import { GoldWatchStore, runGoldWatchCycle } from '../src/gold-execution/gold-signal-source';
@@ -31,7 +32,7 @@ async function main() {
     }
 
     const accountState = new GoldAccountStateService(prisma as any);
-    const coordinator = new GoldExecutionCoordinatorService(prisma as any);
+    const coordinator = new GoldExecutionCoordinatorService(prisma as any, new GoldRuntimeSettingsService());
     const store = new GoldWatchStore(process.env.GOLD_RESEARCH_STATE_DIR ?? resolve(__dirname, '..', 'research-state', 'gold-live-watch'));
 
     const mode = getGoldExecutionMode();

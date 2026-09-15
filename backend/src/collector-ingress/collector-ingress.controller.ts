@@ -15,6 +15,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SnapshotDto } from './dto/snapshot.dto';
 import { SymbolMetadataPushDto } from './dto/symbol-metadata-push.dto';
 import { TradesPushDto } from './dto/trades.dto';
+import { GoldClosureReconciliationService } from '../gold-execution/gold-closure-reconciliation.service';
+import { GoldProtectionMonitorService } from '../gold-execution/gold-protection-monitor.service';
 
 const VALID_TIMEFRAMES = ['M1', 'M5', 'M15', 'H1', 'M30', 'H4', 'D1', 'W1', 'MN1'] as const;
 type Timeframe = (typeof VALID_TIMEFRAMES)[number];
@@ -65,6 +67,8 @@ export class CollectorIngressController {
     private readonly backfillIntervals: BackfillIntervalService,
     private readonly symbolMetadata: SymbolMetadataService,
     private readonly prisma: PrismaService,
+    private readonly goldClosures: GoldClosureReconciliationService,
+    private readonly goldProtection: GoldProtectionMonitorService,
   ) {}
 
   @Post('snapshot')
@@ -73,6 +77,11 @@ export class CollectorIngressController {
 
     await this.tradingData.upsertSnapshot(dto.accountId, dto);
     await this.tradingData.replaceOpenPositions(dto.accountId, account.platform, dto.positions);
+    // Gold-only, read-only reconciliation off the same feed — never touches
+    // legacy EURUSD positions (filtered by symbol inside the service).
+    await this.goldProtection.checkPositions(dto.accountId, dto.positions).catch((err) =>
+      this.logger.error(`gold protection check failed: ${err instanceof Error ? err.message : String(err)}`),
+    );
     const quotes = [...(dto.liveTick ? [dto.liveTick] : []), ...(dto.liveTicks ?? [])];
     for (const quote of new Map(quotes.map((q) => [q.symbol, q] as const)).values()) {
       await this.tradingData.upsertLiveTick(quote);
@@ -96,6 +105,11 @@ export class CollectorIngressController {
     const account = await this.accounts.getOrThrow(dto.accountId);
 
     const result = await this.tradingData.upsertDeals(dto.accountId, account.platform, dto.deals);
+    // Gold-only closure/partial-close reconciliation off the same feed —
+    // never touches legacy EURUSD trades (filtered by symbol inside the service).
+    await this.goldClosures.reconcile(dto.accountId, account.platform, dto.deals).catch((err) =>
+      this.logger.error(`gold closure reconciliation failed: ${err instanceof Error ? err.message : String(err)}`),
+    );
 
     const maxTicket = dto.deals.reduce<string | null>((max, d) => {
       if (max === null) return d.externalTradeId;

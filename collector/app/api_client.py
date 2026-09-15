@@ -119,6 +119,17 @@ class ApiClient:
     def post_gold_execution_result(self, account_id: str, decision_id: str, result: dict[str, Any]) -> dict[str, Any]:
         return self._post(f"/collector/{account_id}/gold-execution/pending-order/{decision_id}/result", result)
 
+    # Gold close-request — symmetric to the open pair above: the backend
+    # queues a confirmed dashboard close request, this collector polls for
+    # it on its own cycle and reports back the REAL broker result. "closed"
+    # is only ever reported when order_send() (inside executor.close_position)
+    # itself returned success — never just because the request was sent.
+    def get_gold_close_request(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/gold-execution/close-request")
+
+    def post_gold_close_result(self, account_id: str, request_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/gold-execution/close-request/{request_id}/result", result)
+
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         try:

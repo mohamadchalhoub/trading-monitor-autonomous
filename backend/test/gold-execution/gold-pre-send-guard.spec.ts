@@ -19,6 +19,7 @@ describe('GoldPreSendGuardService — final re-verification at the collector han
   let guard: GoldPreSendGuardService;
   let isolatedKillSwitchDir: string;
   let originalKillSwitchEnv: string | undefined;
+  let originalGoldKillSwitchEnv: string | undefined;
 
   beforeAll(() => {
     prisma = new PrismaClient();
@@ -35,14 +36,21 @@ describe('GoldPreSendGuardService — final re-verification at the collector han
     // should be sensitive to. Each test below redirects to a fresh, nonexistent path so the
     // switch reads as inactive unless a test explicitly creates it.
     originalKillSwitchEnv = process.env.AUTONOMOUS_KILL_SWITCH_PATH;
+    originalGoldKillSwitchEnv = process.env.GOLD_KILL_SWITCH_PATH;
     isolatedKillSwitchDir = mkdtempSync(join(tmpdir(), 'gold-pre-send-guard-ks-'));
     process.env.AUTONOMOUS_KILL_SWITCH_PATH = join(isolatedKillSwitchDir, 'KILL_SWITCH');
+    // Same isolation, for the gold-specific switch this guard actually reads
+    // — must never be sensitive to the repo's own (possibly currently
+    // engaged, e.g. as a deliberate operational pause) backend/GOLD_KILL_SWITCH.
+    process.env.GOLD_KILL_SWITCH_PATH = join(isolatedKillSwitchDir, 'GOLD_KILL_SWITCH');
   });
   afterEach(async () => {
     delete process.env.GOLD_STOP_NEW_ENTRIES;
     rmSync(isolatedKillSwitchDir, { recursive: true, force: true });
     if (originalKillSwitchEnv === undefined) delete process.env.AUTONOMOUS_KILL_SWITCH_PATH;
     else process.env.AUTONOMOUS_KILL_SWITCH_PATH = originalKillSwitchEnv;
+    if (originalGoldKillSwitchEnv === undefined) delete process.env.GOLD_KILL_SWITCH_PATH;
+    else process.env.GOLD_KILL_SWITCH_PATH = originalGoldKillSwitchEnv;
   });
 
   async function seedDemoAccount(accountId: string) {
@@ -105,7 +113,7 @@ describe('GoldPreSendGuardService — final re-verification at the collector han
     expect(result.reason).toMatch(/entry window/);
   });
 
-  it('rejects when the kill switch is active', async () => {
+  it('rejects when the GOLD kill switch is active (not the legacy one)', async () => {
     const { account } = await setupAccountWithToken(prisma);
     await seedDemoAccount(account.id);
     await seedTick(IN_WINDOW_T);
@@ -116,7 +124,7 @@ describe('GoldPreSendGuardService — final re-verification at the collector han
         riskManagerApproved: true, orderStatus: 'SENT',
       },
     });
-    writeFileSync(process.env.AUTONOMOUS_KILL_SWITCH_PATH as string, '');
+    writeFileSync(process.env.GOLD_KILL_SWITCH_PATH as string, '');
     const result = await guard.check({
       decisionId: decision.id, accountId: account.id, action: 'OPEN_BUY',
       entryPrice: 2650, touchEndT: IN_WINDOW_T - 60_000,

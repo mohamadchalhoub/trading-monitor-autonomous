@@ -1,6 +1,9 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { PrismaClient } from '@prisma/client';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp } from '../helpers/app';
 import { resetDatabase } from '../helpers/db';
 import { setupAccountWithToken } from '../helpers/factories';
@@ -10,6 +13,8 @@ import { GoldAccountStateService } from '../../src/gold-execution/gold-account-s
 describe('Gold execution — collector poll/report route is symbol-scoped', () => {
   let app: NestFastifyApplication;
   let prisma: PrismaClient;
+  let isolatedKillSwitchDir: string;
+  let originalGoldKillSwitchEnv: string | undefined;
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -21,6 +26,16 @@ describe('Gold execution — collector poll/report route is symbol-scoped', () =
   });
   beforeEach(async () => {
     await resetDatabase(prisma);
+    // Isolate every test in this file from the repo's own (possibly currently
+    // engaged, e.g. as a deliberate operational pause) backend/GOLD_KILL_SWITCH file.
+    originalGoldKillSwitchEnv = process.env.GOLD_KILL_SWITCH_PATH;
+    isolatedKillSwitchDir = mkdtempSync(join(tmpdir(), 'gold-execution-e2e-ks-'));
+    process.env.GOLD_KILL_SWITCH_PATH = join(isolatedKillSwitchDir, 'GOLD_KILL_SWITCH');
+  });
+  afterEach(() => {
+    rmSync(isolatedKillSwitchDir, { recursive: true, force: true });
+    if (originalGoldKillSwitchEnv === undefined) delete process.env.GOLD_KILL_SWITCH_PATH;
+    else process.env.GOLD_KILL_SWITCH_PATH = originalGoldKillSwitchEnv;
   });
 
   // 2026-09-15T06:00:00Z = 09:00 Asia/Beirut (UTC+3 in September) — inside the 04:00-12:00 entry window.

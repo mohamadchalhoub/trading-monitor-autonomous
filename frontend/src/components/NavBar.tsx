@@ -65,6 +65,14 @@ export function NavBar() {
             Gold Retest Research
           </Link>
           <Link
+            href="/gold-demo"
+            className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
+              pathname.startsWith("/gold-demo") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"
+            }`}
+          >
+            Gold DEMO (live)
+          </Link>
+          <Link
             href="/health"
             className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
               pathname.startsWith("/health") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"

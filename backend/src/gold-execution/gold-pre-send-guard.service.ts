@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { isKillSwitchActive } from '../autonomous/kill-switch';
+import { isGoldKillSwitchActive } from './gold-kill-switch';
 import { GoldAccountStateService } from './gold-account-state.service';
 import { isStopNewEntriesActive } from './gold-execution-mode';
 import { GOLD_MAX_ENTRY_DEVIATION_POINTS, GOLD_MAX_SIGNAL_AGE_SECONDS, GOLD_POINT_SIZE, GOLD_SYMBOL } from './gold-safety-constants';
@@ -61,7 +61,7 @@ export class GoldPreSendGuardService {
   }): Promise<GoldPreSendCheckResult> {
     const { decisionId, accountId, action, entryPrice, touchEndT } = params;
 
-    if (isKillSwitchActive()) {
+    if (isGoldKillSwitchActive()) {
       return { ok: false, reason: 'Kill switch is active — refusing to send at the final pre-send check.' };
     }
     if (isStopNewEntriesActive()) {

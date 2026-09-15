@@ -20,6 +20,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { resetDatabase } from '../helpers/db';
 import { setupAccountWithToken } from '../helpers/factories';
 import { GoldExecutionCoordinatorService } from '../../src/gold-execution/gold-execution-coordinator.service';
+import { GoldRuntimeSettingsService } from '../../src/gold-execution/gold-runtime-settings.service';
 import { consumeLevel, createLevelEngineState } from '../../src/research/confirmed-retest-v2/levels';
 import type { FirstReturnEvent } from '../../src/research/confirmed-retest-v2/types';
 import { SPEC_HASH } from '../../src/research/confirmed-retest-v2/spec';
@@ -71,7 +72,7 @@ describe('runGoldWatchCycle — M1-discovered touches are audit-only, never subm
 
   beforeAll(() => {
     prisma = new PrismaClient();
-    coordinator = new GoldExecutionCoordinatorService(prisma as any);
+    coordinator = new GoldExecutionCoordinatorService(prisma as any, new GoldRuntimeSettingsService());
   });
   afterAll(async () => {
     await prisma.$disconnect();
@@ -182,7 +183,7 @@ describe('runGoldWatchCycle — M1 and live-quote layers share ONE persistent st
 
   beforeAll(() => {
     prisma = new PrismaClient();
-    coordinator = new GoldExecutionCoordinatorService(prisma as any);
+    coordinator = new GoldExecutionCoordinatorService(prisma as any, new GoldRuntimeSettingsService());
   });
   afterAll(async () => {
     await prisma.$disconnect();

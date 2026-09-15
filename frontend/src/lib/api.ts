@@ -395,7 +395,124 @@ export const api = {
   marketCoverage: (symbol: string) =>
     apiFetch<MarketDataCoverage>(`/market-data/coverage?symbol=${encodeURIComponent(symbol)}`),
   goldRetestResearch: () => apiFetch<GoldRetestResearch>('/research/xauusd-confirmed-retest'),
+  goldExecutionStatus: () => apiFetch<GoldExecutionStatus>('/research/gold-execution-status'),
+  goldNews: () => apiFetch<GoldNewsResponse>('/research/gold-execution-status/news'),
+  goldAiSummaries: () => apiFetch<{ summaries: GoldAiSummary[] }>('/research/gold-execution-status/ai-summaries'),
+  setGoldVolume: (input: { volumeLots: number; note?: string }) =>
+    apiFetch<{ ok: boolean; volumeLots?: number; error?: string }>('/research/gold-execution-status/volume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }),
+  setGoldStopNewEntries: (active: boolean) =>
+    apiFetch<{ ok: boolean; active: boolean }>('/research/gold-execution-status/stop-new-entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active }),
+    }),
+  requestGoldClosePosition: (positionId: string) =>
+    apiFetch<{ ok: boolean; error?: string; note?: string }>('/research/gold-execution-status/close-position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ positionId, confirm: true }),
+    }),
 };
+
+// Gold (XAUUSD) DEMO execution dashboard — reads gold-dashboard.controller.ts's
+// GET /research/gold-execution-status (and the two small read-only panels
+// alongside it). Deliberately its own type block, loosely mirroring the
+// controller's actual response shape rather than reusing any EURUSD/legacy
+// dashboard type.
+export interface GoldExecutionStatus {
+  strategyVersion: string;
+  accountMode?: 'OFF' | 'SHADOW' | 'DEMO';
+  mode?: 'OFF' | 'SHADOW' | 'DEMO';
+  stopNewEntriesActive: boolean;
+  killSwitchActive: boolean;
+  accountTradeMode?: 'REAL' | 'DEMO' | 'CONTEST' | null;
+  error?: string;
+  settings?: {
+    symbol: string;
+    /** The REAL volume every submitted order actually uses (frozen constant) — not the dashboard override below. */
+    volumeLots: number;
+    volumeOverride?: { value: number; active: boolean; note: string };
+    magicNumber: number;
+    tpSlUsd: number;
+    pointSize: number;
+    maxEntryDeviationPoints: number;
+    riskCapsPct: { stopRisk: number; combined: number; dailyLoss: number; drawdown: number };
+    note: string;
+  };
+  occupancy?: unknown;
+  volumeConstraints?: { minLots: number; maxLots: number; stepLots: number };
+  openPositions?: {
+    ticket: string;
+    side: 'BUY' | 'SELL';
+    volume: number;
+    entryPrice: number;
+    currentPrice: number | null;
+    stopLoss: number | null;
+    takeProfit: number | null;
+    floatingPnl: number;
+    openedAt: string;
+    isProtected: boolean;
+  }[];
+  closedTrades?: { dealTicket: string; side: 'BUY' | 'SELL'; volume: number; price: number; realizedPnl: number; executedAt: string }[];
+  recentDecisions?: {
+    id: string;
+    evaluatedAt: string;
+    action: string;
+    orderStatus: string;
+    riskManagerApproved: boolean;
+    riskManagerRejectionReason: string | null;
+    reasoning: string;
+    entryPrice: number | null;
+    stopLoss: number | null;
+    takeProfit: number | null;
+    mt5Ticket: number | null;
+    filledPrice: number | null;
+    executionError: string | null;
+  }[];
+  recentNotifications?: { eventType: string; status: string; createdAt: string; text: string }[];
+  collectorHeartbeat?: { lastHeartbeatAt: string | null; ageMs: number | null; stale: boolean; mt5Connected: boolean | null; lastError: string | null };
+  liveQuote?: { bid: number | null; ask: number | null; ageMs: number | null; stale: boolean };
+  entryWindow?: { timezone: string; startSecondsBeirut: number; endSecondsBeirutExclusive: number; open: boolean };
+  dataFreshness?: { accountSnapshotAgeMs: number | null; accountSnapshotStale: boolean; symbolMetadataAgeMs: number | null; symbolMetadataStale: boolean };
+  eurusd?: { strategy: string; status: string; note: string };
+}
+
+export interface GoldNewsResponse {
+  items: {
+    id: string;
+    title: string;
+    category: 'ECONOMIC_EVENT' | 'NEWS';
+    scheduledAtIso: string;
+    scheduledAtBeirut: string;
+    affectedCurrencies: string[];
+    sentiment: string | null;
+    sourceUrl: string | null;
+  }[];
+  coverage: {
+    source: string;
+    totalRows: number;
+    mostRecentSourceDataAtIso: string | null;
+    sourceDataStaleAfterMs: number;
+    sourceDataStale: boolean;
+    ingestionHealth: 'OK' | 'DEGRADED' | 'DOWN' | 'UNKNOWN';
+    lastIngestionRunAtIso: string | null;
+    lastIngestionRunOutcome: 'completed' | 'failed' | null;
+  }[];
+}
+
+export interface GoldAiSummary {
+  id: string;
+  eventType: string;
+  sourceDataTimestampIso: string;
+  generatedAtIso: string;
+  provider: string;
+  model: string | null;
+  summary: string;
+}
 
 // xauusd-h4-confirmed-retest-v1 research artifacts (read-only; see
 // backend/src/research/confirmed-retest/). Kept loosely typed where the

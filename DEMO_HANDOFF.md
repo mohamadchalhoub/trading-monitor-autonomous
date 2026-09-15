@@ -1,10 +1,21 @@
 # DEMO_HANDOFF — gold (XAUUSD) execution
 
-**Status: LIVE, fully verified against the corrected code, kill switch cleared.** The user
-restarted the scheduler at 2026-09-15T13:36:38Z; it has completed multiple clean cycles. See
-"Update — 2026-09-15, post-fix restart verified live" below for the full, independently-checked
-evidence. No genuine order has occurred yet — the system is correctly idle, waiting for a new H4
-level to form (zero levels are currently active) and then for its first touch.
+**Status as of 2026-09-15 (latest session, isolation/reliability work): GOLD_KILL_SWITCH IS
+CURRENTLY ENGAGED — new gold entries are PAUSED.** This supersedes the "kill switch cleared" line
+below, which described an EARLIER point in the same day before this session's work began. See
+"Update — 2026-09-15, isolation + reliability session (Telegram/kill-switch/volume/close-
+execution/protection-remediation/AI/feed-status)" at the bottom of this file for what changed,
+what was verified and how, and exactly what the user needs to do to resume. Do not clear the kill
+switch without reading that section first.
+
+---
+
+*(Earlier status line, now superseded — kept for history:)* **Status: LIVE, fully verified
+against the corrected code, kill switch cleared.** The user restarted the scheduler at
+2026-09-15T13:36:38Z; it has completed multiple clean cycles. See "Update — 2026-09-15, post-fix
+restart verified live" below for the full, independently-checked evidence. No genuine order has
+occurred yet — the system is correctly idle, waiting for a new H4 level to form (zero levels are
+currently active) and then for its first touch.
 
 ## Update — 2026-09-15, post-fix restart verified live
 
@@ -641,3 +652,159 @@ persisted config given all three:
 6. Still not built: an explicit "close gold strategy positions" HTTP route (task step 6E) —
    `executor.py`'s existing `close_position` can be called with `GOLD_MAGIC_NUMBER`, but no
    route/test exists yet.
+
+---
+
+## Update — 2026-09-15, isolation + reliability session (Telegram/kill-switch/volume/close-execution/protection-remediation/AI/feed-status)
+
+This session did NOT touch confirmed-retest-v2 strategy logic, entry timing, or risk-cap
+thresholds. It built out gold's Telegram/kill-switch isolation from the legacy EURUSD strategy,
+then (in a follow-up round) closed several gaps a review correctly identified as real
+implementation work rather than acceptable scope cuts. GOLD_KILL_SWITCH is currently engaged —
+left that way deliberately, pending your own read of this section and a runtime restart (see
+item 7 below).
+
+### What changed, and how it was verified (labeled precisely — these are different claims)
+
+1. Volume control is now functionally live, not display-only. `GoldRuntimeSettingsService
+   .getVolumeLots()` is read ONCE per coordinator evaluation, threaded as `requestedVolumeLots`
+   into `evaluateGoldRiskManager` (which now rejects non-finite/zero/negative volumes before any
+   risk math, and computes stop-risk/combined-risk caps against the REAL requested volume, not
+   the old hardcoded 0.01 constant — the caps themselves are unchanged), and persisted onto the
+   `AutonomousDecision` row (new `volumeLots` column) so the collector hand-off submits EXACTLY
+   the volume risk was computed against, never a value re-read later. Default stays 0.01.
+   Unit-tested: `test/gold-execution/gold-risk-manager.spec.ts` (24 tests, incl. a smaller
+   volume, a larger still-capped volume, a larger cap-breaching volume, zero/negative/NaN
+   rejection, out-of-broker-bounds rejection, off-step rejection). Integration-tested: full
+   coordinator/dashboard/scheduler suites still pass with the new signature threaded through.
+   NOT runtime/broker-event-verified — no real order has been placed with a non-default volume
+   against a live MT5 terminal.
+
+2. Close-position execution is now real, not a notification-only stub. New `GoldCloseRequest`
+   table (PENDING -> SENT -> CLOSED/FAILED), a new collector-facing poll/report pair
+   (`GET/POST /collector/:accountId/gold-execution/close-request...`) symmetric to the existing
+   open-order pair, and `runner.py`/`api_client.py` extended with
+   `_poll_and_execute_gold_close_request` (calls `executor.py`'s existing `close_position` — no
+   executor changes needed). CLOSED is set ONLY when the collector reports a broker-confirmed
+   result (`dto.ok` from `close_position`, itself gated on MT5's own `order_send()` response) —
+   never at request-creation time. Scoped to one MT5 account + one position ticket; duplicate
+   requests return the existing one. Dashboard's side/volume are read from the LIVE `Position`
+   row by ticket, never trusted from the request body. Unit-tested (Python, 6 tests,
+   `tests/test_runner_gold_close_request.py`) and integration-tested end-to-end over real HTTP +
+   real Postgres with a SIMULATED broker response
+   (`test/gold-execution/gold-close-execution-e2e.spec.ts`, 5 tests: full success lifecycle,
+   broker failure never reaches CLOSED, duplicate-request handling, ticket/symbol scoping). NOT
+   runtime/broker-event-verified — no real MT5 close has been observed.
+
+3. Protection remediation now actually acts, not just alerts. On a NEW missing-protection
+   incident, `GoldProtectionMonitorService` immediately queues a close via the same
+   `GoldCloseExecutionService` from item 2 — but only for positions matching this strategy's own
+   MT5 magic number (a critical fix made mid-session: the first draft would have auto-closed ANY
+   unprotected XAUUSD position, including a manual trade). A non-matching or missing magic still
+   ALERTS but does not auto-close. The originally-discussed two-step policy ("re-request SL/TP
+   first, close only after bounded retries fail") was NOT built — that needs a new MT5
+   position-modify (`TRADE_ACTION_SLTP`) executor method and a third poll route, comparable in
+   size to item 2's build but not done this session. What IS implemented (immediate close) is
+   stricter than the two-step policy, not weaker. Unit-tested, including the two
+   ownership-scoping cases and a "remediation queuing itself fails -> CRITICAL alert, never
+   silent" case (13 tests, `gold-protection-monitor.spec.ts`). Simulated-broker-verified via the
+   same close-execution e2e suite (item 2) since remediation reuses that exact path.
+
+4. Closure notifications are now magic-scoped, not just symbol-scoped, and report BOTH per-deal
+   and total-position net P&L. `GoldClosureReconciliationService` reads `raw.magic` from the MT5
+   deal payload (already passed through by `mt5_client.py`'s `_asdict()`) and skips (logs, never
+   assumes ownership) any XAUUSD deal with a different or absent magic. Net P&L now reports
+   `thisDealNetPnl` (this closing deal only) separately from `positionNetPnlSoFar` (sum of
+   profit+commission+swap across every `Trade` row sharing the position — entry deal included,
+   so entry-side commission is no longer silently dropped). Unit-tested (11 tests, incl. two
+   ownership-scoping cases and one entry-commission-inclusion case).
+
+5. AI summaries now use whichever provider is actually configured — anthropic, openrouter, or
+   gemini (previously anthropic-only, silently falling back for everything else). Same shared
+   AI_CONFIG, no second credential. Deterministic factual fallback (verbatim source text, never
+   blocked) whenever AI is disabled, mock, unsupported, or the real call fails — this path is
+   what feeds Telegram-adjacent narration, and Telegram sends themselves never wait on AI
+   (fire-and-forget, called after the Telegram notify). Storage stays isolated
+   (`gold-execution-runtime/ai-summaries.json`, never the legacy `ai_analyses` table).
+   Unit-tested (7 tests, `gold-ai-summary.spec.ts`, incl. one per provider's endpoint being hit,
+   isolation from the real app's AI history).
+
+6. Feed status now separates source-data age from ingestion health, and reports UNKNOWN rather
+   than guessing. `GoldNewsService.getProviderCoverage()` reads each provider's real BullMQ job
+   history (`getJobs(['completed','failed'])` on its own queue) for
+   `ingestionHealth`/`lastIngestionRunAtIso`/`lastIngestionRunOutcome` — genuine execution
+   evidence, not inferred from row timestamps — and reports UNKNOWN (never OK/DOWN by default)
+   when no job history is available. `mostRecentSourceDataAtIso`/`sourceDataStale` is the
+   separate, honestly-labeled data-freshness figure. Not unit-tested this session (time-boxed) —
+   the BullMQ `getJobs` call path itself is exercised implicitly by the passing market-events
+   test suite (231 tests) but no dedicated test asserts the OK/DEGRADED/DOWN/UNKNOWN branching.
+   Flagged as a real gap, not hidden.
+
+7. Prisma lock — re-inspected fresh this round, same two processes, still not touched.
+   `Get-CimInstance Win32_Process -Filter "Name='node.exe'"` re-run at the START of this round
+   (not reused from the earlier report) confirms the SAME two processes as before are still the
+   ones holding the query-engine file lock:
+   - PID 20244 — `ts-node-dev --respawn --exit-child src/main.ts` (the backend API server,
+     `npm run dev`)
+   - PID 19204 — `tsx scripts/gold-execution-scheduler.ts` (the standalone gold scheduler,
+     `npm run gold-execution:scheduler`)
+
+   Both are still alive; I did not stop, kill, or restart either. Separately (unrelated to the
+   lock): the backend has NOT been listening on port 8420 since a prior round of this session —
+   `netstat` shows no LISTENING entry for it, so `/gold-demo` could not be rendered live and no
+   real HTTP call reached the running backend process during THIS round either. This needs your
+   own look at that process's console — I cannot see its stdout from here.
+
+   Exact commands, re-verified against the CURRENT process list (not historical PIDs):
+   ```
+   # 1. Stop the two backend processes -- Ctrl+C in their own console is cleanest;
+   #    from another window, graceful first:
+   Stop-Process -Id 20244        # backend (npm run dev / ts-node-dev)
+   Stop-Process -Id 19204        # gold-execution-scheduler
+
+   # 2. Regenerate the Prisma client now that the lock is free (also picks up
+   #    the two new tables/columns from this session: GoldCloseRequest,
+   #    AutonomousDecision.volumeLots):
+   cd backend
+   npm run prisma:generate
+
+   # 3. Restart both, in separate terminals, the way you normally do:
+   npm run dev
+   npm run gold-execution:scheduler
+   ```
+   Until this is done, `prisma.goldCloseRequest`/the new `volumeLots` column are usable via
+   TypeScript (types compiled fine -- `npx tsc --noEmit` and `npm run build` both pass) but the
+   RUNTIME client is stale, so calls touching those specifically may fail until regenerated.
+
+8. Real Prisma-backed Telegram dedup — verified with a synthetic, isolated-identity event, not
+   just the earlier mocked unit tests. `test/gold-execution/gold-telegram-real-prisma.spec.ts`
+   (4 tests) uses a REAL `PrismaClient` against the real test Postgres DB (only the Telegram Bot
+   API `fetch` call is mocked — no real message sent, no broker trade forced), every
+   dedupKey/eventType prefixed `SYNTHETIC_TEST_` so it's unambiguous in the table, proving: the
+   `GoldTelegramNotification` row is actually persisted, a second call with the same key is a
+   genuine DB round-trip no-op (not an in-memory assumption), dedup survives a fresh service
+   instance (proving it isn't in-memory), and a FAILED send is recorded distinctly from SENT.
+
+9. Labeling correction, going forward: "unit-tested" (isolated function/class, mocked
+   dependencies), "integration-tested" (real Postgres + real HTTP layer, collector/broker
+   response simulated), and "runtime/broker-event-verified" (observed against the actually-
+   running live process with a real MT5 fill/close) are three different claims and are labeled
+   as such above — nothing in this session claims the third for anything new, because the
+   backend hasn't been reachable to observe it against (see item 7).
+
+### What's still a genuine gap (not hidden as "out of scope")
+
+- Two-step protection remediation (re-request SL/TP before closing) — not built, see item 3.
+- No dedicated test for feed-status OK/DEGRADED/DOWN/UNKNOWN branching — see item 6.
+- The close-position/protection-remediation/volume paths are integration-tested against a
+  SIMULATED broker response, never an actual MT5 terminal — see item 7's blocker.
+
+### Readiness for resuming DEMO (once you've restarted per item 7)
+
+Before clearing GOLD_KILL_SWITCH, at minimum: (a) confirm the backend is actually listening and
+`/gold-demo` renders with live data, (b) confirm `npx prisma generate` completed clean (no
+EPERM), (c) re-run `npm run build` + the gold-execution/collector-ingress test subset one more
+time against the regenerated client, (d) watch one real snapshot/trades ingestion cycle and
+confirm `recentNotifications`/`GoldCloseRequest` behave as expected with no errors in the
+backend log. Only then clear the switch — that decision stays yours per the task's own
+instruction, not something this session takes on your behalf.

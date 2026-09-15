@@ -27,6 +27,7 @@ function baseInput(overrides: Partial<GoldRiskManagerInput> = {}): GoldRiskManag
     killSwitchActive: false,
     entryDeviationPoints: 0,
     maxEntryDeviationPoints: 200,
+    requestedVolumeLots: 0.01,
     ...overrides,
   };
 }
@@ -157,6 +158,59 @@ describe('evaluateGoldRiskManager', () => {
         accountInfo: { tradeMode: 'DEMO', equity: 10000, accountCurrency: 'USD', profitCurrency: 'USD', profitCurrencyToAccountCurrencyRate: null, existingCombinedRiskAmount: 0, todaysLossAmount: 0, currentDrawdownPct: 0 },
       }));
       expect(verdict.approved).toBe(true); // null rate is fine here — never even consulted since currencies match
+    });
+  });
+
+  describe('user-controlled volume threading (task: "finish functional volume control")', () => {
+    it('a smaller valid volume than the default still computes and approves (stop risk scales down)', () => {
+      const verdict = evaluateGoldRiskManager(baseInput({ requestedVolumeLots: 0.01 }));
+      expect(verdict.approved).toBe(true);
+      expect(verdict.volumeLots).toBe(0.01);
+    });
+
+    it('a larger, still-within-cap volume approves and reports the LARGER volume — not the old hardcoded 0.01', () => {
+      // 0.03 lots * 1000pt = $30 stop risk on $10,000 equity = 0.3%, under the 0.5% cap.
+      const verdict = evaluateGoldRiskManager(baseInput({ requestedVolumeLots: 0.03 }));
+      expect(verdict.approved).toBe(true);
+      expect(verdict.volumeLots).toBe(0.03);
+    });
+
+    it('a larger volume that breaches the (UNCHANGED) stop-risk cap is rejected — proves the cap logic itself was not altered', () => {
+      // 0.06 lots * 1000pt = $60 stop risk on $10,000 equity = 0.6%, OVER the 0.5% cap.
+      const verdict = evaluateGoldRiskManager(baseInput({ requestedVolumeLots: 0.06 }));
+      expect(verdict.approved).toBe(false);
+      expect(verdict.rejectionReason).toMatch(/stop risk/i);
+      expect(verdict.volumeLots).toBeNull();
+    });
+
+    it('rejects a zero volume before any risk calculation, never approving a no-op order', () => {
+      const verdict = evaluateGoldRiskManager(baseInput({ requestedVolumeLots: 0 }));
+      expect(verdict.approved).toBe(false);
+      expect(verdict.rejectionReason).toMatch(/not a valid positive number/i);
+    });
+
+    it('rejects a negative volume', () => {
+      const verdict = evaluateGoldRiskManager(baseInput({ requestedVolumeLots: -0.01 }));
+      expect(verdict.approved).toBe(false);
+      expect(verdict.rejectionReason).toMatch(/not a valid positive number/i);
+    });
+
+    it('rejects a non-finite volume (NaN) rather than letting it reach broker-bound/step math', () => {
+      const verdict = evaluateGoldRiskManager(baseInput({ requestedVolumeLots: NaN }));
+      expect(verdict.approved).toBe(false);
+      expect(verdict.rejectionReason).toMatch(/not a valid positive number/i);
+    });
+
+    it('still rejects a volume outside broker bounds even when positive/finite', () => {
+      const verdict = evaluateGoldRiskManager(baseInput({ requestedVolumeLots: 500 })); // maxLots is 100 in baseInput
+      expect(verdict.approved).toBe(false);
+      expect(verdict.rejectionReason).toMatch(/outside broker bounds/i);
+    });
+
+    it('still rejects a volume that does not align to the broker step', () => {
+      const verdict = evaluateGoldRiskManager(baseInput({ requestedVolumeLots: 0.015 })); // stepLots is 0.01 in baseInput
+      expect(verdict.approved).toBe(false);
+      expect(verdict.rejectionReason).toMatch(/broker's step/i);
     });
   });
 });

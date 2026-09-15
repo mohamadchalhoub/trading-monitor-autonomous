@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { isKillSwitchActive } from '../autonomous/kill-switch';
+import { isGoldKillSwitchActive } from './gold-kill-switch';
 import { getGoldExecutionMode, isStopNewEntriesActive } from './gold-execution-mode';
+import { GoldRuntimeSettingsService } from './gold-runtime-settings.service';
 import { GoldAccountRiskInfo, GoldBrokerVolumeConstraints, GoldCandidateOrder, GoldOccupancyState, evaluateGoldRiskManager } from './gold-risk-manager';
 import { GOLD_MAX_SIGNAL_AGE_SECONDS, GOLD_SYMBOL, GOLD_TP_SL_POINTS } from './gold-safety-constants';
 import { beirutSecondsOfDay } from '../research/confirmed-retest-v2/time';
@@ -62,7 +63,10 @@ export interface GoldCoordinatorResult {
 export class GoldExecutionCoordinatorService {
   private readonly logger = new Logger(GoldExecutionCoordinatorService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly runtimeSettings: GoldRuntimeSettingsService,
+  ) {}
 
   async evaluate(signal: GoldSignal, context: GoldCoordinatorContext): Promise<GoldCoordinatorResult> {
     const mode = getGoldExecutionMode();
@@ -133,17 +137,24 @@ export class GoldExecutionCoordinatorService {
       takeProfitDistancePoints: GOLD_TP_SL_POINTS,
     };
 
+    // Read exactly ONCE per evaluation — the single validated volume
+    // snapshot threaded through risk calculation, the persisted decision,
+    // and (via that same persisted row) the eventual broker submission.
+    // Never re-read later in this method or by the collector hand-off.
+    const requestedVolumeLots = this.runtimeSettings.getVolumeLots();
+
     const verdict = evaluateGoldRiskManager({
       candidate,
       accountInfo: context.accountInfo,
       occupancy: context.occupancy,
       volumeConstraints: context.volumeConstraints,
-      killSwitchActive: isKillSwitchActive(),
+      killSwitchActive: isGoldKillSwitchActive(),
       entryDeviationPoints,
       maxEntryDeviationPoints: context.maxEntryDeviationPoints,
+      requestedVolumeLots,
     });
 
-    const inputSnapshot = { signal, context, mode, entryDeviationPoints };
+    const inputSnapshot = { signal, context, mode, entryDeviationPoints, requestedVolumeLots };
 
     if (mode === 'SHADOW') {
       const row = await this.prisma.autonomousDecision.create({
@@ -155,6 +166,7 @@ export class GoldExecutionCoordinatorService {
           entryPrice: candidate.entryPrice,
           stopLoss: candidate.stopLoss,
           takeProfit: candidate.takeProfit,
+          volumeLots: requestedVolumeLots,
           reasoning: signal.reasoning,
           inputSnapshot: inputSnapshot as any,
           riskManagerApproved: verdict.approved,
@@ -171,7 +183,7 @@ export class GoldExecutionCoordinatorService {
       const row = await this.prisma.autonomousDecision.create({
         data: {
           accountId: context.accountId, symbol: GOLD_SYMBOL, action: signal.action, source: 'RULES_ONLY',
-          entryPrice: candidate.entryPrice, stopLoss: candidate.stopLoss, takeProfit: candidate.takeProfit,
+          entryPrice: candidate.entryPrice, stopLoss: candidate.stopLoss, takeProfit: candidate.takeProfit, volumeLots: requestedVolumeLots,
           reasoning: signal.reasoning, inputSnapshot: inputSnapshot as any,
           riskManagerApproved: false, riskManagerRejectionReason: verdict.rejectionReason, orderStatus: 'NONE',
         },
@@ -185,7 +197,7 @@ export class GoldExecutionCoordinatorService {
       const row = await this.prisma.autonomousDecision.create({
         data: {
           accountId: context.accountId, symbol: GOLD_SYMBOL, action: signal.action, source: 'RULES_ONLY',
-          entryPrice: candidate.entryPrice, stopLoss: candidate.stopLoss, takeProfit: candidate.takeProfit,
+          entryPrice: candidate.entryPrice, stopLoss: candidate.stopLoss, takeProfit: candidate.takeProfit, volumeLots: requestedVolumeLots,
           reasoning: signal.reasoning, inputSnapshot: inputSnapshot as any,
           riskManagerApproved: true, riskManagerRejectionReason: 'STOP NEW ENTRIES was active at send time — not queued despite risk-gate approval.',
           orderStatus: 'NONE',
@@ -198,7 +210,7 @@ export class GoldExecutionCoordinatorService {
     const row = await this.prisma.autonomousDecision.create({
       data: {
         accountId: context.accountId, symbol: GOLD_SYMBOL, action: signal.action, source: 'RULES_ONLY',
-        entryPrice: candidate.entryPrice, stopLoss: candidate.stopLoss, takeProfit: candidate.takeProfit,
+        entryPrice: candidate.entryPrice, stopLoss: candidate.stopLoss, takeProfit: candidate.takeProfit, volumeLots: requestedVolumeLots,
         reasoning: signal.reasoning, inputSnapshot: inputSnapshot as any,
         riskManagerApproved: true, riskManagerRejectionReason: null, orderStatus: 'PENDING',
       },

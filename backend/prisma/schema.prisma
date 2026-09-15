@@ -409,6 +409,76 @@ enum HealthComponent {
   DATA_INTEGRITY
 }
 
+// Gold execution's OWN, fully isolated Telegram notification log — deliberately
+// NOT AlertDelivery/AiAnalysis (those are the shared TELEGRAM_TRADING_CHAT_IDS/
+// OPS_CHAT_IDS pipeline this gold path must stay independent of). One row per
+// notification attempt; `dedupKey` is unique so a second attempt to notify the
+// same real-world event (e.g. the same decision id + event type) is a no-op at
+// the DB level, same durable-dedup posture as AlertDelivery.alertId @unique.
+enum GoldTelegramNotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model GoldTelegramNotification {
+  id         String                         @id @default(uuid())
+  dedupKey   String                         @unique @map("dedup_key")
+  eventType  String                         @map("event_type")
+  status     GoldTelegramNotificationStatus @default(PENDING)
+  messageId  Int?                           @map("message_id")
+  lastError  String?                        @map("last_error") // redacted — never contains the bot token
+  text       String
+  createdAt  DateTime                       @default(now()) @map("created_at")
+  sentAt     DateTime?                      @map("sent_at")
+
+  @@index([status, createdAt])
+  @@map("gold_telegram_notifications")
+}
+
+// Gold-only, task item 2 — "finish actual close-position execution."
+// Symmetric to AutonomousDecision's PENDING -> SENT -> FILLED flow but for
+// CLOSING an existing position instead of opening one: the dashboard
+// (gold-controls.controller.ts) creates one PENDING row per confirmed close
+// click, the collector's own poll (`GET .../close-request`) atomically
+// claims it (PENDING -> SENT, same claim-race protection as
+// claimOldestPendingOrder), and only a broker-confirmed executor result
+// (`POST .../close-request/:id/result`) ever flips it to CLOSED — never the
+// request merely being sent. `positionTicket` scopes this to one specific
+// MT5 position (never "close whatever is open"); `accountId` scopes it to
+// the one gold DEMO account this whole module operates against.
+enum GoldCloseRequestStatus {
+  PENDING
+  SENT
+  CLOSED
+  FAILED
+}
+
+model GoldCloseRequest {
+  id             String                 @id @default(uuid())
+  accountId      String                 @map("account_id")
+  symbol         String
+  positionTicket String                 @map("position_ticket") // MT5 position ticket (externalPositionId) — the exact position this request is scoped to
+  side           String // the POSITION's own side (BUY/SELL) — closing means trading the opposite direction, same convention as executor.py's close_position
+  volume         Decimal                @db.Decimal(18, 6)
+  status         GoldCloseRequestStatus @default(PENDING)
+  requestedAt    DateTime               @default(now()) @map("requested_at")
+  sentAt         DateTime?              @map("sent_at")
+  resultDealTicket Int?                 @map("result_deal_ticket")
+  resultClosedPrice Decimal?            @map("result_closed_price") @db.Decimal(18, 6)
+  resultError    String?                @map("result_error")
+  closedAt       DateTime?              @map("closed_at")
+
+  // Application-layer dedup only (gold-controls.controller.ts queries for an
+  // existing PENDING/SENT row for this positionTicket before creating a new
+  // one) — NOT a DB-level uniqueness constraint. Acceptable for this single-
+  // operator dashboard; a concurrent double-submit race is not defended
+  // against at the database layer.
+  @@index([status, requestedAt])
+  @@index([positionTicket, status])
+  @@map("gold_close_requests")
+}
+
 enum HealthStatusValue {
   OK
   DEGRADED
@@ -875,6 +945,15 @@ model AutonomousDecision {
   entryPrice         Decimal?                 @map("entry_price") @db.Decimal(18, 6)
   stopLoss           Decimal?                 @map("stop_loss") @db.Decimal(18, 6)
   takeProfit         Decimal?                 @map("take_profit") @db.Decimal(18, 6)
+  // Gold-only (task: "finish functional volume control") — the ONE
+  // validated volume snapshot approved by the risk gate at evaluation time,
+  // persisted here so the collector hand-off (GoldExecutionController's
+  // GET pending-order) submits EXACTLY the volume that was risk-approved,
+  // never a value re-read from live (possibly since-changed) runtime
+  // settings at a different point in time. Null for every pre-existing row
+  // (EURUSD decisions, and any gold decision from before this column
+  // existed) — those fall back to the frozen GOLD_VOLUME_LOTS constant.
+  volumeLots         Decimal?                 @map("volume_lots") @db.Decimal(18, 6)
   levelUsed          AutonomousLevelType?     @map("level_used")
   referenceWeekStart DateTime?                @map("reference_week_start")
   reasoning          String

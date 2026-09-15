@@ -198,6 +198,7 @@ class CollectorApp:
                         self._poll_and_execute_pending_order()
                     if self._config.gold_execution_enabled:
                         self._poll_and_execute_pending_gold_order()
+                        self._poll_and_execute_gold_close_request()
                 finally:
                     self._mt5_call_lock.release()
 
@@ -462,6 +463,67 @@ class CollectorApp:
             self._api.post_gold_execution_result(self._config.collector_account_id, decision_id, payload)
         except ApiClientError as exc:
             logger.error("failed to report gold execution result back to backend", extra={"decision_id": decision_id, "error": str(exc)})
+
+    def _poll_and_execute_gold_close_request(self) -> None:
+        """Gold close-request — symmetric to `_poll_and_execute_pending_gold_order`,
+        for the dashboard's "request close" action (gold-controls.controller.ts).
+        Same failure posture: never crashes the main loop, every outcome is
+        reported back so the backend row never sits stuck. Reports `ok=True`
+        (which the backend records as CLOSED) ONLY when `executor.close_position`
+        itself returns a broker-confirmed success (order_send() succeeded) —
+        never merely because this poll ran.
+        """
+        try:
+            response = self._api.get_gold_close_request(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("gold close-request poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        request = response.get("request")
+        if not request:
+            return
+
+        logger.info("gold close-request claimed, attempting execution", extra={
+            "request_id": request["requestId"], "ticket": request["ticket"], "side": request["side"], "volume": request["volume"],
+        })
+
+        try:
+            result = self._executor.close_position(
+                ticket=request["ticket"], side=request["side"], volume=request["volume"], symbol=request["symbol"],
+            )
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("gold close-position execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_gold_close_result(request["requestId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("gold close-position execution result", extra={
+            "request_id": request["requestId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_gold_close_result(
+            request["requestId"], ok=result.ok, deal_ticket=result.ticket,
+            closed_price=result.price, error_message=result.error_message,
+        )
+
+    def _report_gold_close_result(
+        self, request_id: str, *, ok: bool, deal_ticket: int | None = None,
+        closed_price: float | None = None, error_message: str | None = None,
+    ) -> None:
+        payload: dict = {"ok": ok}
+        if deal_ticket is not None:
+            payload["dealTicket"] = deal_ticket
+        if closed_price is not None:
+            payload["closedPrice"] = closed_price
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_gold_close_result(self._config.collector_account_id, request_id, payload)
+        except ApiClientError as exc:
+            # The close attempt already happened (or definitively failed) at
+            # the broker by this point — a failure to REPORT that back is a
+            # visibility problem, not a trading-safety one, but it does mean
+            # the request row stays stuck as SENT until this is noticed.
+            logger.error("failed to report gold close result back to backend", extra={"request_id": request_id, "error": str(exc)})
 
     def _trade_sync_due(self) -> bool:
         if self._last_trade_sync_at is None:
