@@ -939,3 +939,67 @@ After that restart, re-run the same read-only verification this session did earl
 considering the single-attempt restore-then-close policy live-verified — it is currently only
 unit- and integration-tested (simulated broker), not yet observed against a running process.
 GOLD_KILL_SWITCH remains engaged throughout; not cleared by this session.
+
+## Update — 2026-09-15, start-gold-demo.ps1 defects fixed (user code review)
+
+The user reviewed `start-gold-demo.ps1` directly and found 5 concrete defects. All fixed,
+verified read-only (mocked/synthetic PID files and the real current process list — **no new
+backend/collector/scheduler process was started to test this**, since real ones may still be
+live):
+
+1. **Collector duplicate-detection was blind** — `Test-CommandLineRunning` filtered exclusively
+   to `node.exe`, so a running Python collector could never be detected. Replaced with
+   `Test-ScopedProcessRunning`, parameterized by process name; the collector check now scans
+   `python.exe`/`pythonw.exe` whose command line contains BOTH this repo's `collector\` path
+   AND `main.py`.
+2. **Backend match was unscoped** — the old ts-node-dev check matched ANY process on the
+   machine, so an unrelated project's own ts-node-dev instance could have falsely blocked this
+   repo's startup. Now scoped by requiring the command line to also contain this repo's
+   `backend\` path (confirmed correct against ts-node-dev/tsx's own real command lines, which do
+   carry the absolute path via node_modules resolution).
+3. **Build could run underneath an already-running compiled instance** — the script now runs
+   ALL preflight/duplicate checks (backend, scheduler, collector) FIRST; `npm run build` only
+   runs after every check passes clean, and the script exits before touching `dist/` at all if
+   any conflict is found.
+4. **No readiness gate** — after starting the backend, the script now polls
+   `http://localhost:<port>/health/live` (30s bounded timeout) before starting the collector or
+   scheduler. On timeout, or if preflight found an untracked conflicting instance, it aborts with
+   an actionable message (what was found, where to look) and does not proceed.
+5. **Stale-PID-reuse risk** — `Test-PidAlive` previously only checked "does a process with this
+   PID number exist," which is not identity — Windows reuses PIDs. It now also confirms the
+   live process's name AND that its command line contains the expected entry-point substring
+   (e.g. `dist\src\main.js`) before treating a lock file as "genuinely still running." (The
+   literal `Get-Content$pidPath` typo mentioned as a possibility was checked for directly and
+   was NOT present in the file — `Get-Content $pidPath` was already correctly spaced.)
+
+Verified (read-only, real environment + synthetic cases, nothing started/stopped):
+- Real current process list: all of `backendDevRunning`/`backendStableRunning`/
+  `schedulerDevRunning`/`schedulerStableRunning`/`collectorRunningPy`/`collectorRunningPyw`
+  correctly returned `False` (nothing from this stack is currently running).
+- A deliberately unrelated `python.exe` process (scoped to a nonexistent path) correctly did
+  NOT match the collector check.
+- `Test-PidAlive`: a real-but-wrong-identity PID, a nonexistent PID, a name-match-but-
+  command-line-mismatch PID, and a missing lock file all correctly returned `False`; a
+  genuinely matching tracked process correctly returned `True`.
+
+**Scope correction, stated explicitly**: `start-gold-demo.ps1` starts BACKEND + COLLECTOR +
+GOLD-SCHEDULER ONLY. It does **not** start the frontend. The frontend's own dev command is
+unchanged and separate: `npm run dev` inside `frontend/` (`next dev` — its own hot-reloading dev
+server; this work did not touch or need to touch the frontend's run mode).
+
+### The one command to run backend + collector + scheduler (frontend is separate, see above)
+
+```
+powershell -ExecutionPolicy Bypass -File backend\scripts\start-gold-demo.ps1
+```
+
+Then, separately, if you want the dashboard:
+
+```
+cd frontend
+npm run dev
+```
+
+GOLD_KILL_SWITCH remains engaged. This script does not clear it, does not start a duplicate of
+anything already running (see the preflight fixes above), and does not place or close any
+broker order.
