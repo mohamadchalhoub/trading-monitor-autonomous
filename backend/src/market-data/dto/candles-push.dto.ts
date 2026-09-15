@@ -17,7 +17,7 @@ export class IncomingCandleDto {
 // account mismatch — see auth/collector-token.guard.ts's `requestedAccountId`).
 export class CandlesPushDto {
   @IsString() symbol!: string;
-  @IsIn(['M5', 'M15', 'H1', 'M30', 'H4', 'D1', 'W1', 'MN1']) timeframe!: 'M5' | 'M15' | 'H1' | 'M30' | 'H4' | 'D1' | 'W1' | 'MN1';
+  @IsIn(['M1', 'M5', 'M15', 'H1', 'M30', 'H4', 'D1', 'W1', 'MN1']) timeframe!: 'M1' | 'M5' | 'M15' | 'H1' | 'M30' | 'H4' | 'D1' | 'W1' | 'MN1';
 
   @IsArray()
   @ArrayMinSize(1)

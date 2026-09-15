@@ -2,7 +2,7 @@
 // so these calls run on the Next.js server and talk to the backend
 // directly (server-to-server), never from the browser. That sidesteps CORS
 // entirely and means the backend API is never exposed to the client bundle.
-const BASE_URL = process.env.BACKEND_API_URL ?? 'http://localhost:3000';
+const BASE_URL = process.env.BACKEND_API_URL ?? 'http://localhost:8420';
 
 // Dashboard authentication (production-readiness review — Option B). Read
 // from a server-only env var — deliberately NOT NEXT_PUBLIC_*, which Next.js
@@ -190,6 +190,19 @@ export interface Candle {
   volume: number | null;
 }
 
+export interface MarketDataCoverage {
+  symbol: string;
+  candles: Array<{
+    timeframe: string;
+    count: number;
+    earliest: string | null;
+    latest: string | null;
+    intervalStatusCounts: Record<string, number>;
+  }>;
+  ticks: { count: number; earliest: string | null; latest: string | null; intervalStatusCounts: Record<string, number> };
+  symbolMetadata: { present: boolean; updatedAt: string | null };
+}
+
 export interface TradeChartFeatures {
   preEntry: { returnPct: number | null; volatilityPct: number | null; recentHigh: number | null; recentLow: number | null; candleCount: number };
   duringTrade: { maxFavorableExcursionPct: number | null; maxAdverseExcursionPct: number | null; volatilityPct: number | null; candleCount: number };
@@ -263,6 +276,71 @@ export interface TechnicalAnalysisReport {
   timestamp: string;
 }
 
+export interface TrendBreakoutVolumeSetting {
+  instrument: 'EURUSD' | 'XAUUSD';
+  volumeLots: number;
+  version: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface TrendBreakoutInstrumentSettings {
+  instrument: 'EURUSD' | 'XAUUSD';
+  brokerSymbol: string;
+  volume: TrendBreakoutVolumeSetting;
+  slotOccupied: boolean;
+  slotState: 'PENDING' | 'OPEN' | 'UNKNOWN' | null;
+  symbolMetadataKnown: boolean;
+}
+
+export interface TrendBreakoutRiskPolicy {
+  version: number;
+  maxTradeRiskPct: number;
+  maxCombinedRiskPct: number;
+  dailyLossPct: number;
+  drawdownPct: number;
+  maxSpreadPctOfD: number;
+  maxQuoteAgeSeconds: number;
+}
+
+export interface TrendBreakoutSettings {
+  strategyVersion: string;
+  instruments: TrendBreakoutInstrumentSettings[];
+  entryWindow: { timezone: string; start: string; end: string };
+  entryWindowCurrentlyOpen: boolean;
+  riskPolicy: TrendBreakoutRiskPolicy;
+  executionMode: string;
+}
+
+export interface TrendBreakoutVolumeAuditEntry {
+  id: string;
+  instrument: string;
+  oldVolume: string | null;
+  newVolume: string;
+  newVersion: number;
+  changedBy: string;
+  changedAt: string;
+}
+
+export interface TrendBreakoutDecision {
+  id: string;
+  instrument: string;
+  signalCloseAt: string;
+  decisionAtUtc: string;
+  decisionAtBeirut: string;
+  action: 'OPEN_BUY' | 'OPEN_SELL' | 'HOLD';
+  atr14: string | null;
+  volumeUsed: string | null;
+  estimatedStopRiskAmount: string | null;
+  estimatedStopRiskCcy: string | null;
+  intendedEntryPrice: string | null;
+  intendedStopLoss: string | null;
+  intendedTakeProfit: string | null;
+  gateResults: { gate: string; passed: boolean; reason: string }[];
+  rejectionReason: string | null;
+  orderStatus: 'NONE' | 'PENDING' | 'SENT' | 'FILLED' | 'FAILED';
+}
+
 export const api = {
   listAccounts: () => apiFetch<Account[]>('/accounts'),
   getAccount: (id: string) => apiFetch<Account>(`/accounts/${id}`),
@@ -291,4 +369,244 @@ export const api = {
   eurUsdTradeChart: (accountId: string, positionId: string) =>
     apiFetch<TradeChartWindow>(`/accounts/${accountId}/eurusd-trades/${encodeURIComponent(positionId)}/chart`),
   technicalAnalysis: (accountId: string) => apiFetch<TechnicalAnalysisReport | null>(`/accounts/${accountId}/technical-analysis`),
+  trendBreakoutSettings: (accountId: string) => apiFetch<TrendBreakoutSettings>(`/accounts/${accountId}/trend-breakout/settings`),
+  trendBreakoutVolumeAudit: (accountId: string, instrument: string) =>
+    apiFetch<TrendBreakoutVolumeAuditEntry[]>(`/accounts/${accountId}/trend-breakout/volume-audit/${instrument}`),
+  trendBreakoutDecisions: (accountId: string, params: { instrument?: string; limit?: number } = {}) =>
+    apiFetch<TrendBreakoutDecision[]>(
+      `/accounts/${accountId}/trend-breakout/decisions?limit=${params.limit ?? 30}${params.instrument ? `&instrument=${params.instrument}` : ''}`,
+    ),
+  updateTrendBreakoutVolume: (accountId: string, instrument: string, input: { volumeLots: number; changedBy: string }) =>
+    apiFetch<{ ok: boolean; error?: string; warning?: string }>(`/accounts/${accountId}/trend-breakout/volume/${instrument}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }),
+  resetTrendBreakoutDrawdown: (accountId: string, resetBy: string) =>
+    apiFetch<{ ok: boolean }>(`/accounts/${accountId}/trend-breakout/drawdown-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resetBy }),
+    }),
+  marketCandles: (symbol: string, timeframe: string, from: string, to: string) =>
+    apiFetch<{ symbol: string; timeframe: string; candles: Candle[] }>(
+      `/market-data/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
+    ),
+  marketCoverage: (symbol: string) =>
+    apiFetch<MarketDataCoverage>(`/market-data/coverage?symbol=${encodeURIComponent(symbol)}`),
+  goldRetestResearch: () => apiFetch<GoldRetestResearch>('/research/xauusd-confirmed-retest'),
+  goldExecutionStatus: () => apiFetch<GoldExecutionStatus>('/research/gold-execution-status'),
+  goldNews: () => apiFetch<GoldNewsResponse>('/research/gold-execution-status/news'),
+  goldAiSummaries: () => apiFetch<{ summaries: GoldAiSummary[] }>('/research/gold-execution-status/ai-summaries'),
+  setGoldVolume: (input: { volumeLots: number; note?: string }) =>
+    apiFetch<{ ok: boolean; volumeLots?: number; error?: string }>('/research/gold-execution-status/volume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }),
+  setGoldStopNewEntries: (active: boolean) =>
+    apiFetch<{ ok: boolean; active: boolean }>('/research/gold-execution-status/stop-new-entries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active }),
+    }),
+  requestGoldClosePosition: (positionId: string) =>
+    apiFetch<{ ok: boolean; error?: string; note?: string }>('/research/gold-execution-status/close-position', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ positionId, confirm: true }),
+    }),
 };
+
+// Gold (XAUUSD) DEMO execution dashboard — reads gold-dashboard.controller.ts's
+// GET /research/gold-execution-status (and the two small read-only panels
+// alongside it). Deliberately its own type block, loosely mirroring the
+// controller's actual response shape rather than reusing any EURUSD/legacy
+// dashboard type.
+export interface GoldExecutionStatus {
+  strategyVersion: string;
+  accountMode?: 'OFF' | 'SHADOW' | 'DEMO';
+  mode?: 'OFF' | 'SHADOW' | 'DEMO';
+  stopNewEntriesActive: boolean;
+  killSwitchActive: boolean;
+  accountTradeMode?: 'REAL' | 'DEMO' | 'CONTEST' | null;
+  error?: string;
+  settings?: {
+    symbol: string;
+    /** The REAL volume every submitted order actually uses (frozen constant) — not the dashboard override below. */
+    volumeLots: number;
+    volumeOverride?: { value: number; active: boolean; note: string };
+    magicNumber: number;
+    tpSlUsd: number;
+    pointSize: number;
+    maxEntryDeviationPoints: number;
+    riskCapsPct: { stopRisk: number; combined: number; dailyLoss: number; drawdown: number };
+    note: string;
+  };
+  occupancy?: unknown;
+  volumeConstraints?: { minLots: number; maxLots: number; stepLots: number };
+  openPositions?: {
+    ticket: string;
+    side: 'BUY' | 'SELL';
+    volume: number;
+    entryPrice: number;
+    currentPrice: number | null;
+    stopLoss: number | null;
+    takeProfit: number | null;
+    floatingPnl: number;
+    openedAt: string;
+    isProtected: boolean;
+  }[];
+  closedTrades?: { dealTicket: string; side: 'BUY' | 'SELL'; volume: number; price: number; realizedPnl: number; executedAt: string }[];
+  recentDecisions?: {
+    id: string;
+    evaluatedAt: string;
+    action: string;
+    orderStatus: string;
+    riskManagerApproved: boolean;
+    riskManagerRejectionReason: string | null;
+    reasoning: string;
+    entryPrice: number | null;
+    stopLoss: number | null;
+    takeProfit: number | null;
+    mt5Ticket: number | null;
+    filledPrice: number | null;
+    executionError: string | null;
+    /** When the underlying M1 touch actually closed — distinct from `evaluatedAt` (logging/replay time). Null if unavailable. */
+    touchEndTIso: string | null;
+  }[];
+  recentNotifications?: { eventType: string; status: string; createdAt: string; text: string }[];
+  collectorHeartbeat?: { lastHeartbeatAt: string | null; ageMs: number | null; stale: boolean; mt5Connected: boolean | null; lastError: string | null };
+  liveQuote?: { bid: number | null; ask: number | null; ageMs: number | null; stale: boolean };
+  entryWindow?: { timezone: string; startSecondsBeirut: number; endSecondsBeirutExclusive: number; open: boolean };
+  dataFreshness?: { accountSnapshotAgeMs: number | null; accountSnapshotStale: boolean; symbolMetadataAgeMs: number | null; symbolMetadataStale: boolean };
+  /** Standalone `scripts/gold-execution-scheduler.ts` process's own on-disk heartbeat — NOT this Nest app's uptime. `stale: true` means no recent cycle has been observed, regardless of whether the backend/dashboard itself is up. */
+  goldScheduler?: { lastCycleAtUtc: string | null; ageMs: number | null; stale: boolean; activeLevelIds: string[] };
+  eurusd?: { strategy: string; status: string; note: string };
+}
+
+export interface GoldNewsResponse {
+  items: {
+    id: string;
+    title: string;
+    category: 'ECONOMIC_EVENT' | 'NEWS';
+    scheduledAtIso: string;
+    scheduledAtBeirut: string;
+    affectedCurrencies: string[];
+    sentiment: string | null;
+    sourceUrl: string | null;
+  }[];
+  coverage: {
+    source: string;
+    totalRows: number;
+    mostRecentSourceDataAtIso: string | null;
+    sourceDataStaleAfterMs: number;
+    sourceDataStale: boolean;
+    ingestionHealth: 'OK' | 'DEGRADED' | 'DOWN' | 'UNKNOWN';
+    lastIngestionRunAtIso: string | null;
+    lastIngestionRunOutcome: 'completed' | 'failed' | null;
+  }[];
+}
+
+export interface GoldAiSummary {
+  id: string;
+  eventType: string;
+  sourceDataTimestampIso: string;
+  generatedAtIso: string;
+  provider: string;
+  model: string | null;
+  summary: string;
+}
+
+// xauusd-h4-confirmed-retest-v1 research artifacts (read-only; see
+// backend/src/research/confirmed-retest/). Kept loosely typed where the
+// shape is a pass-through of the run's JSON files.
+type Range = [number, number] | null;
+
+export interface RetestBucket {
+  eligibleEvents: number;
+  counts: Record<'WIN' | 'LOSS' | 'AMBIGUOUS' | 'INDETERMINATE' | 'UNRESOLVED', number>;
+  resolvedWinRate: { numerator: number; denominator: number; rate: number | null; wilson95: [number, number] | null };
+  allEligibleBounds: { low: number | null; high: number | null; lowFormula: string; highFormula: string };
+}
+
+export interface RetestPaperSummary {
+  balanceId: string;
+  costId: string;
+  startingBalanceUsd: number;
+  branches: number;
+  branchCapHit: boolean;
+  haltedBranches: number;
+  openAtEndBranches: number;
+  tradesEntered: Range;
+  wins: Range;
+  losses: Range;
+  netPnlUsd: Range;
+  netExpectancyUsdPerTrade: Range;
+  profitFactor: Range;
+  maxEquityDrawdownUsd: Range;
+  maxEquityDrawdownPct: Range;
+  exposurePct: Range;
+  decisionTally: Record<string, Range>;
+}
+
+export interface GoldRetestResearch {
+  strategyVersion: string;
+  currentSpecHash: string;
+  executionBoundary: string;
+  watch: {
+    orderExecution: 'NONE';
+    lastCycleAtUtc: string;
+    evaluation: { status: string; reason: string };
+    timestampVerification: {
+      recorded: { interpretation: string; status: string; verifiedOn: string; evidence: string[]; limitations: string[] };
+      live: { status: 'LIVE_CONSISTENT' | 'LIVE_CONTRADICTED' | 'LIVE_UNAVAILABLE'; detail: string };
+    };
+    goldData: { latestStoredM1CloseUtc: string | null; latestStoredM1AgeSeconds: number | null; stale: boolean; note: string };
+    quotes: Array<{ symbol: string; bid: number; ask: number; tickAtUtc: string; receivedAtUtc: string; receiptAgeSeconds: number; spread: number }>;
+    collector: { lastHeartbeatUtc: string; ageSeconds: number; mt5Connected: boolean } | null;
+    symbolMetadata: { digits: number; tradeTickSize: number } | null;
+    settledEndUtc: string | null;
+    volumeLots: number;
+    volumeAudit: Array<{ atUtc: string; fromLots: number; toLots: number; changedBy: string }>;
+    activeLevels: Array<{ id: string; role: string; price: string; activatedUtc: string; h4BarsSinceActivation: number }>;
+    counts: { levelsEver: number; eventsEver: number; forwardEvents: number; pendingOutcomes: number };
+    quoteGate: Record<string, { pass: boolean; reason: string; decidedAtUtc: string }>;
+    watcher: { pid: number; startedAtUtc: string; cycle: number; loop: boolean; intervalSeconds: number; consecutiveErrors: number; nextCycleAtUtc: string | null } | null;
+  } | null;
+  run: {
+    runId: string;
+    specHashMatchesCurrent: boolean;
+    manifest: { frozenEndUtc: string; studyStartUtc: string; warmupStartUtc: string; dataHash: string; runCommand: string; gitCommit: string; conclusion: { conclusion: string; reason: string } };
+    eventStudy: {
+      studyEventsByKind: Record<string, number>;
+      ineligibleByReason: Record<string, number>;
+      full: RetestBucket;
+      byDirection: { BUY: RetestBucket; SELL: RetestBucket };
+      byYear: Record<string, RetestBucket>;
+      byHalfYear: Record<string, RetestBucket>;
+      dependence: { note: string };
+    };
+    formation: {
+      h4BarsProcessed: number;
+      pivotCandidates: Record<string, number>;
+      qualifiedPivots: Record<string, number>;
+      rejectedNoRejectionClose: Record<string, number>;
+      exactPriceRepeatPairsAnyDistance: Record<string, number>;
+      exactPriceRepeatPairsInDistanceWindow: Record<string, number>;
+      pairOutcomes: Record<string, number>;
+      activationsBlocked: Record<string, number>;
+      levelsActivated: Record<string, number>;
+    };
+    coverage: {
+      validations: Array<{ timeframe: string; rows: number; firstUtc: string; lastUtc: string; nonCentPrices: number; ohlcViolations: number; gridMisaligned: number; weekendServerBars: number; timezoneConversionErrors: number }>;
+      m1Gaps: { byKind: Record<string, { count: number; missingMinutes: number }>; unconfirmedList: Array<{ id: string; startUtc: string; minutes: number; kind: string; evidence: string; bridge: string | null }> };
+      substitutedM5Bars: number;
+      h4VsM1: { h4BarsChecked: number; exactMatch: number; mismatch: number; noM1Inside: number };
+      provenance: { storedTicks: number; accountSnapshots: number; backfillLogInstrumentVerification: string };
+    };
+    paper: Array<{ summary: RetestPaperSummary; decisionsByEvent: Record<string, Record<string, number>> }>;
+    levels: Array<Record<string, string | number | boolean | null>>;
+    events: Array<Record<string, unknown>>;
+  } | null;
+}

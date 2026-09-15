@@ -6,6 +6,7 @@ import { createRedisConnection } from '../jobs/redis-connection';
 import { PrismaService } from '../prisma/prisma.service';
 import { ComponentCheckResult } from './health-checks';
 import { redisHealthKey } from './health.constants';
+import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 
 /**
  * The write side shared by every check worker (originally
@@ -23,6 +24,7 @@ export class HealthStatusWriterService implements OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     config: ConfigService,
+    private readonly goldTelegram: GoldTelegramService,
   ) {
     this.redis = createRedisConnection(config);
   }
@@ -80,6 +82,29 @@ export class HealthStatusWriterService implements OnModuleDestroy {
           data: { component, statusFrom: previousStatus, statusTo: result.status, detail, openedAt: checkedAt },
         });
         this.logger.warn(`health incident: ${component} ${previousStatus} → ${result.status}`);
+      }
+
+      // Gold-specific outage/recovery notification — COLLECTOR only (the
+      // component the collector/scheduler outage detection task item maps
+      // to; see HEALTH_SPEC.md §3's COLLECTOR/MT5_TERMINAL split). Reuses
+      // this existing status-change detection rather than inventing a
+      // separate detector — fires on every transition INTO or OUT OF a
+      // non-OK status, deliberately not gated on gold execution mode (an
+      // operator needs this even while GOLD_EXECUTION_MODE=OFF/SHADOW).
+      if (component === 'COLLECTOR') {
+        if (result.status !== 'OK') {
+          void this.goldTelegram.notify(
+            'COLLECTOR_OUTAGE',
+            `collector-outage:${checkedAt.toISOString()}`,
+            `GOLD DEMO — collector outage detected. status ${previousStatus} -> ${result.status} at ${checkedAt.toISOString()}. detail=${JSON.stringify(detail)}`,
+          );
+        } else {
+          void this.goldTelegram.notify(
+            'COLLECTOR_RECOVERY',
+            `collector-recovery:${checkedAt.toISOString()}`,
+            `GOLD DEMO — collector recovered. status ${previousStatus} -> OK at ${checkedAt.toISOString()}.`,
+          );
+        }
       }
     } catch (err) {
       this.logger.error(

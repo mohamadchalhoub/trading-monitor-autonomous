@@ -54,6 +54,90 @@ class ApiClient:
     def get_latest_candle_time(self, symbol: str, timeframe: str) -> dict[str, Any]:
         return self._get(f"/collector/candles/latest?symbol={symbol}&timeframe={timeframe}")
 
+    # Gold historical-data-collection project — ticks carry no account_id,
+    # same "shared market data" posture as candles above.
+    def post_ticks(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post("/collector/ticks", payload)
+
+    def get_ticks_coverage(self, symbol: str) -> dict[str, Any]:
+        return self._get(f"/collector/ticks/coverage?symbol={symbol}")
+
+    # The backfill-intervals ledger — upsert is keyed server-side on
+    # source+symbol+dataType+timeframe+rangeStart+rangeEnd (this client
+    # sends whichever of those fields the caller supplies; it never
+    # computes or guesses the key itself).
+    def upsert_backfill_interval(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post("/collector/backfill-intervals", payload)
+
+    def get_backfill_intervals(
+        self,
+        symbol: str,
+        data_type: str,
+        timeframe: str | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        query = f"symbol={symbol}&dataType={data_type}"
+        if timeframe is not None:
+            query += f"&timeframe={timeframe}"
+        if statuses:
+            query += f"&status={','.join(statuses)}"
+        # _get's own return type is whatever the endpoint actually returns
+        # (a dict for most routes, an array here) — see its own body.
+        return self._get(f"/collector/backfill-intervals?{query}")  # type: ignore[return-value]
+
+    def get_storage_health(self) -> dict[str, Any]:
+        return self._get("/collector/storage-health")
+
+    # trend-breakout strategy (v3) — EXISTING route; the DTO now also
+    # accepts the new, fully-optional instrument-verification fields (see
+    # api_mapper.py's build_symbol_metadata_payload) but this wrapper's own
+    # shape (a single-attempt POST, same as every other push here) is
+    # unchanged.
+    def post_symbol_metadata(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post("/collector/symbol-metadata", payload)
+
+    # Autonomous demo trading (v2), Phase 6 — the ONE reverse-direction pair
+    # in this client: every other method here pushes data the collector
+    # already has; these two are the collector asking the backend "is there
+    # anything approved for me to execute" and then reporting back what
+    # happened. Still the collector acting as an HTTP CLIENT of the backend
+    # (a GET/POST it initiates on its own poll cycle) — the backend never
+    # calls out to the collector.
+    def get_pending_order(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/autonomous/pending-order")
+
+    def post_execution_result(self, account_id: str, decision_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/autonomous/pending-order/{decision_id}/result", result)
+
+    # Gold (XAUUSD) execution — its OWN route, deliberately separate from
+    # the EURUSD pair above (backend's GoldExecutionController), never the
+    # same URL with a symbol parameter, so the two strategies' wire
+    # contracts can never be confused at the HTTP layer either.
+    def get_pending_gold_order(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/gold-execution/pending-order")
+
+    def post_gold_execution_result(self, account_id: str, decision_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/gold-execution/pending-order/{decision_id}/result", result)
+
+    # Gold close-request — symmetric to the open pair above: the backend
+    # queues a confirmed dashboard close request, this collector polls for
+    # it on its own cycle and reports back the REAL broker result. "closed"
+    # is only ever reported when order_send() (inside executor.close_position)
+    # itself returned success — never just because the request was sent.
+    def get_gold_close_request(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/gold-execution/close-request")
+
+    def post_gold_close_result(self, account_id: str, request_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/gold-execution/close-request/{request_id}/result", result)
+
+    # Gold protection-restore — task item 3 ("restore-then-close"): the
+    # RESTORE half, symmetric to the close-request pair above.
+    def get_gold_restore_protection_request(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/gold-execution/restore-protection-request")
+
+    def post_gold_restore_protection_result(self, account_id: str, request_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/gold-execution/restore-protection-request/{request_id}/result", result)
+
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         try:

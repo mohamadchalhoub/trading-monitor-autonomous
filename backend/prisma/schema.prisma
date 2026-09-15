@@ -43,47 +43,67 @@ model User {
 }
 
 model TradingAccount {
-  id                 String   @id @default(uuid())
-  userId             String   @map("user_id")
-  platform           Platform
-  externalAccountId  String   @map("external_account_id")
-  broker             String?
-  currency           String   @db.Char(3)
-  displayName        String?  @map("display_name")
-  isActive           Boolean  @default(true) @map("is_active")
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  platform          Platform
+  externalAccountId String   @map("external_account_id")
+  broker            String?
+  currency          String   @db.Char(3)
+  displayName       String?  @map("display_name")
+  isActive          Boolean  @default(true) @map("is_active")
 
   // Revision 1, Req. 8 — explicit, never inferred from broker server time.
-  tradingDayTimezone  String  @default("UTC") @map("trading_day_timezone")
-  tradingDayResetHour Int     @default(0) @map("trading_day_reset_hour")
+  tradingDayTimezone  String @default("UTC") @map("trading_day_timezone")
+  tradingDayResetHour Int    @default(0) @map("trading_day_reset_hour")
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  snapshots   AccountSnapshot[]
-  positions   Position[]
-  trades      Trade[]
-  syncCursor  SyncCursor?
-  heartbeat   CollectorHeartbeat?
-  rules       RuleDefinition[]
-  ruleStates  RuleState[]
-  alerts      Alert[]
-  importBatches ImportBatch[]
-  apiCredentials ApiCredential[]
+  user                            User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshots                       AccountSnapshot[]
+  positions                       Position[]
+  trades                          Trade[]
+  syncCursor                      SyncCursor?
+  heartbeat                       CollectorHeartbeat?
+  rules                           RuleDefinition[]
+  ruleStates                      RuleState[]
+  alerts                          Alert[]
+  importBatches                   ImportBatch[]
+  apiCredentials                  ApiCredential[]
+  autonomousDecisions             AutonomousDecision[]
+  trendBreakoutDecisions          TrendBreakoutDecision[]
+  trendBreakoutSlotLocks          TrendBreakoutSlotLock[]
+  trendBreakoutRiskState          TrendBreakoutRiskState?
+  trendBreakoutEmergencyIncidents TrendBreakoutEmergencyIncident[]
 
   @@unique([platform, externalAccountId])
   @@map("trading_accounts")
 }
 
+// Autonomous demo trading (v2) — mirrors MT5's own ACCOUNT_TRADE_MODE_*
+// enum. Nullable: older snapshots (and any account this collector version
+// doesn't push it for) simply don't have an opinion, never defaulted to
+// either value — a risk-manager caller reading a null here must treat it
+// as "unknown, not verified," never as "assumed demo."
+enum AccountTradeMode {
+  REAL
+  DEMO
+  CONTEST
+}
+
 model AccountSnapshot {
-  id          BigInt   @id @default(autoincrement())
-  accountId   String   @map("account_id")
-  balance     Decimal  @db.Decimal(18, 2)
-  equity      Decimal  @db.Decimal(18, 2)
-  margin      Decimal  @db.Decimal(18, 2)
-  freeMargin  Decimal  @db.Decimal(18, 2) @map("free_margin")
-  marginLevel Decimal? @db.Decimal(9, 2) @map("margin_level")
-  profit      Decimal  @db.Decimal(18, 2)
-  capturedAt  DateTime @map("captured_at")
+  id          BigInt            @id @default(autoincrement())
+  accountId   String            @map("account_id")
+  balance     Decimal           @db.Decimal(18, 2)
+  equity      Decimal           @db.Decimal(18, 2)
+  margin      Decimal           @db.Decimal(18, 2)
+  freeMargin  Decimal           @map("free_margin") @db.Decimal(18, 2)
+  marginLevel Decimal?          @map("margin_level") @db.Decimal(9, 2)
+  profit      Decimal           @db.Decimal(18, 2)
+  // Autonomous demo trading (v2) — AUTONOMOUS_DEMO_TRADING_PLAN.md §1's
+  // single most safety-critical input, pushed by the collector from MT5's
+  // own account_info().trade_mode (mt5_client.py) on every snapshot cycle.
+  tradeMode   AccountTradeMode? @map("trade_mode")
+  capturedAt  DateTime          @map("captured_at")
 
   account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -121,22 +141,22 @@ model Position {
 }
 
 model Trade {
-  id               String    @id @default(uuid())
-  accountId        String    @map("account_id")
-  platform         Platform
-  externalTradeId  String    @map("external_trade_id") // MT5 deal ticket
-  positionId       String?   @map("position_id")        // MT5 position_id — links IN/OUT pairs
-  orderId          String?   @map("order_id")
-  symbol           String
-  side              Side
-  dealEntry         DealEntry @map("deal_entry")
-  volume           Decimal   @db.Decimal(12, 2)
-  price            Decimal   @db.Decimal(18, 6)
-  commission       Decimal   @default(0) @db.Decimal(18, 2)
-  swap             Decimal   @default(0) @db.Decimal(18, 2)
-  profit           Decimal   @default(0) @db.Decimal(18, 2)
-  executedAt       DateTime  @map("executed_at")
-  comment          String?
+  id              String    @id @default(uuid())
+  accountId       String    @map("account_id")
+  platform        Platform
+  externalTradeId String    @map("external_trade_id") // MT5 deal ticket
+  positionId      String?   @map("position_id") // MT5 position_id — links IN/OUT pairs
+  orderId         String?   @map("order_id")
+  symbol          String
+  side            Side
+  dealEntry       DealEntry @map("deal_entry")
+  volume          Decimal   @db.Decimal(12, 2)
+  price           Decimal   @db.Decimal(18, 6)
+  commission      Decimal   @default(0) @db.Decimal(18, 2)
+  swap            Decimal   @default(0) @db.Decimal(18, 2)
+  profit          Decimal   @default(0) @db.Decimal(18, 2)
+  executedAt      DateTime  @map("executed_at")
+  comment         String?
 
   // Historical chart reconstruction phase — XTB import only (xtb-import.service.ts
   // sets these on both the IN and OUT leg when the source row had them; MT5
@@ -145,8 +165,8 @@ model Trade {
   // purpose, since a deal-level SL/TP is inherently a position-level concept
   // duplicated onto its deals for chart-marker convenience, not a fact about
   // the deal itself). Never invented when absent from the source data.
-  stopLoss         Decimal?  @map("stop_loss") @db.Decimal(18, 6)
-  takeProfit       Decimal?  @map("take_profit") @db.Decimal(18, 6)
+  stopLoss   Decimal? @map("stop_loss") @db.Decimal(18, 6)
+  takeProfit Decimal? @map("take_profit") @db.Decimal(18, 6)
 
   // Revision 1, Req. 10.
   rawPayload Json? @map("raw_payload")
@@ -166,9 +186,9 @@ model Trade {
 // the actual incremental-sync mechanism is a time-window with overlap
 // (see the Phase 1 verification notes), not a strict ticket cursor.
 model SyncCursor {
-  accountId        String    @id @map("account_id")
-  lastSyncedAt     DateTime? @map("last_synced_at")
-  lastDealTicket   String?   @map("last_deal_ticket")
+  accountId      String    @id @map("account_id")
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  lastDealTicket String?   @map("last_deal_ticket")
 
   account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -178,12 +198,12 @@ model SyncCursor {
 // Revision 1, Req. 7 — updated on every accepted snapshot push; this is
 // the entire heartbeat mechanism, no separate endpoint or loop.
 model CollectorHeartbeat {
-  accountId         String   @id @map("account_id")
-  lastHeartbeatAt   DateTime @map("last_heartbeat_at")
-  mt5Connected      Boolean  @map("mt5_connected")
-  lastError         String?  @map("last_error")
-  collectorVersion  String?  @map("collector_version")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  accountId        String   @id @map("account_id")
+  lastHeartbeatAt  DateTime @map("last_heartbeat_at")
+  mt5Connected     Boolean  @map("mt5_connected")
+  lastError        String?  @map("last_error")
+  collectorVersion String?  @map("collector_version")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -291,9 +311,9 @@ model Alert {
   baselineSnapshot Json     @map("baseline_snapshot")
   ruleSnapshot     Json     @map("rule_snapshot")
 
-  rule    RuleDefinition @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  delivery AlertDelivery?
+  rule       RuleDefinition @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  account    TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  delivery   AlertDelivery?
   aiAnalysis AiAnalysis?
 
   @@index([accountId, triggeredAt(sort: Desc)])
@@ -313,22 +333,22 @@ enum NotificationClass {
 
 enum DeliveryStatus {
   PENDING // row written, not yet confirmed enqueued/delivered
-  SENT    // Telegram accepted it for every configured recipient chat
-  FAILED  // a transient failure; will retry (attempts < max)
-  DEAD    // exhausted retries or a permanent error — needs attention
+  SENT // Telegram accepted it for every configured recipient chat
+  FAILED // a transient failure; will retry (attempts < max)
+  DEAD // exhausted retries or a permanent error — needs attention
 }
 
 model AlertDelivery {
-  id                 String             @id @default(uuid())
-  alertId            String             @unique @map("alert_id")
-  class              NotificationClass  @default(TRADING_ALERT)
-  status             DeliveryStatus     @default(PENDING)
-  attempts           Int                @default(0)
-  lastError          String?            @map("last_error") // redacted — never contains the bot token
-  telegramMessageIds Json               @default("[]") @map("telegram_message_ids")
-  createdAt          DateTime           @default(now()) @map("created_at")
-  sentAt             DateTime?          @map("sent_at")
-  updatedAt          DateTime           @updatedAt @map("updated_at")
+  id                 String            @id @default(uuid())
+  alertId            String            @unique @map("alert_id")
+  class              NotificationClass @default(TRADING_ALERT)
+  status             DeliveryStatus    @default(PENDING)
+  attempts           Int               @default(0)
+  lastError          String?           @map("last_error") // redacted — never contains the bot token
+  telegramMessageIds Json              @default("[]") @map("telegram_message_ids")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  sentAt             DateTime?         @map("sent_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
 
   alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
 
@@ -343,27 +363,27 @@ model AlertDelivery {
 // with the Alert, same transactional-outbox reasoning as AlertDelivery, but
 // this relation is nullable since it doesn't exist for every Alert.
 enum AiAnalysisStatus {
-  PENDING   // row written, generation job not finished yet
-  READY     // generated, passed the safety filter — a Telegram follow-up is (or will be) sent
-  WITHHELD  // generated, FAILED the safety filter — never sent, kept for audit
-  FAILED    // provider error / timeout / schema-invalid response; may retry
-  SKIPPED   // AI is disabled (AI_ENABLED=false) — a deliberate no-op, not an error
+  PENDING // row written, generation job not finished yet
+  READY // generated, passed the safety filter — a Telegram follow-up is (or will be) sent
+  WITHHELD // generated, FAILED the safety filter — never sent, kept for audit
+  FAILED // provider error / timeout / schema-invalid response; may retry
+  SKIPPED // AI is disabled (AI_ENABLED=false) — a deliberate no-op, not an error
 }
 
 model AiAnalysis {
-  id                String            @id @default(uuid())
-  alertId           String            @unique @map("alert_id")
-  status            AiAnalysisStatus  @default(PENDING)
-  provider          String?           // which AiProvider answered (e.g. "anthropic"), set once processed
-  model             String?           // e.g. "claude-sonnet-5"
-  result            Json?             // the validated AiAnalysisResult, once READY or WITHHELD (null otherwise)
-  safetyFlagged     Boolean           @default(false) @map("safety_flagged")
-  flaggedPattern    String?           @map("flagged_pattern") // which filter rule matched — never the withheld text itself, in logs
-  lastError         String?           @map("last_error")      // redacted — never contains the API key
-  attempts          Int               @default(0)
+  id                 String           @id @default(uuid())
+  alertId            String           @unique @map("alert_id")
+  status             AiAnalysisStatus @default(PENDING)
+  provider           String? // which AiProvider answered (e.g. "anthropic"), set once processed
+  model              String? // e.g. "claude-sonnet-5"
+  result             Json? // the validated AiAnalysisResult, once READY or WITHHELD (null otherwise)
+  safetyFlagged      Boolean          @default(false) @map("safety_flagged")
+  flaggedPattern     String?          @map("flagged_pattern") // which filter rule matched — never the withheld text itself, in logs
+  lastError          String?          @map("last_error") // redacted — never contains the API key
+  attempts           Int              @default(0)
   telegramMessageIds Json             @default("[]") @map("telegram_message_ids")
-  createdAt         DateTime          @default(now()) @map("created_at")
-  updatedAt         DateTime          @updatedAt @map("updated_at")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
 
   alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
 
@@ -387,6 +407,115 @@ enum HealthComponent {
   AI_PROVIDER
   XTB_IMPORT
   DATA_INTEGRITY
+}
+
+// Gold execution's OWN, fully isolated Telegram notification log — deliberately
+// NOT AlertDelivery/AiAnalysis (those are the shared TELEGRAM_TRADING_CHAT_IDS/
+// OPS_CHAT_IDS pipeline this gold path must stay independent of). One row per
+// notification attempt; `dedupKey` is unique so a second attempt to notify the
+// same real-world event (e.g. the same decision id + event type) is a no-op at
+// the DB level, same durable-dedup posture as AlertDelivery.alertId @unique.
+enum GoldTelegramNotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model GoldTelegramNotification {
+  id         String                         @id @default(uuid())
+  dedupKey   String                         @unique @map("dedup_key")
+  eventType  String                         @map("event_type")
+  status     GoldTelegramNotificationStatus @default(PENDING)
+  messageId  Int?                           @map("message_id")
+  lastError  String?                        @map("last_error") // redacted — never contains the bot token
+  text       String
+  createdAt  DateTime                       @default(now()) @map("created_at")
+  sentAt     DateTime?                      @map("sent_at")
+
+  @@index([status, createdAt])
+  @@map("gold_telegram_notifications")
+}
+
+// Gold-only, task item 2 — "finish actual close-position execution."
+// Symmetric to AutonomousDecision's PENDING -> SENT -> FILLED flow but for
+// CLOSING an existing position instead of opening one: the dashboard
+// (gold-controls.controller.ts) creates one PENDING row per confirmed close
+// click, the collector's own poll (`GET .../close-request`) atomically
+// claims it (PENDING -> SENT, same claim-race protection as
+// claimOldestPendingOrder), and only a broker-confirmed executor result
+// (`POST .../close-request/:id/result`) ever flips it to CLOSED — never the
+// request merely being sent. `positionTicket` scopes this to one specific
+// MT5 position (never "close whatever is open"); `accountId` scopes it to
+// the one gold DEMO account this whole module operates against.
+enum GoldCloseRequestStatus {
+  PENDING
+  SENT
+  CLOSED
+  FAILED
+}
+
+model GoldCloseRequest {
+  id             String                 @id @default(uuid())
+  accountId      String                 @map("account_id")
+  symbol         String
+  positionTicket String                 @map("position_ticket") // MT5 position ticket (externalPositionId) — the exact position this request is scoped to
+  side           String // the POSITION's own side (BUY/SELL) — closing means trading the opposite direction, same convention as executor.py's close_position
+  volume         Decimal                @db.Decimal(18, 6)
+  status         GoldCloseRequestStatus @default(PENDING)
+  requestedAt    DateTime               @default(now()) @map("requested_at")
+  sentAt         DateTime?              @map("sent_at")
+  resultDealTicket Int?                 @map("result_deal_ticket")
+  resultClosedPrice Decimal?            @map("result_closed_price") @db.Decimal(18, 6)
+  resultError    String?                @map("result_error")
+  closedAt       DateTime?              @map("closed_at")
+
+  // Application-layer dedup only (gold-controls.controller.ts queries for an
+  // existing PENDING/SENT row for this positionTicket before creating a new
+  // one) — NOT a DB-level uniqueness constraint. Acceptable for this single-
+  // operator dashboard; a concurrent double-submit race is not defended
+  // against at the database layer.
+  @@index([status, requestedAt])
+  @@index([positionTicket, status])
+  @@map("gold_close_requests")
+}
+
+// Task item 3, corrected — "restore-then-close" protection remediation
+// (NOT direct-close-only, per explicit correction: the original spec is a
+// DIFFERENT policy, not something direct-close approximates). One row per
+// RESTORE ATTEMPT (not one row per incident) — on a FAILED attempt with
+// retries remaining, GoldProtectionRestoreService creates a NEW PENDING row
+// for the next attempt (attemptNumber+1) rather than mutating this one, so
+// the full attempt history stays visible. Restores SL/TP at the frozen
+// GOLD_TP_SL_POINTS distance from the position's own entry price (executor.py's
+// modify_protection, TRADE_ACTION_SLTP) — never a different distance/policy.
+// Only after maxAttempts consecutive FAILED attempts does the backend fall
+// back to GoldCloseRequest (still magic-number-scoped to this strategy).
+enum GoldProtectionRestoreStatus {
+  PENDING
+  SENT
+  RESTORED
+  FAILED
+}
+
+model GoldProtectionRestoreRequest {
+  id             String                      @id @default(uuid())
+  accountId      String                      @map("account_id")
+  symbol         String
+  positionTicket String                      @map("position_ticket")
+  side           String
+  stopLoss       Decimal                     @db.Decimal(18, 6) // the exact price this attempt asked the broker to set
+  takeProfit     Decimal                     @db.Decimal(18, 6)
+  attemptNumber  Int                         @default(1) @map("attempt_number")
+  maxAttempts    Int                         @default(3) @map("max_attempts")
+  status         GoldProtectionRestoreStatus @default(PENDING)
+  requestedAt    DateTime                    @default(now()) @map("requested_at")
+  sentAt         DateTime?                   @map("sent_at")
+  resultError    String?                     @map("result_error")
+  restoredAt     DateTime?                   @map("restored_at")
+
+  @@index([status, requestedAt])
+  @@index([positionTicket, status])
+  @@map("gold_protection_restore_requests")
 }
 
 enum HealthStatusValue {
@@ -465,15 +594,15 @@ model ImportBatch {
 // application layer, and rejects a token with no binding rather than
 // treating it as unrestricted.
 model ApiCredential {
-  id           String    @id @default(uuid())
-  name         String
-  tokenHash    String    @map("token_hash")
-  tokenPrefix  String    @map("token_prefix")
-  scope        String    @default("collector")
-  accountId    String?   @map("account_id")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  lastUsedAt   DateTime? @map("last_used_at")
-  revokedAt    DateTime? @map("revoked_at")
+  id          String    @id @default(uuid())
+  name        String
+  tokenHash   String    @map("token_hash")
+  tokenPrefix String    @map("token_prefix")
+  scope       String    @default("collector")
+  accountId   String?   @map("account_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  lastUsedAt  DateTime? @map("last_used_at")
+  revokedAt   DateTime? @map("revoked_at")
 
   account TradingAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -566,6 +695,12 @@ model MarketEvent {
 // own field, in case a second candle provider is ever needed for symbols/
 // history depth the connected MT5 terminal can't cover.
 enum CandleTimeframe {
+  // Gold historical-collection phase — added alongside a dedicated
+  // HistoricalTick table and BackfillInterval coverage ledger (see below).
+  // Ships in its own migration: Postgres requires one `ALTER TYPE ADD
+  // VALUE` per migration when adding a single enum value (same constraint
+  // already hit by the M30/H4/D1 migration below).
+  M1
   M5
   M15
   H1
@@ -585,19 +720,34 @@ enum CandleTimeframe {
 }
 
 model HistoricalCandle {
-  id        BigInt          @id @default(autoincrement())
-  symbol    String
-  timeframe CandleTimeframe
-  openTime  DateTime        @map("open_time")
-  open      Decimal         @db.Decimal(18, 6)
-  high      Decimal         @db.Decimal(18, 6)
-  low       Decimal         @db.Decimal(18, 6)
-  close     Decimal         @db.Decimal(18, 6)
+  id           BigInt          @id @default(autoincrement())
+  symbol       String
+  timeframe    CandleTimeframe
+  openTime     DateTime        @map("open_time")
+  open         Decimal         @db.Decimal(18, 6)
+  high         Decimal         @db.Decimal(18, 6)
+  low          Decimal         @db.Decimal(18, 6)
+  close        Decimal         @db.Decimal(18, 6)
   // Tick volume, not real traded volume (MT5/forex has no central
   // exchange-reported volume) — nullable since not every source gives one.
-  volume    Decimal?        @db.Decimal(18, 2)
-  source    String          @default("MT5")
-  createdAt DateTime        @default(now()) @map("created_at")
+  volume       Decimal?        @db.Decimal(18, 2)
+  // MT5's own `real_volume` field on the candle — genuinely distinct from
+  // `volume` (tick volume) above; nullable since not every broker/symbol
+  // populates it. Never conflate the two when reading this table.
+  realVolume   Decimal?        @map("real_volume") @db.Decimal(18, 2)
+  // MT5's `spread` field on the candle, in broker points — nullable/
+  // documented as "not populated by every broker," never assumed present.
+  spread       Int?
+  // Per-row provenance: the actual broker symbol string / MT5 server /
+  // (future) feed identifier this bar was fetched from. Nullable and left
+  // NULL on every row collected before this column existed — provenance for
+  // those rows is genuinely unknown and is recorded as unknown, never
+  // back-filled with whichever account happens to be connected today.
+  brokerSymbol String?         @map("broker_symbol")
+  server       String?
+  feedId       String?         @map("feed_id")
+  source       String          @default("MT5")
+  createdAt    DateTime        @default(now()) @map("created_at")
 
   // One row per (symbol, timeframe, candle open time) — the collector's own
   // periodic re-fetch of recent candles (to heal a bar that was still
@@ -605,6 +755,155 @@ model HistoricalCandle {
   @@unique([symbol, timeframe, openTime])
   @@index([symbol, timeframe, openTime(sort: Desc)])
   @@map("historical_candles")
+}
+
+// Gold historical-collection phase — genuinely new: LiveTick (above) is a
+// single row per symbol, always overwritten, and preserves no history at
+// all. This table stores every individual broker tick returned by MT5's
+// `copy_ticks_range`, append-only.
+//
+// Tick identity is stated honestly rather than assumed lossless: MT5's
+// Python API exposes no broker-side sequence number distinct from the
+// order ticks are returned in a given `copy_ticks_range` call. `batchSeq`
+// records that within-call order as a diagnostic aid only — it is NOT part
+// of this row's identity, because the same underlying tick fetched again in
+// an overlapping/repeated chunk would land at a different array position
+// and therefore a different `batchSeq`, which would defeat deduplication
+// rather than help it.
+//
+// Real identity/dedup is a Postgres EXPRESSION UNIQUE INDEX (created via
+// raw SQL in this table's migration — Prisma's schema DSL has no
+// expression-index syntax) on every broker-given field:
+//   (symbol, broker_symbol, timestamp, bid, ask,
+//    COALESCE(last, -1), COALESCE(volume, -1), COALESCE(volume_real, -1), flags)
+// The COALESCE sentinels exist because Postgres treats NULL <> NULL even
+// inside a unique index — a plain `@@unique` across nullable columns would
+// silently admit duplicate rows for the very common no-`last`-price tick on
+// every overlap re-fetch. Ingestion uses `INSERT ... ON CONFLICT (<that
+// same expression list>) DO NOTHING`, which is atomic and safe under
+// concurrent/repeated batch pushes (unlike a check-then-insert
+// `WHERE NOT EXISTS`, which races). Intra-batch duplicates (two rows in the
+// SAME incoming payload identical to each other) are also deduplicated in
+// application code first, mirroring HistoricalCandleService.upsertCandles's
+// existing JS-side Map-based intra-batch dedupe.
+//
+// DISCLOSED LIMITATION, not a bug: two genuinely distinct broker events
+// identical in every one of the fields above collapse into a single stored
+// row. This is a real gap in event-level precision inherent to what MT5's
+// API exposes, restated in the coverage report — never presented as
+// lossless tick capture.
+model HistoricalTick {
+  id           BigInt   @id @default(autoincrement())
+  symbol       String
+  brokerSymbol String?  @map("broker_symbol")
+  server       String?
+  feedId       String?  @map("feed_id")
+  // UTC, millisecond precision — derived from MT5's `time_msc`.
+  timestamp    DateTime
+  bid          Decimal  @db.Decimal(18, 6)
+  ask          Decimal  @db.Decimal(18, 6)
+  // Last-traded price — nullable; many ticks are pure bid/ask updates with
+  // no accompanying trade.
+  last         Decimal? @db.Decimal(18, 6)
+  volume       Decimal? @db.Decimal(18, 2)
+  volumeReal   Decimal? @map("volume_real") @db.Decimal(18, 2)
+  // Raw MT5 tick flag bitmask (TICK_FLAG_BID/ASK/LAST/VOLUME/BUY/SELL).
+  flags        Int
+  // This tick's 0-based position within the single copy_ticks_range() call
+  // that returned it — a same-batch ordering aid only, see the model
+  // comment above. NOT part of this row's identity/uniqueness.
+  batchSeq     Int      @map("batch_seq")
+  source       String   @default("MT5")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // The real dedup constraint is the raw-SQL expression unique index
+  // described above (created in this model's migration), not this
+  // ordinary index — kept for query performance on range scans.
+  @@index([symbol, timestamp])
+  @@map("historical_ticks")
+}
+
+// Gold historical-collection phase — the coverage/checkpoint ledger. A
+// `COMPLETED` status here proves only "what MT5 returned for this specific
+// request was ingested," never "this is everything the broker has for this
+// range" — that distinction is deliberate (see the status descriptions
+// below) and is what lets the coverage report ever say something honest
+// about partial/truncated/unconfirmed-empty results instead of inferring
+// completeness from min/max timestamps alone.
+enum BackfillDataType {
+  CANDLE
+  TICK
+}
+
+enum BackfillIntervalStatus {
+  PENDING
+  COMPLETED
+  // A zero-row response. Starts here, not at CONFIRMED — an empty result is
+  // never treated as proof of market closure or unavailable history on its
+  // own.
+  EMPTY_UNCONFIRMED
+  // Promoted from EMPTY_UNCONFIRMED only after a defined recheck policy:
+  // re-attempted on a separate connection/session at least once more, with
+  // an ordinary weekend/market-closed window allowed to corroborate (never
+  // by itself decide) the confirmation.
+  EMPTY_CONFIRMED
+  FAILED
+  // A crash/stop left this interval only partly ingested, or a resource
+  // guard (disk/WAL) paused mid-interval.
+  INCOMPLETE
+  // The returned row count landed at or near a previously-observed MT5
+  // per-call return cap — plausibly truncated by the terminal rather than a
+  // genuine "that's all there is." Queued for a narrower re-check, never
+  // trusted at face value as COMPLETED.
+  SUSPECTED_TRUNCATED
+}
+
+model BackfillInterval {
+  id           BigInt                 @id @default(autoincrement())
+  source       String                 @default("MT5")
+  symbol       String
+  brokerSymbol String?                @map("broker_symbol")
+  server       String?
+  dataType     BackfillDataType       @map("data_type")
+  // Only meaningful for dataType = CANDLE; null for TICK.
+  timeframe    CandleTimeframe?
+  // NOT NULL companion to `timeframe`, always set by the application: the
+  // timeframe's own name for CANDLE rows, the literal "_TICK_" for TICK
+  // rows. Exists purely so the uniqueness constraint below can be a plain,
+  // ordinary index instead of a nullable-column expression index — an
+  // earlier attempt at `COALESCE(timeframe::text, '')` failed migration
+  // validation because Postgres's enum-to-text cast function is STABLE,
+  // not IMMUTABLE, and therefore cannot appear in an index expression.
+  timeframeKey String                 @map("timeframe_key")
+  // The REQUESTED chunk bounds (UTC) — not necessarily what MT5 actually
+  // returned; `recordCount`/`evidence` capture the actual outcome.
+  rangeStart   DateTime               @map("range_start")
+  rangeEnd     DateTime               @map("range_end")
+  status       BackfillIntervalStatus @default(PENDING)
+  recordCount  Int?                   @map("record_count")
+  // Free-form: an MT5 error on FAILED, "queried, terminal returned 0 rows,
+  // no error" on an empty result, "matches a previously observed per-call
+  // cap" on SUSPECTED_TRUNCATED, or a resource-guard explanation on
+  // INCOMPLETE.
+  evidence     String?
+  attemptedAt  DateTime               @default(now()) @map("attempted_at")
+  completedAt  DateTime?              @map("completed_at")
+
+  // Checkpointing is only ever written AFTER successful ingestion, never
+  // after a bare fetch — a crash between fetch and ingest leaves this
+  // interval PENDING/INCOMPLETE on resume, never falsely COMPLETED.
+  //
+  // Uses `timeframeKey` (NOT NULL) rather than the nullable `timeframe`
+  // directly, so this can be an ordinary Postgres unique index — needed
+  // because concurrent writers (the live incremental sync and a one-off
+  // backfill script running at the same time — see the collection plan's
+  // "ongoing collection runs independently of the backfill" requirement)
+  // both upsert into this ledger via `INSERT ... ON CONFLICT (source,
+  // symbol, data_type, timeframe_key, range_start, range_end) DO UPDATE`,
+  // which must be atomic and NULL-safe.
+  @@unique([source, symbol, dataType, timeframeKey, rangeStart, rangeEnd])
+  @@index([symbol, dataType, timeframe, status])
+  @@map("backfill_intervals")
 }
 
 // One row per symbol, always overwritten in place — a genuine live bid/ask,
@@ -624,4 +923,426 @@ model LiveTick {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("live_ticks")
+}
+
+// Autonomous demo trading (v2) — AUTONOMOUS_DEMO_TRADING_PLAN.md §7/§10 and
+// backend/src/autonomous/AUTONOMOUS_RULE_ENGINE_SPEC.md. Phase 2: a
+// deterministic, AI-free rule engine evaluates the friend's H4 weekly
+// support/resistance rule, and every decision it makes — including HOLD —
+// is logged here for audit (the plan's §10 requirement is to be able to
+// reconstruct why the system did or did NOT act, not just what it did). No
+// order is ever placed from this phase, and no AI or execution layer exists
+// yet: `source` stays RULES_ONLY until a later phase adds an AI-assisted
+// decision layer on top of this same rule engine's output.
+enum AutonomousDecisionAction {
+  OPEN_BUY
+  OPEN_SELL
+  HOLD
+}
+
+enum AutonomousDecisionSource {
+  RULES_ONLY
+  // Phase 4 — the deterministic rule engine found a candidate AND the AI
+  // confirmation/veto layer ran on top of it (AUTONOMOUS_DEMO_TRADING_PLAN.md
+  // §3). Never set when the mechanical engine itself returned HOLD — the AI
+  // is only ever invoked on an already-valid mechanical candidate, never the
+  // originator of one.
+  AI_ASSISTED
+}
+
+enum AutonomousLevelType {
+  SUPPORT
+  RESISTANCE
+}
+
+// Phase 6 — the collector's execution poller picks up the oldest row with
+// orderStatus=PENDING for its own account and attempts it; NONE means this
+// decision never became an order attempt at all (a HOLD, or the risk
+// manager rejected it) — that distinction, not just "no ticket yet," is
+// why this isn't nullable-with-no-default.
+enum AutonomousOrderStatus {
+  NONE
+  PENDING
+  SENT
+  FILLED
+  FAILED
+}
+
+// `accountId` is nullable and was absent entirely before Phase 6 — this
+// phase evaluates the rule against EURUSD candle/tick data independent of
+// any one TradingAccount, and every decision from before execution existed
+// has no account to attach to. Populated from here on, always the one
+// dedicated demo account this system executes against (never any account
+// another monitor also watches — AUTONOMOUS_DEMO_TRADING_PLAN.md §1).
+model AutonomousDecision {
+  id                 String                   @id @default(uuid())
+  evaluatedAt        DateTime                 @default(now()) @map("evaluated_at")
+  accountId          String?                  @map("account_id")
+  symbol             String                   @default("EURUSD")
+  action             AutonomousDecisionAction
+  source             AutonomousDecisionSource @default(RULES_ONLY)
+  entryPrice         Decimal?                 @map("entry_price") @db.Decimal(18, 6)
+  stopLoss           Decimal?                 @map("stop_loss") @db.Decimal(18, 6)
+  takeProfit         Decimal?                 @map("take_profit") @db.Decimal(18, 6)
+  // Gold-only (task: "finish functional volume control") — the ONE
+  // validated volume snapshot approved by the risk gate at evaluation time,
+  // persisted here so the collector hand-off (GoldExecutionController's
+  // GET pending-order) submits EXACTLY the volume that was risk-approved,
+  // never a value re-read from live (possibly since-changed) runtime
+  // settings at a different point in time. Null for every pre-existing row
+  // (EURUSD decisions, and any gold decision from before this column
+  // existed) — those fall back to the frozen GOLD_VOLUME_LOTS constant.
+  volumeLots         Decimal?                 @map("volume_lots") @db.Decimal(18, 6)
+  levelUsed          AutonomousLevelType?     @map("level_used")
+  referenceWeekStart DateTime?                @map("reference_week_start")
+  reasoning          String
+  // Full assembled inputs (levels, current price, config used) at decision
+  // time — enough to reconstruct the exact causal chain later without
+  // guesswork, even for a HOLD.
+  inputSnapshot      Json                     @map("input_snapshot")
+
+  // Phase 4 — populated only when source = AI_ASSISTED. `aiRawResponse` is
+  // the provider's raw parsed JSON exactly as returned, BEFORE validation —
+  // kept even for a rejected response, since that's precisely the audit
+  // trail plan §10 asks for ("if the system ever produces an unexpected
+  // trade, the full causal chain... can be reconstructed"). `aiRejected` +
+  // `aiRejectionReason` cover the AI proposing something the deterministic
+  // validator refused (invalid schema, wrong SL/TP distance, etc.) — the
+  // resulting decision.action here is always HOLD in that case, never the
+  // AI's own rejected action.
+  aiProvider        String? @map("ai_provider")
+  aiModel           String? @map("ai_model")
+  aiRawResponse     Json?   @map("ai_raw_response")
+  aiRejected        Boolean @default(false) @map("ai_rejected")
+  aiRejectionReason String? @map("ai_rejection_reason")
+
+  // Phase 6 — risk-manager.ts's independent verdict on a confirmed
+  // OPEN_BUY/OPEN_SELL decision (plan §4). Always populated when a trade
+  // was confirmed by the AI (or by the mechanical engine alone, rules-only
+  // mode); left at its defaults (false/null) for a HOLD, since there's
+  // nothing for the risk manager to approve.
+  riskManagerApproved        Boolean               @default(false) @map("risk_manager_approved")
+  riskManagerRejectionReason String?               @map("risk_manager_rejection_reason")
+  orderStatus                AutonomousOrderStatus @default(NONE) @map("order_status")
+  mt5Ticket                  Int?                  @map("mt5_ticket")
+  filledPrice                Decimal?              @map("filled_price") @db.Decimal(18, 6)
+  filledAt                   DateTime?             @map("filled_at")
+  executionError             String?               @map("execution_error")
+
+  account TradingAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([evaluatedAt(sort: Desc)])
+  @@index([accountId, orderStatus])
+  @@map("autonomous_decisions")
+}
+
+// ============================================================================
+// Trend-breakout strategy (v3) — H4 trend / H1 breakout / H1-ATR exits.
+// Replaces the weekly H4 S/R rule above (archived under its own identifier,
+// "weekly-h4-sr-v1" — see strategy-versions.ts) as the strategy under
+// active development. Deliberately its OWN set of tables rather than
+// extending AutonomousDecision/AutonomousDecision*: the old strategy's
+// tables, code, and historical decisions are left completely untouched so
+// its results remain interpretable exactly as they were, and so a defect in
+// the new strategy's schema/migration can never touch the old one's data.
+// "h4-trend-h1-breakout-v1" is the versioned identifier for everything
+// below; a future revision gets a new identifier, never an in-place
+// semantic change to this one (see strategy-versions.ts's own comment).
+enum TrendBreakoutInstrument {
+  EURUSD
+  // Internal/canonical instrument identity — NOT necessarily the broker's
+  // own symbol string (a broker may call it "XAUUSD.a", "GOLD", "XAUUSDm",
+  // etc). trend-breakout/instrument-config.ts resolves this to the actual
+  // broker symbol via explicit, validated `.env` mapping — never assumed,
+  // never a substring/fuzzy match, and rejected outright if the configured
+  // mapping is ambiguous (e.g. resolves to a gold CROSS against a currency
+  // other than USD, or the same broker symbol is mapped to two instruments).
+  XAUUSD
+}
+
+enum TrendBreakoutSide {
+  BUY
+  SELL
+}
+
+// User-controlled, per-instrument, per §2 — never auto-sized from risk.
+// Single current row per instrument; every change is also appended to
+// TrendBreakoutVolumeAudit below, so "what was configured when" is always
+// reconstructable even though this table itself only holds the current value.
+model TrendBreakoutVolumeSetting {
+  instrument TrendBreakoutInstrument @id
+  volumeLots Decimal                 @db.Decimal(10, 2)
+  version    Int                     @default(1)
+  updatedAt  DateTime                @updatedAt @map("updated_at")
+  updatedBy  String                  @map("updated_by") // authenticated user's id/email — never system-changed
+
+  @@map("trend_breakout_volume_settings")
+}
+
+// Append-only — §2 "audit every setting change." Never updated or deleted;
+// TrendBreakoutVolumeSetting.version at the time of the change is stored
+// alongside so a decision row's own `configVersion` snapshot can be matched
+// back to exactly which volume was in effect when that entry request was made.
+model TrendBreakoutVolumeAudit {
+  id         String                  @id @default(uuid())
+  instrument TrendBreakoutInstrument
+  oldVolume  Decimal?                @db.Decimal(10, 2)
+  newVolume  Decimal                 @db.Decimal(10, 2)
+  newVersion Int                     @map("new_version")
+  changedBy  String                  @map("changed_by")
+  changedAt  DateTime                @default(now()) @map("changed_at")
+
+  @@index([instrument, changedAt(sort: Desc)])
+  @@map("trend_breakout_volume_audits")
+}
+
+// Global, no accountId — same "market data, not account data" posture as
+// LiveTick/HistoricalCandle. Populated by the collector from MT5's own
+// symbol_info() (read-only — see mt5_client.py's get_symbol_info) whenever
+// it is running against a live terminal; this sandbox/dev environment has
+// never had a live terminal connected, so this table is empty here (see the
+// delivery report's "remaining prerequisites" list). Every volume/price-
+// increment validation in this strategy FAILS CLOSED (blocks the entry) when
+// a symbol's row is missing or stale, rather than assuming permissive
+// min/max/step values — §2's "invalid volume must result in a clear
+// validation error or blocked entry" applies equally to "we don't actually
+// know the broker's real limits yet."
+model SymbolMetadata {
+  symbol            String    @id
+  volumeMin         Decimal   @map("volume_min") @db.Decimal(10, 4)
+  volumeMax         Decimal   @map("volume_max") @db.Decimal(10, 2)
+  volumeStep        Decimal   @map("volume_step") @db.Decimal(10, 4)
+  digits            Int
+  point             Decimal   @db.Decimal(18, 8)
+  contractSize      Decimal   @map("contract_size") @db.Decimal(18, 4)
+  profitCurrency    String    @map("profit_currency")
+  // Gold historical-collection phase — instrument-verification fields
+  // (§A1/A2 of the collection plan). `point` above is the price increment;
+  // `tradeTickSize` is the broker's minimum PRICE-MOVEMENT-THAT-COUNTS,
+  // which is not always equal to `point` and must never be assumed to be.
+  brokerSymbol      String?   @map("broker_symbol")
+  server            String?
+  // MT5 symbol_info().path — its category path (e.g. "Metals\XAUUSD"),
+  // used to help confirm this is spot-style gold-vs-USD rather than a
+  // dated futures contract or an unrelated cross. Being a CFD is normal
+  // and is never by itself a disqualifying signal.
+  path              String?
+  currencyBase      String?   @map("currency_base")
+  currencyProfit    String?   @map("currency_profit")
+  currencyMargin    String?   @map("currency_margin")
+  tradeTickSize     Decimal?  @map("trade_tick_size") @db.Decimal(18, 8)
+  tradeTickValue    Decimal?  @map("trade_tick_value") @db.Decimal(18, 8)
+  tradeStopsLevel   Int?      @map("trade_stops_level")
+  tradeFreezeLevel  Int?      @map("trade_freeze_level")
+  // Raw MT5 SYMBOL_TRADE_MODE_* int (disabled/long-only/short-only/
+  // close-only/full).
+  tradeMode         Int?      @map("trade_mode")
+  swapMode          Int?      @map("swap_mode")
+  swapLong          Decimal?  @map("swap_long") @db.Decimal(18, 6)
+  swapShort         Decimal?  @map("swap_short") @db.Decimal(18, 6)
+  swapRollover3Days Int?      @map("swap_rollover_3_days")
+  // A real, non-none expiration marks a dated futures contract — excluded
+  // from "spot-style gold-vs-USD." Null/none is expected and accepted for
+  // the intended CFD product.
+  expirationMode    Int?      @map("expiration_mode")
+  expirationTime    DateTime? @map("expiration_time")
+  // Deliberately NOT collected here: MT5's per-day trading-session data
+  // (symbol_info_session_trade), a much larger 7-day API surface. Disclosed
+  // as out of scope, not silently omitted — see the collector's own
+  // instrument-verification code comment.
+  source            String    @default("MT5")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@map("symbol_metadata")
+}
+
+// Versioned, explicit account-protection settings — §10. A NEW row is
+// inserted for any policy change (never edited in place), and exactly one
+// row is `active` at a time; every decision snapshots which version applied
+// (TrendBreakoutDecision.riskPolicyVersion). Percentages are stored as the
+// plain number they represent (0.5 = 0.5%), never as a 0-1 fraction, to
+// avoid exactly the kind of silent factor-of-100 bug a fraction/percent
+// mismatch invites.
+model TrendBreakoutRiskPolicy {
+  version            Int      @id @default(autoincrement())
+  maxTradeRiskPct    Decimal  @map("max_trade_risk_pct") @db.Decimal(6, 4)
+  maxCombinedRiskPct Decimal  @map("max_combined_risk_pct") @db.Decimal(6, 4)
+  dailyLossPct       Decimal  @map("daily_loss_pct") @db.Decimal(6, 4)
+  drawdownPct        Decimal  @map("drawdown_pct") @db.Decimal(6, 4)
+  maxSpreadPctOfD    Decimal  @map("max_spread_pct_of_d") @db.Decimal(6, 4)
+  maxQuoteAgeSeconds Int      @map("max_quote_age_seconds")
+  createdAt          DateTime @default(now()) @map("created_at")
+  active             Boolean  @default(true)
+
+  @@map("trend_breakout_risk_policies")
+}
+
+// Durable daily-loss/drawdown state per account — §10. Persisted explicitly
+// so a restart or transient data loss can NEVER silently reset a baseline or
+// clear a triggered flag (both would quietly re-permit trading that should
+// stay blocked). One row per account; both baselines are cash-flow-adjusted
+// (dailyNetCashFlow / cashFlowAdjustedHigh both exclude deposit/withdrawal
+// movement from being counted as trading P&L).
+model TrendBreakoutRiskState {
+  accountId            String    @id @map("account_id")
+  beirutDate           String    @map("beirut_date") // "YYYY-MM-DD", the Beirut calendar day this daily baseline covers
+  dailyBaselineEquity  Decimal   @map("daily_baseline_equity") @db.Decimal(18, 2)
+  dailyNetCashFlow     Decimal   @default(0) @map("daily_net_cash_flow") @db.Decimal(18, 2)
+  dailyLossTriggered   Boolean   @default(false) @map("daily_loss_triggered")
+  cashFlowAdjustedHigh Decimal   @map("cash_flow_adjusted_high") @db.Decimal(18, 2)
+  drawdownTriggered    Boolean   @default(false) @map("drawdown_triggered")
+  drawdownTriggeredAt  DateTime? @map("drawdown_triggered_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("trend_breakout_risk_states")
+}
+
+// The exclusivity guard for §3's "one active trade per instrument" —
+// deliberately a plain PRIMARY KEY on (accountId, instrument), not just an
+// application-level in-memory check: creating this row IS the act of
+// claiming the slot, and the database's own PK uniqueness makes a second,
+// concurrent claim attempt (a second worker, a retried request after a
+// restart) fail atomically at the database, not race in application code.
+// The slot is occupied for as long as this row exists, in ANY state below;
+// it is deleted only once the position is confirmed closed AND the
+// originating request is fully resolved (never on submission alone).
+enum TrendBreakoutSlotState {
+  PENDING // entry request created/submitted, not yet confirmed open
+  OPEN // confirmed open position
+  UNKNOWN // execution outcome could not be confirmed — stays locked until reconciled, never assumed safe to release
+}
+
+model TrendBreakoutSlotLock {
+  accountId  String                  @map("account_id")
+  instrument TrendBreakoutInstrument
+  state      TrendBreakoutSlotState
+  decisionId String                  @unique @map("decision_id")
+  claimedAt  DateTime                @default(now()) @map("claimed_at")
+  updatedAt  DateTime                @updatedAt @map("updated_at")
+
+  decision TrendBreakoutDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  account  TradingAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, instrument])
+  @@map("trend_breakout_slot_locks")
+}
+
+// One row per H1 signal-candle evaluation (HOLD included) per instrument —
+// §12's full observability list, folded into one row the same way the
+// legacy AutonomousDecision already does (decision fields AND the resulting
+// order/position lifecycle together), rather than a separate position
+// table: a confirmed entry has exactly one resulting position, and keeping
+// them in one row makes "everything that happened because of this signal"
+// a single, directly queryable record.
+//
+// The unique constraint below IS the durable signal/request identity §8
+// asks for (account, strategy version, instrument, signal-close timestamp)
+// — re-evaluating the same H1 close can never create a second row, which is
+// simultaneously the idempotency guard AND the enforcement of "no reuse of
+// the signal that produced the closed trade" (a new trade needs a new,
+// later signalCloseAt).
+model TrendBreakoutDecision {
+  id               String                  @id @default(uuid())
+  accountId        String                  @map("account_id")
+  strategyVersion  String                  @map("strategy_version")
+  instrument       TrendBreakoutInstrument
+  signalCloseAt    DateTime                @map("signal_close_at") // UTC — S's close time
+  decisionAtUtc    DateTime                @default(now()) @map("decision_at_utc")
+  decisionAtBeirut String                  @map("decision_at_beirut") // human-readable local rendering, not authoritative (UTC columns are)
+
+  action AutonomousDecisionAction @default(HOLD) // reuses the existing enum — HOLD/OPEN_BUY/OPEN_SELL means exactly the same thing here
+
+  // H4 trend filter inputs, frozen at decision time.
+  h4CloseAt Decimal? @map("h4_close") @db.Decimal(18, 6)
+  h4Ema50   Decimal? @map("h4_ema50") @db.Decimal(18, 6)
+  h4Ema200  Decimal? @map("h4_ema200") @db.Decimal(18, 6)
+
+  // H1 breakout inputs.
+  h1RangeHigh   Decimal? @map("h1_range_high") @db.Decimal(18, 6)
+  h1RangeLow    Decimal? @map("h1_range_low") @db.Decimal(18, 6)
+  h1SignalClose Decimal? @map("h1_signal_close") @db.Decimal(18, 6)
+  h1SignalHigh  Decimal? @map("h1_signal_high") @db.Decimal(18, 6)
+  h1SignalLow   Decimal? @map("h1_signal_low") @db.Decimal(18, 6)
+
+  // Frozen ATR — §5/§9, computed once through the H1 candle immediately
+  // preceding S and never recomputed for this setup.
+  atr14 Decimal? @db.Decimal(18, 6)
+
+  // Quote at evaluation/submission time.
+  bid          Decimal?  @db.Decimal(18, 6)
+  ask          Decimal?  @db.Decimal(18, 6)
+  spreadPoints Decimal?  @map("spread_points") @db.Decimal(10, 2)
+  quoteAt      DateTime? @map("quote_at")
+
+  volumeUsed              Decimal? @map("volume_used") @db.Decimal(10, 2)
+  volumeConfigVersion     Int?     @map("volume_config_version") // TrendBreakoutVolumeSetting.version snapshotted at request time
+  riskPolicyVersion       Int?     @map("risk_policy_version")
+  estimatedStopRiskAmount Decimal? @map("estimated_stop_risk_amount") @db.Decimal(18, 2)
+  estimatedStopRiskCcy    String?  @map("estimated_stop_risk_ccy")
+
+  intendedEntryPrice Decimal? @map("intended_entry_price") @db.Decimal(18, 6)
+  intendedStopLoss   Decimal? @map("intended_stop_loss") @db.Decimal(18, 6)
+  intendedTakeProfit Decimal? @map("intended_take_profit") @db.Decimal(18, 6)
+
+  actualFillPrice  Decimal? @map("actual_fill_price") @db.Decimal(18, 6)
+  actualStopLoss   Decimal? @map("actual_stop_loss") @db.Decimal(18, 6)
+  actualTakeProfit Decimal? @map("actual_take_profit") @db.Decimal(18, 6)
+  slConfirmed      Boolean? @map("sl_confirmed")
+
+  // Ordered [{gate, passed, reason}] — every gate this decision passed
+  // through, not just the one that failed, so "why didn't this trade" (or
+  // "why DID this trade") is reconstructable without re-deriving state.
+  gateResults     Json    @map("gate_results")
+  rejectionReason String? @map("rejection_reason") // §8 — a failed gate always has a specific reason here, never a bare HOLD with none
+
+  brokerRequestId  String? @map("broker_request_id")
+  brokerOrderId    String? @map("broker_order_id")
+  brokerPositionId String? @map("broker_position_id")
+
+  orderStatus         AutonomousOrderStatus @default(NONE) @map("order_status") // reuses the existing enum (NONE/PENDING/SENT/FILLED/FAILED)
+  reconciliationState String?               @map("reconciliation_state")
+  closedAt            DateTime?             @map("closed_at")
+  closeReason         String?               @map("close_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  slotLock TrendBreakoutSlotLock?
+  account  TradingAccount         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, strategyVersion, instrument, signalCloseAt])
+  @@index([accountId, instrument, decisionAtUtc(sort: Desc)])
+  @@map("trend_breakout_decisions")
+}
+
+// §11 emergency handling — a missing/unverifiable protective stop. Tested
+// with mocked broker calls only in this task (execution stays disabled);
+// this table exists so the incident, and every action taken in response, is
+// durably recorded regardless.
+enum TrendBreakoutIncidentKind {
+  MISSING_STOP_LOSS
+}
+
+enum TrendBreakoutIncidentStatus {
+  OPEN // detected, response in progress or blocked
+  MITIGATED // resolved without ambiguity (SL re-established and verified, or position confirmed closed)
+  UNRESOLVED // closure failed or its outcome is unknown — account stays blocked, human reconciliation required
+}
+
+model TrendBreakoutEmergencyIncident {
+  id         String                      @id @default(uuid())
+  accountId  String                      @map("account_id")
+  instrument TrendBreakoutInstrument
+  decisionId String?                     @map("decision_id")
+  kind       TrendBreakoutIncidentKind
+  status     TrendBreakoutIncidentStatus @default(OPEN)
+  detail     Json
+  openedAt   DateTime                    @default(now()) @map("opened_at")
+  resolvedAt DateTime?                   @map("resolved_at")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, status])
+  @@map("trend_breakout_emergency_incidents")
 }

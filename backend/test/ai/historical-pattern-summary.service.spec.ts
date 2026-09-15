@@ -34,6 +34,7 @@ describe('HistoricalPatternSummaryService', () => {
     positionId: string,
     side: 'BUY' | 'SELL',
     profit: number,
+    extra: { commission?: number; swap?: number } = {},
   ) {
     await prisma.trade.create({
       data: {
@@ -46,7 +47,8 @@ describe('HistoricalPatternSummaryService', () => {
       data: {
         accountId, platform: 'XTB', externalTradeId: `${positionId}-OUT`, positionId,
         symbol: 'EURUSD', side, dealEntry: 'OUT', volume: 0.1,
-        price: 1.11, profit, executedAt: new Date('2026-01-01T01:00:00Z'),
+        price: 1.11, profit, commission: extra.commission ?? 0, swap: extra.swap ?? 0,
+        executedAt: new Date('2026-01-01T01:00:00Z'),
       },
     });
   }
@@ -83,6 +85,24 @@ describe('HistoricalPatternSummaryService', () => {
     const result = await service.build();
     expect(result.buy.sampleSize).toBe(1);
     expect(result.buy.winRate).toBe(0);
+  });
+
+  // Audit finding (reconciliation session): win/loss must be classified by
+  // NET P/L (profit + commission + swap), not the raw gross `profit` field —
+  // confirmed against this account's own real EURUSD history, where several
+  // gross-breakeven positions are net losers once a negative swap is
+  // included. A gross winner small enough to be wiped out by swap must
+  // count as a loss here, not a win.
+  it('classifies win/loss by NET profit (including swap), not gross profit alone', async () => {
+    const account = await xtbAccount();
+    await createRoundTrip(account.id, 'b1', 'BUY', 1, { swap: -1.5 }); // gross +1, net -0.5
+    await createRoundTrip(account.id, 'b2', 'BUY', 0, { swap: -2 }); // gross breakeven, net -2
+    await createRoundTrip(account.id, 'b3', 'BUY', 5, { swap: -1 }); // gross +5, net +4 — still a real win
+
+    const result = await service.build();
+    expect(result.buy.sampleSize).toBe(3);
+    expect(result.buy.winRate).toBeCloseTo(1 / 3); // only b3 is a net winner
+    expect(result.buy.averagePnl).toBeCloseTo((-0.5 - 2 + 4) / 3);
   });
 
   it('confidence is LOW under 20 trades, MEDIUM from 20-99, HIGH from 100+', async () => {

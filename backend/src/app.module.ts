@@ -4,6 +4,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { TradingDataModule } from './trading-data/trading-data.module';
 import { CollectorIngressModule } from './collector-ingress/collector-ingress.module';
+import { MarketDataModule } from './market-data/market-data.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { RulesModule } from './rules/rules.module';
 import { AlertsModule } from './alerts/alerts.module';
@@ -14,6 +15,10 @@ import { HealthModule } from './health/health.module';
 import { MarketEventsModule } from './market-events/market-events.module';
 import { HistoricalChartsModule } from './historical-charts/historical-charts.module';
 import { XtbImportModule } from './xtb-import/xtb-import.module';
+import { AutonomousModule } from './autonomous/autonomous.module';
+import { TrendBreakoutModule } from './trend-breakout/trend-breakout.module';
+import { ConfirmedRetestDashboardModule } from './research/confirmed-retest-dashboard/confirmed-retest.controller';
+import { GoldExecutionModule } from './gold-execution/gold-execution.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -23,6 +28,7 @@ import { AppController } from './app.controller';
     AccountsModule,
     TradingDataModule,
     CollectorIngressModule,
+    MarketDataModule,
     AnalyticsModule,
     RulesModule,
     AlertsModule,
@@ -33,6 +39,10 @@ import { AppController } from './app.controller';
     XtbImportModule,
     MarketEventsModule,
     HistoricalChartsModule,
+    AutonomousModule,
+    TrendBreakoutModule,
+    ConfirmedRetestDashboardModule,
+    GoldExecutionModule,
   ],
   controllers: [AppController],
 })

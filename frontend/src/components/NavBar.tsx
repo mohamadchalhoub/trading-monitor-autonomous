@@ -8,13 +8,14 @@ const ACCOUNT_SCOPED_ROUTES = [
   { label: "Alerts", segment: "alerts" },
   { label: "History", segment: "history" },
   { label: "Rules", segment: "rules" },
+  { label: "Trend Breakout", segment: "trend-breakout" },
   { label: "Imports", segment: "imports" },
   { label: "EURUSD Charts", segment: "eurusd-charts" },
   { label: "Technical Analysis", segment: "technical-analysis" },
 ];
 
 function currentAccountId(pathname: string): string | null {
-  const match = pathname.match(/^\/(dashboard|alerts|history|rules|imports|eurusd-charts|technical-analysis)\/([^/]+)/);
+  const match = pathname.match(/^\/(dashboard|alerts|history|rules|trend-breakout|imports|eurusd-charts|technical-analysis)\/([^/]+)/);
   return match ? match[2] : null;
 }
 
@@ -47,6 +48,30 @@ export function NavBar() {
               </Link>
             );
           })}
+          <Link
+            href="/market-charts"
+            className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
+              pathname.startsWith("/market-charts") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"
+            }`}
+          >
+            Market Charts
+          </Link>
+          <Link
+            href="/research/xauusd-confirmed-retest"
+            className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
+              pathname.startsWith("/research") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"
+            }`}
+          >
+            Gold Retest Research
+          </Link>
+          <Link
+            href="/gold-demo"
+            className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
+              pathname.startsWith("/gold-demo") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"
+            }`}
+          >
+            Gold DEMO (live)
+          </Link>
           <Link
             href="/health"
             className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${

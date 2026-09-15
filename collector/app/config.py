@@ -28,7 +28,11 @@ _LOG_FORMATS = {"json", "text"}
 # candles, not resampled from finer timeframes, same reasoning as the
 # original three. W1/MN1 added for Ichimoku breakout alerts on the weekly
 # and monthly timeframes, same reasoning again.
-_VALID_CANDLE_TIMEFRAMES = {"M5", "M15", "H1", "M30", "H4", "D1", "W1", "MN1"}
+# Gold historical-data-collection project — M1 added for the tick/candle
+# backfill's finest granularity (backfill_gold_history.py). Nothing in this
+# project's own indicators/warm-up requirements uses M1 (see that script's
+# own comment); it exists purely as raw stored history.
+_VALID_CANDLE_TIMEFRAMES = {"M5", "M15", "H1", "M30", "H4", "D1", "W1", "MN1", "M1"}
 # Single source of truth for "how long does one bar of this timeframe
 # span" — mt5_client.py (filtering out a still-forming bar) and runner.py
 # (the candle-sync overlap window) both need this and must never disagree.
@@ -46,6 +50,7 @@ CANDLE_DURATION_BY_TIMEFRAME = {
     "D1": timedelta(days=1),
     "W1": timedelta(weeks=1),
     "MN1": timedelta(days=31),
+    "M1": timedelta(minutes=1),
 }
 
 
@@ -108,6 +113,35 @@ class Config:
     candle_timeframes: tuple[str, ...]
     candle_sync_interval_seconds: int
     candle_initial_sync_days: int
+
+    # Autonomous demo trading (v2), Phase 6 — off by default, same posture
+    # as CANDLE_SYMBOLS above and this codebase's TypeScript side's
+    # AI_ENABLED/MARKET_EVENTS_ENABLED: an existing, already-running
+    # collector's behavior is completely unchanged unless a trader
+    # explicitly opts in. When true, the collector's own normal poll loop
+    # additionally checks the backend for an approved pending order (for
+    # THIS collector's own collector_account_id) and, if there is one,
+    # executes it via executor.py — see runner.py's own comment on this.
+    autonomous_execution_enabled: bool
+
+    # Gold collection alongside EURUSD: optional per-symbol override of
+    # CANDLE_TIMEFRAMES via CANDLE_TIMEFRAMES_<SYMBOL> (e.g.
+    # CANDLE_TIMEFRAMES_XAUUSD=M1,M5,M15,M30,H1,H4,D1). A symbol with no
+    # override keeps the global list, so an existing EURUSD deployment's
+    # collection is unchanged.
+    candle_timeframes_by_symbol: dict[str, tuple[str, ...]] | None = None
+
+    # Gold (XAUUSD) execution poll — deliberately a SEPARATE flag from
+    # autonomous_execution_enabled (EURUSD), off by default, so the two
+    # strategies' activation can never be coupled by one env var. When
+    # true, the collector's poll loop additionally checks the backend's
+    # gold-execution route for an approved pending gold order and executes
+    # it via executor.py (same module, gold's own magic number/symbol/point
+    # size passed through — no gold-specific order code in executor.py).
+    gold_execution_enabled: bool = False
+
+    def timeframes_for(self, symbol: str) -> tuple[str, ...]:
+        return (self.candle_timeframes_by_symbol or {}).get(symbol, self.candle_timeframes)
 
     @staticmethod
     def from_env(env: dict[str, str] | None = None) -> "Config":
@@ -194,8 +228,24 @@ class Config:
                 f"CANDLE_TIMEFRAMES contains unsupported value(s) {invalid_timeframes}; "
                 f"must be one of {sorted(_VALID_CANDLE_TIMEFRAMES)}"
             )
+        candle_timeframes_by_symbol: dict[str, tuple[str, ...]] = {}
+        for symbol in candle_symbols:
+            override_raw = e.get(f"CANDLE_TIMEFRAMES_{symbol}", "").strip()
+            if not override_raw:
+                continue
+            override = tuple(t.strip().upper() for t in override_raw.split(",") if t.strip())
+            invalid_override = [t for t in override if t not in _VALID_CANDLE_TIMEFRAMES]
+            if invalid_override or not override:
+                raise ConfigError(
+                    f"CANDLE_TIMEFRAMES_{symbol} contains unsupported value(s) {invalid_override or override_raw!r}; "
+                    f"must be one of {sorted(_VALID_CANDLE_TIMEFRAMES)}"
+                )
+            candle_timeframes_by_symbol[symbol] = override
         candle_sync_interval = _read_positive_int(e, "CANDLE_SYNC_INTERVAL_SECONDS", default=300)
         candle_initial_sync_days = _read_positive_int(e, "CANDLE_INITIAL_SYNC_DAYS", default=730)
+
+        autonomous_execution_enabled = e.get("AUTONOMOUS_EXECUTION_ENABLED", "false").strip().lower() == "true"
+        gold_execution_enabled = e.get("GOLD_EXECUTION_ENABLED", "false").strip().lower() == "true"
 
         return Config(
             mt5_login=mt5_login,
@@ -220,6 +270,9 @@ class Config:
             candle_timeframes=candle_timeframes,
             candle_sync_interval_seconds=candle_sync_interval,
             candle_initial_sync_days=candle_initial_sync_days,
+            autonomous_execution_enabled=autonomous_execution_enabled,
+            candle_timeframes_by_symbol=candle_timeframes_by_symbol,
+            gold_execution_enabled=gold_execution_enabled,
         )
 
     @property

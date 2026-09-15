@@ -18,15 +18,22 @@ from datetime import datetime, timedelta, timezone
 from types import FrameType
 
 from app.api_client import ApiClient, ApiClientError
-from app.api_mapper import build_candles_payload, build_snapshot_payload, build_trades_payload
+from app.api_mapper import (
+    build_candles_payload,
+    build_snapshot_payload,
+    build_symbol_metadata_payload,
+    build_ticks_payload,
+    build_trades_payload,
+)
 from app.config import CANDLE_DURATION_BY_TIMEFRAME, Config
+from app.executor import DemoAccountRequiredError, Executor
 from app.formatting import (
     format_account_summary,
     format_connection_status,
     format_deals_table,
     format_positions_table,
 )
-from app.mt5_client import Mt5Client
+from app.mt5_client import Mt5Client, stored_candle_time_to_true_utc
 
 logger = logging.getLogger("collector.runner")
 
@@ -64,16 +71,82 @@ _MIN_INITIAL_SYNC_DAYS_BY_TIMEFRAME: dict[str, int] = {
     "W1": 1825,   # ~5 years / ~260 weekly candles — well past the 78 minimum
     "MN1": 5475,  # ~15 years / ~180 monthly candles — same reasoning
 }
+# M1 is ~1,440 bars per day: a first-ever M1 sync (no stored rows) is capped
+# so a newly configured symbol cannot trigger a multi-year M1 download from
+# the live loop. Deep M1 history belongs to backfill_gold_history.py.
+_MAX_INITIAL_SYNC_DAYS_BY_TIMEFRAME: dict[str, int] = {"M1": 30}
+# Gold historical-data-collection project — get_instrument_verification()
+# reads broker-reported specs (volume/point/contract size/swap/expiration)
+# that essentially never change intraday; once at startup (see
+# _attempt_connect) plus a slow daily refresh is enough to catch a broker-
+# side spec change without adding meaningful load to either MT5 or the
+# backend.
+SYMBOL_METADATA_SYNC_INTERVAL_SECONDS = 86400
+# Gold historical-data-collection project — ongoing (forward-looking) tick
+# sync: a small, recent window pulled every cycle, independent of and never
+# gating the one-off historical `backfill_gold_history.py` script. Wired
+# and running even while historical copy_ticks_range calls for OLD dates
+# are confirmed failing (diagnosed 2026-09-13: hard failures for ~2024
+# dates, but clean — if occasionally slow — empty-or-real responses for
+# recent dates) — this exists so the moment real tick data becomes
+# available going forward, it's captured, with zero code change needed.
+#
+# ISOLATION (revised 2026-09-13 — this used to be a disclosed trade-off
+# instead of a fix; live evidence made that no longer acceptable). The same
+# live diagnosis found copy_ticks_range/copy_ticks_from can each take up to
+# ~106s to hard-fail. Originally this ran inline in the main loop, so a
+# failing tick call froze snapshot/candle/trade-sync AND the shutdown-signal
+# check for the full ~106s every time it happened. It now runs on its own
+# background thread (see _maybe_start_tick_sync), serialized against the
+# main loop's own MT5 calls with `_mt5_call_lock` — the MetaTrader5 Python
+# module is documented as not thread-safe for concurrent calls on one
+# connection, so true parallel MT5 calls are never allowed, but the main
+# loop only does a NON-BLOCKING lock attempt: if tick sync is mid-call, the
+# main loop skips that one ~poll_interval_seconds cycle's MT5 work and
+# checks again next cycle, rather than blocking synchronously for the
+# tick call's entire duration. Net effect: the loop keeps cycling and stays
+# responsive to shutdown throughout a slow/failing tick call, and normal
+# work resumes on the very next cycle once the tick call finishes — instead
+# of one uninterruptible ~106s freeze.
+TICK_SYNC_INTERVAL_SECONDS = 300
+# Bounded failure cooldown ("do not repeat the same unsuccessful query
+# every five minutes indefinitely"): each consecutive FAILED tick-sync
+# attempt (a real MT5/push error — EMPTY_UNCONFIRMED does not count, that's
+# a legitimate "asked, got zero" answer, not a failure) doubles the
+# effective wait before the next attempt, capped here. Evidence is still
+# recorded on every attempt (including the ones this skips due to
+# backoff — those simply don't happen, they are not disguised as
+# untried). Any non-failure result resets the counter back to the normal
+# TICK_SYNC_INTERVAL_SECONDS cadence.
+TICK_SYNC_MAX_BACKOFF_SECONDS = 3600
+# Small overlap so a tick landing right at a previous cycle's boundary is
+# never silently skipped — mirrors CANDLE_SYNC_OVERLAP_BARS' own reasoning.
+TICK_SYNC_OVERLAP_SECONDS = 30
+# Provenance (Preserve source provenance, gold-collection plan): distinct
+# from the one-off backfill script's own "gold_backfill_script" source, so
+# the BackfillInterval ledger always shows which process actually attempted
+# a given range.
+TICK_SYNC_SOURCE = "collector_live_sync"
 
 
 class CollectorApp:
-    def __init__(self, config: Config, client: Mt5Client, api: ApiClient) -> None:
+    def __init__(self, config: Config, client: Mt5Client, api: ApiClient, executor: Executor) -> None:
         self._config = config
         self._client = client
         self._api = api
+        self._executor = executor
         self._stop_event = threading.Event()
         self._last_trade_sync_at: datetime | None = None
         self._last_candle_sync_at: datetime | None = None
+        self._last_symbol_metadata_sync_at: datetime | None = None
+        self._last_tick_sync_at: datetime | None = None
+        # Isolation: serializes every MT5 call this app makes (main loop
+        # AND the tick-sync background thread) against each other, never
+        # against a truly external process — see TICK_SYNC_INTERVAL_SECONDS'
+        # own comment for why concurrent calls on one connection aren't safe.
+        self._mt5_call_lock = threading.Lock()
+        self._tick_sync_thread: threading.Thread | None = None
+        self._tick_sync_consecutive_failures = 0
 
     def install_signal_handlers(self) -> None:
         signal.signal(signal.SIGINT, self._handle_signal)
@@ -92,35 +165,99 @@ class CollectorApp:
             "api_base_url": self._config.collector_api_base_url,
             "candle_symbols": self._config.candle_symbols,
             "candle_timeframes": self._config.candle_timeframes if self._config.candle_symbols else (),
+            "autonomous_execution_enabled": self._config.autonomous_execution_enabled,
+            "gold_execution_enabled": self._config.gold_execution_enabled,
         })
 
         backoff = self._config.reconnect_initial_backoff_seconds
         try:
             while not self._stop_event.is_set():
-                if not self._client.is_connected():
-                    connected, backoff = self._attempt_connect(backoff)
-                    if not connected:
-                        continue
+                if not self._mt5_call_lock.acquire(blocking=False):
+                    # Isolation fix: the tick-sync thread is mid MT5-call.
+                    # Skip this cycle's MT5 work rather than block waiting
+                    # for it — see TICK_SYNC_INTERVAL_SECONDS' own comment.
+                    logger.info("main loop cycle skipped — tick sync holds the MT5 connection")
+                    self._maybe_start_tick_sync()
+                    self._stop_event.wait(timeout=self._config.poll_interval_seconds)
+                    continue
 
-                self._push_and_print_snapshot()
-                if self._trade_sync_due():
-                    self._sync_trades()
-                if self._candle_sync_due():
-                    self._sync_candles()
+                try:
+                    if not self._client.is_connected():
+                        connected, backoff = self._attempt_connect(backoff)
+                        if not connected:
+                            continue
 
+                    self._push_and_print_snapshot()
+                    if self._trade_sync_due():
+                        self._sync_trades()
+                    if self._candle_sync_due():
+                        self._sync_candles()
+                    if self._symbol_metadata_sync_due():
+                        self._sync_symbol_metadata()
+                    if self._config.autonomous_execution_enabled:
+                        self._poll_and_execute_pending_order()
+                    if self._config.gold_execution_enabled:
+                        self._poll_and_execute_pending_gold_order()
+                        self._poll_and_execute_gold_close_request()
+                        self._poll_and_execute_gold_restore_protection_request()
+                finally:
+                    self._mt5_call_lock.release()
+
+                self._maybe_start_tick_sync()
                 backoff = self._config.reconnect_initial_backoff_seconds
                 self._stop_event.wait(timeout=self._config.poll_interval_seconds)
         finally:
             logger.info("collector shutting down, disconnecting from terminal")
+            if self._tick_sync_thread is not None and self._tick_sync_thread.is_alive():
+                # Best-effort only — a tick call can take up to ~106s and
+                # shutdown must not hang that long. The thread is a daemon
+                # thread, so if it's still running when the process exits
+                # the interpreter tears it down; this join just gives a
+                # currently-fast/finishing call a brief chance to record its
+                # own outcome (and release the lock) before disconnect().
+                self._tick_sync_thread.join(timeout=5)
             self._client.disconnect()
 
         logger.info("collector stopped cleanly")
         return 0
 
+    def _deals_lookup_adapter(self, since):
+        """Adapts `Mt5Client.get_deals_since()`'s dicts to the flat
+        `{"symbol", "magic", "ticket", "volume", "price"}` shape
+        `executor.py`'s `find_recent_deal` expects. `get_deals_since()`
+        doesn't surface `magic` as a top-level field (it wasn't needed by
+        this project's own analytics use of it), but preserves the full raw
+        deal under `"raw"`, which does — extracted here rather than
+        changing `get_deals_since()`'s own established return shape for
+        every other caller.
+        """
+        deals = self._client.get_deals_since(since)
+        return [{**d, "magic": (d.get("raw") or {}).get("magic")} for d in deals]
+
     def _attempt_connect(self, backoff: float) -> tuple[bool, float]:
         result = self._client.connect()
         if result.ok:
             logger.info("connected to MT5 terminal")
+            if self._config.autonomous_execution_enabled:
+                # Points the executor at THIS connection's real handle
+                # (native import or RPyC bridge proxy) — not knowable at
+                # construction time, and re-pointed on every reconnect
+                # since a bridge reconnect gets a genuinely new proxy object.
+                self._executor.set_mt5_module(self._client.get_mt5_module())
+                # Audit finding: wires deal-history reconciliation (see
+                # executor.py's own `set_deals_lookup` comment) through
+                # `Mt5Client.get_deals_since`, which already handles a real,
+                # verified-live MT5-under-Wine quirk (history_deals_get()
+                # needs broker-timezone-aware epoch seconds, not datetime
+                # objects) — reusing it here instead of a second,
+                # independent implementation of the same lookup.
+                self._executor.set_deals_lookup(self._deals_lookup_adapter)
+            # Once per successful connect (covers both process startup and
+            # any later reconnect) — see SYMBOL_METADATA_SYNC_INTERVAL_SECONDS'
+            # own comment for why a slow periodic refresh (wired into the
+            # main loop below) is enough on top of this for a connection
+            # that stays up for a long time without ever reconnecting.
+            self._sync_symbol_metadata()
             return True, self._config.reconnect_initial_backoff_seconds
 
         logger.warning(
@@ -146,11 +283,11 @@ class CollectorApp:
         # a transient MT5 error) is a safe no-op — the backend/technical-
         # analysis layer falls back to the candle-based price exactly as
         # before this existed.
-        live_tick = (
-            self._client.get_live_tick(self._config.candle_symbols[0])
-            if self._config.candle_symbols
-            else None
-        )
+        # One quote per configured candle symbol (gold collection alongside
+        # EURUSD). The first symbol is still sent as `liveTick`, exactly as
+        # before, for existing consumers; all are also sent as `liveTicks`.
+        live_ticks = [t for t in (self._client.get_live_tick(s) for s in self._config.candle_symbols) if t is not None]
+        live_tick = live_ticks[0] if live_ticks and live_ticks[0]["symbol"] == self._config.candle_symbols[0] else None
 
         payload = build_snapshot_payload(
             account_id=self._config.collector_account_id,
@@ -160,6 +297,7 @@ class CollectorApp:
             last_error=last_error,
             collector_version=COLLECTOR_VERSION,
             live_tick=live_tick,
+            live_ticks=live_ticks,
         )
         try:
             self._api.post_snapshot(payload)
@@ -181,6 +319,261 @@ class CollectorApp:
             "open_positions": len(positions),
             "push_ok": push_ok,
         })
+
+    def _poll_and_execute_pending_order(self) -> None:
+        """Autonomous demo trading (v2), Phase 6 — the collector asking the
+        backend "is there anything approved for me to execute," and, if so,
+        actually placing it. Only ever reached when
+        autonomous_execution_enabled is explicitly true (an existing
+        deployment's behavior is otherwise unchanged). Every failure mode
+        here is caught and logged, never left to crash the main loop — the
+        SAME posture collector-ingress.controller.ts's own rule-evaluation
+        step already takes on the backend side ("one component's failure
+        must never take down another").
+        """
+        try:
+            response = self._api.get_pending_order(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("pending-order poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        order = response.get("order")
+        if not order:
+            return
+
+        logger.info("pending order claimed, attempting execution", extra={
+            "decision_id": order["decisionId"], "side": order["side"], "volume": order["volume"],
+        })
+
+        try:
+            result = self._executor.send_bracket_order(
+                side=order["side"],
+                volume=order["volume"],
+                stop_loss_points=order["stopLossPoints"],
+                take_profit_points=order["takeProfitPoints"],
+                magic=order["magic"],
+                comment=order["comment"],
+            )
+        except DemoAccountRequiredError as exc:
+            # The single most severe event this process can encounter — logged
+            # at CRITICAL specifically so it stands out from ordinary warnings,
+            # and still reported back (never left stuck as SENT forever), but
+            # never silently swallowed like an ordinary execution failure.
+            logger.critical("DEMO ACCOUNT CHECK FAILED — refusing to trade", extra={"error": str(exc)})
+            self._report_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("order execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("order execution result", extra={
+            "decision_id": order["decisionId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_execution_result(
+            order["decisionId"], ok=result.ok, ticket=result.ticket,
+            filled_price=result.price, error_message=result.error_message,
+        )
+
+    def _report_execution_result(
+        self, decision_id: str, *, ok: bool, ticket: int | None = None,
+        filled_price: float | None = None, error_message: str | None = None,
+    ) -> None:
+        payload: dict = {"ok": ok}
+        if ticket is not None:
+            payload["ticket"] = ticket
+        if filled_price is not None:
+            payload["filledPrice"] = filled_price
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_execution_result(self._config.collector_account_id, decision_id, payload)
+        except ApiClientError as exc:
+            # The order itself already happened (or definitively failed) on
+            # MT5's side by this point — a failure to REPORT that back is a
+            # visibility problem, not a trading-safety one, but it does mean
+            # the decision row stays stuck as SENT until this is noticed.
+            logger.error("failed to report execution result back to backend", extra={"decision_id": decision_id, "error": str(exc)})
+
+    def _poll_and_execute_pending_gold_order(self) -> None:
+        """Gold (XAUUSD) analog of `_poll_and_execute_pending_order` — its
+        OWN backend route (`get_pending_gold_order`), only ever reached
+        when `gold_execution_enabled` is explicitly true, fully independent
+        of the EURUSD flag above. Same failure posture: never crashes the
+        main loop, every outcome (including DemoAccountRequiredError) is
+        reported back, never left stuck. Passes the order's own
+        `symbol`/`pointSize` through to `send_bracket_order` — executor.py
+        already supports this per-call, no executor.py change was needed.
+        """
+        try:
+            response = self._api.get_pending_gold_order(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("gold pending-order poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        order = response.get("order")
+        if not order:
+            return
+
+        logger.info("gold pending order claimed, attempting execution", extra={
+            "decision_id": order["decisionId"], "side": order["side"], "volume": order["volume"], "symbol": order["symbol"],
+        })
+
+        try:
+            result = self._executor.send_bracket_order(
+                side=order["side"],
+                volume=order["volume"],
+                stop_loss_points=order["stopLossPoints"],
+                take_profit_points=order["takeProfitPoints"],
+                magic=order["magic"],
+                comment=order["comment"],
+                symbol=order["symbol"],
+                point_size=order["pointSize"],
+            )
+        except DemoAccountRequiredError as exc:
+            logger.critical("GOLD: DEMO ACCOUNT CHECK FAILED — refusing to trade", extra={"error": str(exc)})
+            self._report_gold_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("gold order execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_gold_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("gold order execution result", extra={
+            "decision_id": order["decisionId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_gold_execution_result(
+            order["decisionId"], ok=result.ok, ticket=result.ticket,
+            filled_price=result.price, error_message=result.error_message,
+        )
+
+    def _report_gold_execution_result(
+        self, decision_id: str, *, ok: bool, ticket: int | None = None,
+        filled_price: float | None = None, error_message: str | None = None,
+    ) -> None:
+        payload: dict = {"ok": ok}
+        if ticket is not None:
+            payload["ticket"] = ticket
+        if filled_price is not None:
+            payload["filledPrice"] = filled_price
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_gold_execution_result(self._config.collector_account_id, decision_id, payload)
+        except ApiClientError as exc:
+            logger.error("failed to report gold execution result back to backend", extra={"decision_id": decision_id, "error": str(exc)})
+
+    def _poll_and_execute_gold_close_request(self) -> None:
+        """Gold close-request — symmetric to `_poll_and_execute_pending_gold_order`,
+        for the dashboard's "request close" action (gold-controls.controller.ts).
+        Same failure posture: never crashes the main loop, every outcome is
+        reported back so the backend row never sits stuck. Reports `ok=True`
+        (which the backend records as CLOSED) ONLY when `executor.close_position`
+        itself returns a broker-confirmed success (order_send() succeeded) —
+        never merely because this poll ran.
+        """
+        try:
+            response = self._api.get_gold_close_request(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("gold close-request poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        request = response.get("request")
+        if not request:
+            return
+
+        logger.info("gold close-request claimed, attempting execution", extra={
+            "request_id": request["requestId"], "ticket": request["ticket"], "side": request["side"], "volume": request["volume"],
+        })
+
+        try:
+            result = self._executor.close_position(
+                ticket=request["ticket"], side=request["side"], volume=request["volume"], symbol=request["symbol"],
+            )
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("gold close-position execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_gold_close_result(request["requestId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("gold close-position execution result", extra={
+            "request_id": request["requestId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_gold_close_result(
+            request["requestId"], ok=result.ok, deal_ticket=result.ticket,
+            closed_price=result.price, error_message=result.error_message,
+        )
+
+    def _report_gold_close_result(
+        self, request_id: str, *, ok: bool, deal_ticket: int | None = None,
+        closed_price: float | None = None, error_message: str | None = None,
+    ) -> None:
+        payload: dict = {"ok": ok}
+        if deal_ticket is not None:
+            payload["dealTicket"] = deal_ticket
+        if closed_price is not None:
+            payload["closedPrice"] = closed_price
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_gold_close_result(self._config.collector_account_id, request_id, payload)
+        except ApiClientError as exc:
+            # The close attempt already happened (or definitively failed) at
+            # the broker by this point — a failure to REPORT that back is a
+            # visibility problem, not a trading-safety one, but it does mean
+            # the request row stays stuck as SENT until this is noticed.
+            logger.error("failed to report gold close result back to backend", extra={"request_id": request_id, "error": str(exc)})
+
+    def _poll_and_execute_gold_restore_protection_request(self) -> None:
+        """Gold protection-restore — task item 3 ("restore-then-close"), the
+        RESTORE half, symmetric to `_poll_and_execute_gold_close_request`.
+        Calls `executor.modify_protection` (TRADE_ACTION_SLTP) to re-attach
+        SL/TP at the exact price the backend already computed (frozen
+        distance from the position's own entry price — never recomputed
+        here). Reports `ok=True` ONLY on a broker-confirmed success; the
+        backend (not this collector) decides whether a failure means "queue
+        another attempt" or "fall back to close" — this method's only job is
+        to attempt exactly the one claimed request and report what happened.
+        """
+        try:
+            response = self._api.get_gold_restore_protection_request(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("gold restore-protection-request poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        request = response.get("request")
+        if not request:
+            return
+
+        logger.info("gold restore-protection-request claimed, attempting execution", extra={
+            "request_id": request["requestId"], "ticket": request["ticket"],
+            "attempt": request.get("attemptNumber"), "max_attempts": request.get("maxAttempts"),
+        })
+
+        try:
+            result = self._executor.modify_protection(
+                ticket=request["ticket"], stop_loss=request["stopLoss"], take_profit=request["takeProfit"], symbol=request["symbol"],
+            )
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("gold protection-restore execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_gold_restore_protection_result(request["requestId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("gold protection-restore execution result", extra={
+            "request_id": request["requestId"], "ok": result.ok, "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_gold_restore_protection_result(request["requestId"], ok=result.ok, error_message=result.error_message)
+
+    def _report_gold_restore_protection_result(self, request_id: str, *, ok: bool, error_message: str | None = None) -> None:
+        payload: dict = {"ok": ok}
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_gold_restore_protection_result(self._config.collector_account_id, request_id, payload)
+        except ApiClientError as exc:
+            logger.error("failed to report gold restore-protection result back to backend", extra={"request_id": request_id, "error": str(exc)})
 
     def _trade_sync_due(self) -> bool:
         if self._last_trade_sync_at is None:
@@ -239,7 +632,7 @@ class CollectorApp:
         from being attempted this tick.
         """
         for symbol in self._config.candle_symbols:
-            for timeframe in self._config.candle_timeframes:
+            for timeframe in _timeframes_for(self._config, symbol):
                 try:
                     self._sync_one_candle_series(symbol, timeframe)
                 except ApiClientError as exc:
@@ -254,14 +647,26 @@ class CollectorApp:
 
         now = datetime.now(tz=timezone.utc)
         if latest:
+            # `latest` (from `historical_candles.open_time`) is the STORED,
+            # broker-wall-clock-mislabeled-as-UTC value (see get_candles()'s
+            # own docstring) — NOT true UTC. Found live: computing date_from
+            # directly from it (as this line used to) produced a date_from
+            # roughly this broker's own UTC offset AHEAD of true `now`, an
+            # inverted (from > to) range that copy_rates_range answers with
+            # zero rows every cycle, silently stalling incremental sync for
+            # every symbol/timeframe using this path. Converted to true UTC
+            # first, the same way confirmed-retest-v2/time.ts's
+            # wallClockToUtc already does on the read side.
+            true_utc_latest = stored_candle_time_to_true_utc(_parse_iso(latest), self._config.mt5_broker_timezone)
             bar_duration = CANDLE_DURATION_BY_TIMEFRAME[timeframe]
-            date_from = _parse_iso(latest) - (bar_duration * CANDLE_SYNC_OVERLAP_BARS)
+            date_from = true_utc_latest - (bar_duration * CANDLE_SYNC_OVERLAP_BARS)
             logger.info("candle sync (incremental)", extra={"symbol": symbol, "timeframe": timeframe, "date_from": date_from.isoformat()})
         else:
             initial_sync_days = max(
                 self._config.candle_initial_sync_days,
                 _MIN_INITIAL_SYNC_DAYS_BY_TIMEFRAME.get(timeframe, 0),
             )
+            initial_sync_days = min(initial_sync_days, _MAX_INITIAL_SYNC_DAYS_BY_TIMEFRAME.get(timeframe, initial_sync_days))
             date_from = now - timedelta(days=initial_sync_days)
             logger.info("candle sync (initial backfill — this may take a while)", extra={
                 "symbol": symbol, "timeframe": timeframe, "date_from": date_from.isoformat(),
@@ -280,6 +685,177 @@ class CollectorApp:
                 "batch_size": len(batch), "upserted": result.get("upserted"),
             })
 
+    def _symbol_metadata_sync_due(self) -> bool:
+        if not self._config.candle_symbols:
+            return False  # off by default — same posture as _candle_sync_due
+        if self._last_symbol_metadata_sync_at is None:
+            return True
+        elapsed = (datetime.now(tz=timezone.utc) - self._last_symbol_metadata_sync_at).total_seconds()
+        return elapsed >= SYMBOL_METADATA_SYNC_INTERVAL_SECONDS
+
+    def _sync_symbol_metadata(self) -> None:
+        """Gold historical-data-collection project — pushes broker-reported
+        instrument specs for every configured candle symbol. Called once
+        per successful connect (see _attempt_connect) and once per
+        SYMBOL_METADATA_SYNC_INTERVAL_SECONDS thereafter via the main loop's
+        own due-check, same two-trigger shape. A no-op when CANDLE_SYMBOLS
+        is empty (existing deployments completely unaffected). One symbol
+        failing (an MT5-side read error, or a push rejected by the backend)
+        never stops the others from being attempted this cycle — same
+        "one component's failure must never take down another" posture as
+        the rest of this class.
+        """
+        for symbol in self._config.candle_symbols:
+            try:
+                info = self._client.get_instrument_verification(symbol)
+            except Exception as exc:  # noqa: BLE001 — MT5-boundary call, must never crash the main loop
+                logger.warning("instrument verification failed, skipping symbol-metadata push", extra={
+                    "symbol": symbol, "error": str(exc),
+                })
+                continue
+
+            # get_instrument_verification() degrades to None fields (rather
+            # than raising) when symbol_info() itself returned None (e.g.
+            # the symbol isn't in Market Watch yet) — the DTO's required
+            # fields would be null in that case, so skip the push entirely
+            # rather than send a payload the backend will reject anyway.
+            if info.get("volume_min") is None or info.get("point") is None:
+                logger.warning("symbol_info unavailable, skipping symbol-metadata push this cycle", extra={
+                    "symbol": symbol,
+                })
+                continue
+
+            payload = build_symbol_metadata_payload(info)
+            try:
+                self._api.post_symbol_metadata(payload)
+                logger.info("symbol metadata pushed", extra={"symbol": symbol})
+            except ApiClientError as exc:
+                logger.warning("symbol-metadata push failed, will retry next sync", extra={
+                    "symbol": symbol, "error": str(exc),
+                })
+
+        self._last_symbol_metadata_sync_at = datetime.now(tz=timezone.utc)
+
+    def _tick_sync_due(self) -> bool:
+        if not self._config.candle_symbols:
+            return False  # off by default — same posture as _candle_sync_due
+        if self._tick_sync_thread is not None and self._tick_sync_thread.is_alive():
+            return False  # previous cycle's sync is still running on its own thread — never overlap two
+        if self._last_tick_sync_at is None:
+            return True
+        effective_interval = TICK_SYNC_INTERVAL_SECONDS
+        if self._tick_sync_consecutive_failures > 0:
+            # Bounded failure cooldown — see TICK_SYNC_MAX_BACKOFF_SECONDS'
+            # own comment. Doubles per consecutive failure, capped.
+            effective_interval = min(
+                TICK_SYNC_INTERVAL_SECONDS * (2 ** self._tick_sync_consecutive_failures),
+                TICK_SYNC_MAX_BACKOFF_SECONDS,
+            )
+        elapsed = (datetime.now(tz=timezone.utc) - self._last_tick_sync_at).total_seconds()
+        return elapsed >= effective_interval
+
+    def _maybe_start_tick_sync(self) -> None:
+        """Launches _sync_ticks() on its own daemon thread when due — see
+        TICK_SYNC_INTERVAL_SECONDS' own comment for why this must not run
+        inline in the main loop. Never starts a second thread while one is
+        still running (_tick_sync_due already checks this).
+        """
+        if not self._tick_sync_due():
+            return
+        self._tick_sync_thread = threading.Thread(target=self._sync_ticks_isolated, daemon=True)
+        self._tick_sync_thread.start()
+
+    def _sync_ticks_isolated(self) -> None:
+        """Thread entry point: serializes the actual MT5 call(s) against the
+        main loop's own MT5 calls via `_mt5_call_lock` (blocking acquire is
+        fine here — this is a background thread, not the main loop, so
+        waiting briefly for a fast main-loop cycle to finish costs nothing
+        the main loop's own liveness cares about), then updates the
+        consecutive-failure counter that `_tick_sync_due` uses for backoff.
+        """
+        with self._mt5_call_lock:
+            any_failure = self._sync_ticks()
+        self._tick_sync_consecutive_failures = self._tick_sync_consecutive_failures + 1 if any_failure else 0
+
+    def _sync_ticks(self) -> bool:
+        """Gold historical-data-collection project — ongoing tick sync, one
+        small recent window per configured symbol per cycle. See
+        TICK_SYNC_INTERVAL_SECONDS' own comment for the latency trade-off
+        this accepts, and for why this runs regardless of whether historical
+        backfilling has succeeded (they are independent — see that same
+        comment). Records every attempt into the same BackfillInterval
+        ledger `backfill_gold_history.py` uses (a different `source`, see
+        TICK_SYNC_SOURCE), so a genuine failure here is visible as FAILED/
+        EMPTY_UNCONFIRMED evidence — never indistinguishable from
+        never-having-tried.
+
+        Returns True if any symbol's attempt this cycle ended FAILED (used
+        by `_sync_ticks_isolated` to drive the bounded backoff cooldown —
+        EMPTY_UNCONFIRMED is a legitimate answer, not a failure, and does
+        not count).
+        """
+        now = datetime.now(tz=timezone.utc)
+        window_start = (
+            now - timedelta(seconds=TICK_SYNC_INTERVAL_SECONDS + TICK_SYNC_OVERLAP_SECONDS)
+            if self._last_tick_sync_at is None
+            else self._last_tick_sync_at - timedelta(seconds=TICK_SYNC_OVERLAP_SECONDS)
+        )
+        any_failure = False
+
+        for symbol in self._config.candle_symbols:
+            range_payload = {
+                "source": TICK_SYNC_SOURCE, "symbol": symbol, "dataType": "TICK",
+                "rangeStart": window_start.isoformat(), "rangeEnd": now.isoformat(),
+            }
+            try:
+                ticks = self._client.get_ticks(symbol, window_start, now)
+            except Exception as exc:  # noqa: BLE001 — MT5-boundary call, must never crash the main loop
+                logger.warning("ongoing tick sync: MT5 call raised, will retry next cycle", extra={
+                    "symbol": symbol, "error": str(exc),
+                })
+                any_failure = True
+                try:
+                    self._api.upsert_backfill_interval({
+                        **range_payload, "status": "FAILED", "evidence": f"live sync MT5 error: {exc}",
+                    })
+                except ApiClientError:
+                    pass  # ledger visibility is best-effort; never block the main loop over it
+                continue
+
+            if not ticks:
+                try:
+                    self._api.upsert_backfill_interval({
+                        **range_payload, "status": "EMPTY_UNCONFIRMED", "recordCount": 0,
+                        "evidence": "live sync: 0 rows, no MT5 error",
+                    })
+                except ApiClientError:
+                    pass
+                continue
+
+            try:
+                payload = build_ticks_payload(symbol, None, None, None, ticks)
+                result = self._api.post_ticks(payload)
+                logger.info("ongoing tick sync pushed", extra={
+                    "symbol": symbol, "row_count": len(ticks), "inserted": result.get("inserted"),
+                })
+                self._api.upsert_backfill_interval({
+                    **range_payload, "status": "COMPLETED", "recordCount": len(ticks),
+                })
+            except ApiClientError as exc:
+                any_failure = True
+                logger.warning("ongoing tick sync push failed, will retry next cycle", extra={
+                    "symbol": symbol, "error": str(exc),
+                })
+                try:
+                    self._api.upsert_backfill_interval({
+                        **range_payload, "status": "FAILED", "evidence": f"live sync push failed: {exc}",
+                    })
+                except ApiClientError:
+                    pass
+
+        self._last_tick_sync_at = now
+        return any_failure
+
     def _fetch_candles_chunked(self, symbol: str, timeframe: str, date_from: datetime, date_to: datetime) -> list[dict]:
         """Splits [date_from, date_to) into CANDLE_FETCH_CHUNK_DAYS-sized
         windows and fetches each separately — see CANDLE_FETCH_CHUNK_DAYS'
@@ -296,6 +872,12 @@ class CollectorApp:
             all_candles.extend(self._client.get_candles(symbol, timeframe, chunk_start, chunk_end))
             chunk_start = chunk_end
         return all_candles
+
+
+def _timeframes_for(config: Config, symbol: str) -> tuple[str, ...]:
+    """Per-symbol CANDLE_TIMEFRAMES_<SYMBOL> override, else the global list."""
+    overrides = getattr(config, "candle_timeframes_by_symbol", None) or {}
+    return overrides.get(symbol, config.candle_timeframes)
 
 
 def _parse_iso(value: str) -> datetime:

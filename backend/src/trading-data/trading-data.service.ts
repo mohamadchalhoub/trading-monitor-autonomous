@@ -23,6 +23,7 @@ export class TradingDataService {
         freeMargin: dto.freeMargin,
         marginLevel: dto.marginLevel ?? null,
         profit: dto.profit,
+        tradeMode: dto.tradeMode ?? null,
         capturedAt: new Date(dto.capturedAt),
       },
       update: {
@@ -32,6 +33,7 @@ export class TradingDataService {
         freeMargin: dto.freeMargin,
         marginLevel: dto.marginLevel ?? null,
         profit: dto.profit,
+        tradeMode: dto.tradeMode ?? null,
       },
     });
   }

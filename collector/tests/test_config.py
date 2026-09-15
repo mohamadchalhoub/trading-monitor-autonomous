@@ -23,6 +23,14 @@ def test_defaults_with_no_credentials():
     assert cfg.initial_sync_days == 90
     assert cfg.history_sync_overlap_minutes == 5
     assert cfg.mt5_broker_timezone == "EET"
+    assert cfg.autonomous_execution_enabled is False
+
+
+def test_autonomous_execution_enabled_is_parsed_from_env():
+    cfg = Config.from_env({**BACKEND_ENV, "AUTONOMOUS_EXECUTION_ENABLED": "true"})
+    assert cfg.autonomous_execution_enabled is True
+    cfg_off = Config.from_env({**BACKEND_ENV, "AUTONOMOUS_EXECUTION_ENABLED": "false"})
+    assert cfg_off.autonomous_execution_enabled is False
 
 
 def test_mt5_broker_timezone_is_configurable():
@@ -158,3 +166,10 @@ def test_w1_mn1_timeframes_are_valid():
     # Ichimoku breakout alerts on the weekly/monthly timeframes.
     cfg = Config.from_env({**BACKEND_ENV, "CANDLE_TIMEFRAMES": "W1,MN1"})
     assert cfg.candle_timeframes == ("W1", "MN1")
+
+
+def test_m1_timeframe_is_valid():
+    # Gold historical-data-collection project — finest granularity, used
+    # only by backfill_gold_history.py's tick/candle backfill.
+    cfg = Config.from_env({**BACKEND_ENV, "CANDLE_TIMEFRAMES": "M1"})
+    assert cfg.candle_timeframes == ("M1",)

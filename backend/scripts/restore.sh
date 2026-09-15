@@ -10,8 +10,8 @@ set -euo pipefail
 #
 # Usage: ./restore.sh <dump-file.sql.gz> <target-db-name>
 
-CONTAINER="${POSTGRES_CONTAINER:-trading-monitor-postgres}"
-DB_USER="${POSTGRES_USER:-trading_monitor}"
+CONTAINER="${POSTGRES_CONTAINER:-autonomous-trading-postgres}"
+DB_USER="${POSTGRES_USER:-autonomous_trading}"
 DUMP_FILE="${1:?Usage: restore.sh <dump-file.sql.gz> <target-db-name>}"
 TARGET_DB="${2:?Usage: restore.sh <dump-file.sql.gz> <target-db-name>}"
 

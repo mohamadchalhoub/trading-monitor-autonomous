@@ -13,19 +13,21 @@
 services:
   postgres:
     image: postgres:16-alpine
-    # Explicit and distinct from the dev compose's "trading-monitor-postgres"
+    # Explicit and distinct from the dev compose's "autonomous-trading-postgres"
     # (backend/docker-compose.yml) — backup.sh/restore.sh's POSTGRES_CONTAINER
     # override already existed as a mechanism; the container just had nothing
     # predictable to point it at. This name is what .env.production's
-    # POSTGRES_CONTAINER should reference (production-readiness review).
-    container_name: trading-monitor-postgres-prod
+    # POSTGRES_CONTAINER should reference. Also distinct from v1's own prod
+    # container name — this project must never share a container name (or a
+    # database) with v1, even if it's ever deployed to the same VPS.
+    container_name: autonomous-trading-postgres-prod
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - autonomous_trading_pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
@@ -41,7 +43,7 @@ services:
     # containers on a network that (unlike dev) isn't purely local-machine.
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
-      - redisdata:/data
+      - autonomous_trading_redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 5s
@@ -159,7 +161,7 @@ networks:
   internal:
 
 volumes:
-  pgdata:
-  redisdata:
+  autonomous_trading_pgdata:
+  autonomous_trading_redisdata:
   caddy_data:
   caddy_config:

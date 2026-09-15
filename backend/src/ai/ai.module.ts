@@ -71,6 +71,10 @@ import { AI_CONFIG, AiConfig, loadAiConfig } from './ai.config';
     HistoricalPatternSummaryService,
     AiAnalysisProcessor,
   ],
-  exports: [AI_CONFIG],
+  // HistoricalPatternSummaryService exported alongside AI_CONFIG so the
+  // autonomous-trading module (a separate feature, same friend's-EURUSD-
+  // history need) can reuse the exact same deterministic BUY/SELL pattern
+  // summary instead of re-querying TradeAlignmentService a second way.
+  exports: [AI_CONFIG, HistoricalPatternSummaryService],
 })
 export class AiModule {}

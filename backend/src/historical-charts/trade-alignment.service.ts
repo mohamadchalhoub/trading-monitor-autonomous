@@ -19,7 +19,20 @@ export interface RoundTripTrade {
   entryPrice: number;
   exitTime: Date;
   exitPrice: number;
+  /** Gross P/L (the OUT deal's own `profit` field) — what a broker statement shows as the trade's raw result. Kept separate from `netProfit` for chart display, where showing the broker's own figure is what a trader recognizes. */
   profit: number;
+  /**
+   * Audit finding (reconciliation session): `profit` alone is GROSS —
+   * it excludes commission and swap, both of which are real costs already
+   * realized on this closed position. A trade that's a small gross winner
+   * can be a net loser once swap is included (confirmed against this
+   * account's own real EURUSD history: 3 positions have gross profit == 0
+   * but net < 0 once swap is added). `HistoricalPatternSummaryService`
+   * uses THIS field, not `profit`, to classify win/loss/breakeven — a
+   * "win rate" fed to the AI should reflect what the trader actually kept,
+   * not the pre-cost figure.
+   */
+  netProfit: number;
   stopLoss: number | null;
   takeProfit: number | null;
 }
@@ -56,6 +69,11 @@ const CANDLE_DURATION_MS: Record<CandleTimeframe, number> = {
   D1: 24 * 60 * 60_000,
   W1: 7 * 24 * 60 * 60_000,
   MN1: 30 * 24 * 60 * 60_000,
+  // Gold historical-collection phase — M1 added to CandleTimeframe for the
+  // tick/candle backfill's finest granularity. chooseTimeframe() below
+  // never selects it (unchanged: still only M5/M15/H1); this entry exists
+  // only because this Record must stay exhaustive over the full enum.
+  M1: 60_000,
 };
 
 // How many bars of context to show before entry / after exit — proportional
@@ -153,6 +171,7 @@ export class TradeAlignmentService {
         exitTime: outTrade.executedAt,
         exitPrice: outTrade.price.toNumber(),
         profit: outTrade.profit.toNumber(),
+        netProfit: outTrade.profit.toNumber() + outTrade.commission.toNumber() + outTrade.swap.toNumber(),
         stopLoss: (outTrade.stopLoss ?? inTrade.stopLoss)?.toNumber() ?? null,
         takeProfit: (outTrade.takeProfit ?? inTrade.takeProfit)?.toNumber() ?? null,
       });

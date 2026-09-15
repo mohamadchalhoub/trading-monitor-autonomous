@@ -35,12 +35,17 @@ def main() -> int:
     # config errors above surface without requiring the MetaTrader5 package
     # (Windows-only) to be importable first.
     from app.api_client import ApiClient
+    from app.executor import Executor
     from app.mt5_client import Mt5Client
     from app.runner import CollectorApp
 
     client = Mt5Client(config)
     api = ApiClient(config)
-    app = CollectorApp(config, client, api)
+    # Constructed unconditionally (cheap — holds no connection of its own
+    # yet) but only ever USED by CollectorApp when
+    # autonomous_execution_enabled is true; see that class's own comment.
+    executor = Executor()
+    app = CollectorApp(config, client, api, executor)
     app.install_signal_handlers()
     return app.run()
 

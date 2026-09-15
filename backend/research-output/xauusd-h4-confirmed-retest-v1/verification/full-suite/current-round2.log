@@ -1,0 +1,473 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/user/Desktop/tma-wt-current/backend[39m
+
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "autonomous_trading_test", schema "public" at "127.0.0.1:5444"
+
+25 migrations found in prisma/migrations
+
+
+No pending migrations to apply.
+┌─────────────────────────────────────────────────────────┐
+│  Update available 5.22.0 -> 8.0.0-rc.15                 │
+│                                                         │
+│  This is a major update - please follow the guide at    │
+│  https://pris.ly/d/major-version-upgrade                │
+│                                                         │
+│  Run the following to update                            │
+│    npm i --save-dev prisma@latest                       │
+│    npm i @prisma/client@latest                          │
+└─────────────────────────────────────────────────────────┘
+ [32m✓[39m test/research/first-touch/outcome-resolution.spec.ts [2m([22m[2m32 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m test/telegram/message-templates.spec.ts [2m([22m[2m26 tests[22m[2m)[22m[90m 71[2mms[22m[39m
+ [32m✓[39m test/autonomous/backtest-simulator.spec.ts [2m([22m[2m19 tests[22m[2m)[22m[90m 20[2mms[22m[39m
+ [32m✓[39m test/rules/rule-engine.spec.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 4132[2mms[22m[39m
+   [33m[2m✓[22m[39m RuleEngineService.evaluateAccount[2m > [22mDAILY_LOSS_LIMIT triggers end-to-end from ingested snapshot data [33m581[2mms[22m[39m
+   [33m[2m✓[22m[39m RuleEngineService.evaluateAccount[2m > [22mmultiple starter rules trigger simultaneously — each gets its own independent alert [33m560[2mms[22m[39m
+   [33m[2m✓[22m[39m RuleEngineService.evaluateAccount[2m > [22mCOMPOUND AND — triggers only once all three components are ACTIVE (the "risk escalation" worked example) [33m586[2mms[22m[39m
+   [33m[2m✓[22m[39m RuleEngineService.evaluateAccount[2m > [22mCOMPOUND AND — does not trigger when only two of three components are ACTIVE [33m367[2mms[22m[39m
+   [33m[2m✓[22m[39m RuleEngineService.evaluateAccount[2m > [22mCOMPOUND OR — triggers when just one component is ACTIVE [33m369[2mms[22m[39m
+   [33m[2m✓[22m[39m RuleEngineService.evaluateAccount[2m > [22maccount isolation: identical rule configs on two accounts evaluate independently [33m331[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/db-integration.spec.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 1321[2mms[22m[39m
+ [32m✓[39m test/rules/rule-definitions.spec.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 1530[2mms[22m[39m
+ [32m✓[39m test/research/first-touch/first-touch-detection.spec.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+[31m[Nest] 9452  - [39m09/15/2026, 3:33:49 AM [31m  ERROR[39m [38;5;3m[AiAnalysisProcessor] [39m[31mAI request failed: alertId=2c9f6069-9b94-4a01-85ae-e7a14dbefc51 latencyMs=620: Anthropic returned 401: {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_011Cf4HX8DAird6BLbfdXeNy"}[39m
+[31m[Nest] 9452  - [39m09/15/2026, 3:33:51 AM [31m  ERROR[39m [38;5;3m[AiAnalysisProcessor] [39m[31mAI request failed: alertId=376b37f6-e58c-450e-833b-99f1053fa314 latencyMs=0: Anthropic returned 500: {"error":"server error"}[39m
+[31m[Nest] 9452  - [39m09/15/2026, 3:33:51 AM [31m  ERROR[39m [38;5;3m[AiAnalysisProcessor] [39m[31mAI request failed: alertId=376b37f6-e58c-450e-833b-99f1053fa314 latencyMs=1: Anthropic returned 500: {"error":"server error"}[39m
+ [32m✓[39m test/ai/ai-pipeline.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 3952[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — AI analysis pipeline (AI_ENABLED=true)[2m > [22m1. a fresh-episode alert gets exactly one AiAnalysis row, PENDING at first [33m468[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — AI analysis pipeline (AI_ENABLED=true)[2m > [22m2. a cooldown re-notify of the SAME episode never gets its own AiAnalysis row [33m482[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — AI analysis pipeline (AI_ENABLED=true)[2m > [22m3. generation succeeds → READY, then a narrative follow-up is actually sent to Telegram [33m403[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — AI analysis pipeline (AI_ENABLED=true)[2m > [22m4. a response that fails the safety filter is WITHHELD and NEVER reaches Telegram [33m359[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — AI analysis pipeline (AI_ENABLED=true)[2m > [22m5. duplicate enqueue for the same AiAnalysis never generates twice (deterministic jobId) [33m417[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — AI analysis pipeline (AI_ENABLED=true)[2m > [22m6. a provider that always fails exhausts retries and lands FAILED (terminal) [33m359[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — AI analysis pipeline (AI_ENABLED=false, the default)[2m > [22ma fresh alert still gets a PENDING AiAnalysis row, which the worker then marks SKIPPED — no external AI call ever made [33m439[2mms[22m[39m
+ [32m✓[39m test/health/health-checks.spec.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 5552[2mms[22m[39m
+   [33m[2m✓[22m[39m health-checks (pure functions against a real Postgres, no mocks)[2m > [22mcheckTelegram[2m > [22mDOWN when getMe fails twice in a row, regardless of delivery history [33m2052[2mms[22m[39m
+   [33m[2m✓[22m[39m health-checks (pure functions against a real Postgres, no mocks)[2m > [22mcheckTelegram[2m > [22ma single getMe blip does not flip this to DOWN — one retry recovers it, same "no single-blip degrade" reasoning as the delivery-streak check below [33m2054[2mms[22m[39m
+ [32m✓[39m test/rules/technical-analysis-integration.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 4029[2mms[22m[39m
+   [33m[2m✓[22m[39m technical-analysis rule types (real DB-seeded candles)[2m > [22mSUPPORT_RESISTANCE_PROXIMITY: INSUFFICIENT_DATA when there is no EURUSD candle data at all [33m411[2mms[22m[39m
+   [33m[2m✓[22m[39m technical-analysis rule types (real DB-seeded candles)[2m > [22mDAILY_MARKET_ANALYSIS: with ruleTypeFilter, produces a TRIGGERED alert carrying the full combined payload [33m542[2mms[22m[39m
+   [33m[2m✓[22m[39m technical-analysis rule types (real DB-seeded candles)[2m > [22mDAILY_MARKET_ANALYSIS — every real trigger is a fresh episode (AI narration every day, not just the first)[2m > [22ma real trigger resets rule_state to INACTIVE immediately (not left ACTIVE like a continuous-condition rule) [33m454[2mms[22m[39m
+   [33m[2m✓[22m[39m technical-analysis rule types (real DB-seeded candles)[2m > [22mDAILY_MARKET_ANALYSIS — every real trigger is a fresh episode (AI narration every day, not just the first)[2m > [22ma real trigger creates an AiAnalysis row — the bug this fix closes (previously only the very first-ever trigger got one) [33m401[2mms[22m[39m
+   [33m[2m✓[22m[39m technical-analysis rule types (real DB-seeded candles)[2m > [22mDAILY_MARKET_ANALYSIS — every real trigger is a fresh episode (AI narration every day, not just the first)[2m > [22mevaluating again the SAME day does not create a second alert (same-day dedup, now that cooldown no longer gates this rule) [33m497[2mms[22m[39m
+   [33m[2m✓[22m[39m technical-analysis rule types (real DB-seeded candles)[2m > [22mDAILY_MARKET_ANALYSIS — every real trigger is a fresh episode (AI narration every day, not just the first)[2m > [22mevaluating the NEXT day creates a second alert with its OWN AiAnalysis row — the actual fix: every day gets AI narration, not just day one [33m603[2mms[22m[39m
+ [32m✓[39m test/xtb-import/xtb-import-e2e.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 4118[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 — XTB CSV import (end-to-end)[2m > [22mrejects an import for a non-XTB account [33m629[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 — XTB CSV import (end-to-end)[2m > [22mimports one closed-position row as a synthetic IN/OUT Trade pair, preserving raw payload [33m411[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 — XTB CSV import (end-to-end)[2m > [22mwhole-file dedup: re-uploading the identical file is a no-op, not a re-import [33m403[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 — XTB CSV import (end-to-end)[2m > [22mrow-level dedup: the same order id appearing in a second, different file is skipped, not double-imported [33m398[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 — XTB CSV import (end-to-end)[2m > [22man overlapping export with a CORRECTED value for an already-imported order id keeps the ORIGINAL value, not the correction [33m393[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 — XTB CSV import (end-to-end)[2m > [22mresumes a PENDING batch left over from an interrupted attempt instead of treating it as done [33m306[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 8 — XTB CSV import (end-to-end)[2m > [22mGET /xtb-import/batches/:accountId lists batches newest first [33m499[2mms[22m[39m
+ [32m✓[39m test/research/confirmed-retest/formation.spec.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 46[2mms[22m[39m
+ [32m✓[39m test/rules/lifecycle.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 2119[2mms[22m[39m
+   [33m[2m✓[22m[39m AlertLifecycleService (state machine)[2m > [22mrestart simulation: a fresh service instance reading rule_state from Postgres continues the same episode without a duplicate alert or a lost cooldown [33m559[2mms[22m[39m
+[32m[Nest] 6476  - [39m09/15/2026, 3:34:26 AM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M5 count=3[39m
+ [32m✓[39m test/historical-charts/trade-alignment.service.spec.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 916[2mms[22m[39m
+[31m[Nest] 5476  - [39m09/15/2026, 3:34:33 AM [31m  ERROR[39m [38;5;3m[TelegramDeliveryProcessor] [39m[31mdelivery 6bfebdac-30ca-419b-ab8e-64e1f98d7ffe exhausted 3 attempt(s), marked DEAD[39m
+ [32m✓[39m test/telegram/delivery.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 4446[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 5 — Telegram delivery (end-to-end)[2m > [22m1. an Alert never exists without its AlertDelivery — created transactionally, one-to-one [33m483[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 5 — Telegram delivery (end-to-end)[2m > [22m3. duplicate enqueue for the same delivery never sends twice (deterministic jobId) [33m421[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 5 — Telegram delivery (end-to-end)[2m > [22m4. a permanent Telegram error (403) marks DEAD immediately, without exhausting retries [33m341[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 5 — Telegram delivery (end-to-end)[2m > [22m5. Telegram unavailable (every call fails transiently) exhausts retries and lands DEAD [33m481[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 5 — Telegram delivery (end-to-end)[2m > [22m6. Telegram recovery: fails twice, then succeeds — ends SENT, not DEAD [33m415[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 5 — Telegram delivery (end-to-end)[2m > [22m8. the sweep never re-delivers an already-SENT row [33m667[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 5 — Telegram delivery (end-to-end)[2m > [22m9. restart safety: a fresh DI graph (simulated backend restart) completes a delivery that was committed but not yet processed [33m581[2mms[22m[39m
+ [32m✓[39m test/research/confirmed-retest/outcome.spec.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 576[2mms[22m[39m
+   [33m[2m✓[22m[39m entry-candle reachability matches the brute-force path oracle[2m > [22mSELL: mirrored grid bars give the mirrored result [33m325[2mms[22m[39m
+ [32m✓[39m test/market-data/market-data-controller-e2e.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 3088[2mms[22m[39m
+   [33m[2m✓[22m[39m market-data dashboard read endpoints (end-to-end)[2m > [22mGET /market-data/candles[2m > [22mexcludes a still-forming candle by default, and includes it with includeForming=true [33m547[2mms[22m[39m
+   [33m[2m✓[22m[39m market-data dashboard read endpoints (end-to-end)[2m > [22mGET /market-data/coverage[2m > [22mcombines candle/tick counts, interval status counts, and symbol-metadata presence [33m421[2mms[22m[39m
+ [32m✓[39m test/research/confirmed-retest/replay.spec.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 132[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/signal-engine.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m test/research/confirmed-retest/paper.spec.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 64[2mms[22m[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:53 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for COLLECTOR (Redis-side status is unaffected): simulated Postgres write failure for COLLECTOR[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:56 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for COLLECTOR (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:56 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for MT5_TERMINAL (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:56 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for DATABASE (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:56 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for REDIS (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:56 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for TELEGRAM (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:56 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for AI_PROVIDER (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:56 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for XTB_IMPORT (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:59 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for COLLECTOR (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:59 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for MT5_TERMINAL (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:59 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for DATABASE (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:59 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for REDIS (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:59 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for TELEGRAM (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:59 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for AI_PROVIDER (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:34:59 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for XTB_IMPORT (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:01 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for COLLECTOR (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:01 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for MT5_TERMINAL (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:01 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for DATABASE (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:01 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for REDIS (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:01 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for TELEGRAM (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:01 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for AI_PROVIDER (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:01 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for XTB_IMPORT (Redis-side status is unaffected): ECONNREFUSED (simulated)[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:04 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for COLLECTOR (Redis-side status is unaffected): this.prisma.healthStatus.findUnique is not a function[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:04 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for MT5_TERMINAL (Redis-side status is unaffected): this.prisma.healthStatus.findUnique is not a function[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:04 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for DATABASE (Redis-side status is unaffected): this.prisma.healthStatus.findUnique is not a function[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:04 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for REDIS (Redis-side status is unaffected): this.prisma.healthStatus.findUnique is not a function[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:04 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for TELEGRAM (Redis-side status is unaffected): this.prisma.healthStatus.findUnique is not a function[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:04 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for AI_PROVIDER (Redis-side status is unaffected): this.prisma.healthStatus.findUnique is not a function[39m
+[31m[Nest] 17184  - [39m09/15/2026, 3:35:04 AM [31m  ERROR[39m [38;5;3m[HealthStatusWriterService] [39m[31mfailed to persist health status/incident for XTB_IMPORT (Redis-side status is unaffected): this.prisma.healthStatus.findUnique is not a function[39m
+ [32m✓[39m test/health/health-check-resilience.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 11706[2mms[22m[39m
+   [33m[2m✓[22m[39m health-check loop resilience (production-readiness review — regression)[2m > [22ma Postgres failure persisting ONE component does not stop later components from being checked and written — the exact bug: the loop used to abort at the first throw [33m482[2mms[22m[39m
+   [33m[2m✓[22m[39m health-check loop resilience (production-readiness review — regression)[2m > [22ma full Postgres outage (every persistence call fails) still lets every component be checked and its live status written to Redis — the live status must not depend on Postgres being up [33m3680[2mms[22m[39m
+   [33m[2m✓[22m[39m health-check loop resilience (production-readiness review — regression)[2m > [22mGET /health/live requires no token and reports 503 during a Postgres outage [33m2328[2mms[22m[39m
+   [33m[2m✓[22m[39m health-check loop resilience (production-readiness review — regression)[2m > [22mrecovers to OK once Postgres is reachable again, with every component still evaluated throughout [33m4743[2mms[22m[39m
+ [32m✓[39m test/dashboard-api/dashboard-api-e2e.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2793[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 9 — dashboard read endpoints (end-to-end)[2m > [22mGET /accounts[2m > [22mlists accounts across users, newest-created-last [33m575[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 9 — dashboard read endpoints (end-to-end)[2m > [22mtrading-data read endpoints[2m > [22mreturns the latest snapshot, open positions, and paginated trades [33m689[2mms[22m[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 2/2 (Object) failed (non-transient, not retried), no more fallbacks: provider unavailable[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:27 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/2 (Object) failed (transient, retries exhausted), trying next: Gemini returned 429: quota exceeded[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/1 (Object) failed (non-transient, not retried), no more fallbacks: still down[39m
+[33m[Nest] 12456  - [39m09/15/2026, 3:35:13 AM [33m   WARN[39m [38;5;3m[AutonomousFallbackProvider] [39m[33mprovider 1/1 (Object) failed (non-transient, not retried), no more fallbacks: still down[39m
+ [32m✓[39m test/autonomous/autonomous-ai-fallback-provider.spec.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 32[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/backtest.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 57[2mms[22m[39m
+ [32m✓[39m test/ai/ai.config.spec.ts [2m([22m[2m20 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m test/dashboard-auth.spec.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 3244[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard authentication[2m > [22m1. accepts a valid dashboard token [33m416[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard authentication[2m > [22mverifies against the stored hash — corrupting the hash breaks auth for an otherwise-correct token [33m401[2mms[22m[39m
+ [32m✓[39m test/ai/historical-pattern-summary.service.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 1912[2mms[22m[39m
+   [33m[2m✓[22m[39m HistoricalPatternSummaryService[2m > [22mconfidence is LOW under 20 trades, MEDIUM from 20-99, HIGH from 100+ [33m1191[2mms[22m[39m
+ [32m✓[39m test/collector-ingress/candles.spec.ts [2m([22m[2m15 tests[22m[2m)[22m[33m 5531[2mms[22m[39m
+   [33m[2m✓[22m[39m historical candle ingestion (/collector/candles)[2m > [22maccepts a valid push and persists every candle [33m549[2mms[22m[39m
+   [33m[2m✓[22m[39m historical candle ingestion (/collector/candles)[2m > [22mis idempotent — re-pushing the same (symbol, timeframe, openTime) heals rather than duplicates [33m448[2mms[22m[39m
+   [33m[2m✓[22m[39m historical candle ingestion (/collector/candles)[2m > [22maccepts MN1 — M1 is the gold historical-collection phase's finest-granularity addition, the rest are the earlier technical-analysis timeframes [33m350[2mms[22m[39m
+   [33m[2m✓[22m[39m historical candle ingestion (/collector/candles)[2m > [22maccepts M1 — M1 is the gold historical-collection phase's finest-granularity addition, the rest are the earlier technical-analysis timeframes [33m306[2mms[22m[39m
+   [33m[2m✓[22m[39m historical candle ingestion (/collector/candles)[2m > [22mrejects an empty candles array [33m329[2mms[22m[39m
+   [33m[2m✓[22m[39m historical candle ingestion (/collector/candles)[2m > [22maccepts any valid collector token, not just one bound to a specific account [33m508[2mms[22m[39m
+   [33m[2m✓[22m[39m historical candle ingestion (/collector/candles)[2m > [22mGET /collector/candles/latest[2m > [22mreturns the latest openTime after ingestion, scoped by symbol AND timeframe [33m514[2mms[22m[39m
+   [33m[2m✓[22m[39m historical candle ingestion (/collector/candles)[2m > [22mGET /collector/candles/latest[2m > [22mrejects a missing/invalid timeframe query param [33m333[2mms[22m[39m
+ [32m✓[39m test/rules/integration.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2403[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: ingestion → analytics → rule engine → alert[2m > [22ma real snapshot push that crosses a DRAWDOWN threshold produces a deterministic Alert with full trigger-time context [33m1256[2mms[22m[39m
+   [33m[2m✓[22m[39m Integration: ingestion → analytics → rule engine → alert[2m > [22mmarket intelligence phase 5: a real upcoming HIGH-impact MarketEvent + real open-position exposure produces a HIGH_IMPACT_EVENT_EXPOSURE alert [33m445[2mms[22m[39m
+ [32m✓[39m test/collector-ingress/backfill-intervals.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 3509[2mms[22m[39m
+   [33m[2m✓[22m[39m backfill interval ledger (/collector/backfill-intervals)[2m > [22mcreates a PENDING interval with no completedAt [33m524[2mms[22m[39m
+   [33m[2m✓[22m[39m backfill interval ledger (/collector/backfill-intervals)[2m > [22mupserting the SAME (source, symbol, dataType, timeframe, range) transitions PENDING -> COMPLETED and sets completedAt [33m372[2mms[22m[39m
+   [33m[2m✓[22m[39m backfill interval ledger (/collector/backfill-intervals)[2m > [22ma TICK-type interval omits timeframe and internally keys on the "_TICK_" companion, distinct from any CANDLE interval on the same range [33m353[2mms[22m[39m
+   [33m[2m✓[22m[39m backfill interval ledger (/collector/backfill-intervals)[2m > [22mGET /collector/backfill-intervals[2m > [22mlists intervals ordered by rangeStart ascending, filterable by comma-separated status [33m593[2mms[22m[39m
+ [32m✓[39m test/collector-ingress/ticks.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 3475[2mms[22m[39m
+   [33m[2m✓[22m[39m historical tick ingestion (/collector/ticks)[2m > [22maccepts a valid push and persists every tick [33m488[2mms[22m[39m
+   [33m[2m✓[22m[39m historical tick ingestion (/collector/ticks)[2m > [22mis idempotent across calls — re-posting the exact same payload inserts 0 the second time, no DB error [33m425[2mms[22m[39m
+   [33m[2m✓[22m[39m historical tick ingestion (/collector/ticks)[2m > [22mtreats a null vs. a present optional field (last/volume/volumeReal) as genuinely distinct identity [33m502[2mms[22m[39m
+   [33m[2m✓[22m[39m historical tick ingestion (/collector/ticks)[2m > [22mGET /collector/ticks/coverage[2m > [22mreturns count/earliest/latest after ingestion, scoped by symbol [33m479[2mms[22m[39m
+ [32m✓[39m test/snapshot-ingestion.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 4213[2mms[22m[39m
+   [33m[2m✓[22m[39m snapshot ingestion[2m > [22maccepts a valid snapshot and persists it [33m727[2mms[22m[39m
+   [33m[2m✓[22m[39m snapshot ingestion[2m > [22mpersists tradeMode when the collector sends it — the input to the autonomous system's demo-account safety check [33m336[2mms[22m[39m
+   [33m[2m✓[22m[39m snapshot ingestion[2m > [22maccepts a snapshot omitting tradeMode (an older collector) and leaves it null, never guessed [33m509[2mms[22m[39m
+   [33m[2m✓[22m[39m snapshot ingestion[2m > [22mrejects a snapshot with an invalid tradeMode value [33m444[2mms[22m[39m
+   [33m[2m✓[22m[39m snapshot ingestion[2m > [22mdoes not duplicate a snapshot re-sent with the same capturedAt [33m454[2mms[22m[39m
+   [33m[2m✓[22m[39m snapshot ingestion[2m > [22mstamps positions with the account's own platform, not something client-supplied [33m333[2mms[22m[39m
+ [32m✓[39m test/ai/openrouter-provider.spec.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 96[2mms[22m[39m
+ [32m✓[39m test/health/health-e2e.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2685[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 7 — system health monitoring (end-to-end)[2m > [22mGET /health returns all eight components after a check runs, DATABASE and REDIS both OK [33m553[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 7 — system health monitoring (end-to-end)[2m > [22ma status change opens a health_incidents row; returning to OK closes it [33m519[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 7 — system health monitoring (end-to-end)[2m > [22mrepeated ticks with an unchanged status never create duplicate incidents [33m312[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 7 — system health monitoring (end-to-end)[2m > [22mGET /health/incidents filters by component and rejects an unknown one [33m410[2mms[22m[39m
+ [32m✓[39m test/dashboard-isolation.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 5255[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mGET /accounts[2m > [22mreturns only the authenticated token's own account, never every account [33m516[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mGET /accounts/:id[2m > [22mA -> A succeeds, A -> B returns 403 [33m450[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mGET /accounts/:accountId/alerts[2m > [22mA -> A succeeds, A -> B returns 403 [33m496[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mGET /accounts/:accountId/rules[2m > [22mA -> A succeeds, A -> B returns 403 [33m457[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mtrading-data routes[2m > [22mGET /accounts/:accountId/snapshots/latest — A -> A succeeds, A -> B returns 403 [33m688[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mtrading-data routes[2m > [22mGET /accounts/:accountId/positions — A -> A succeeds, A -> B returns 403 [33m605[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mtrading-data routes[2m > [22mGET /accounts/:accountId/trades — A -> A succeeds, A -> B returns 403 [33m631[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mPOST /xtb-import[2m > [22ma token bound to account A cannot import data into account B's accountId [33m497[2mms[22m[39m
+   [33m[2m✓[22m[39m dashboard token account isolation[2m > [22mGET /xtb-import/batches/:accountId[2m > [22mA -> A succeeds, A -> B returns 403 [33m404[2mms[22m[39m
+ [32m✓[39m test/analytics/trading-day.spec.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 79[2mms[22m[39m
+ [32m✓[39m test/xtb-import/xtb-import-xlsx-e2e.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2954[2mms[22m[39m
+   [33m[2m✓[22m[39m XTB xlsx import (end-to-end)[2m > [22mimports a real-shaped xlsx export as a synthetic IN/OUT Trade pair [33m588[2mms[22m[39m
+   [33m[2m✓[22m[39m XTB xlsx import (end-to-end)[2m > [22mpersists stop-loss/take-profit onto both trade legs when present in the source row [33m491[2mms[22m[39m
+   [33m[2m✓[22m[39m XTB xlsx import (end-to-end)[2m > [22mwhole-file dedup works identically for xlsx as for csv [33m407[2mms[22m[39m
+   [33m[2m✓[22m[39m XTB xlsx import (end-to-end)[2m > [22mrejects a request providing neither csvContent nor xlsxContentBase64 [33m310[2mms[22m[39m
+   [33m[2m✓[22m[39m XTB xlsx import (end-to-end)[2m > [22ma workbook with no recognizable closed-positions sheet marks the batch FAILED [33m425[2mms[22m[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 1 upserted (1 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 3 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:39 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 1 upserted (0 already known, healed not duplicated), 1 skipped (missing fields)[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[33m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [33m   WARN[39m [38;5;3m[MarketNewsIngestionService] [39m[33mMarketaux rate limit encountered — skipping this tick: 429[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[31m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [31m  ERROR[39m [38;5;3m[MarketNewsIngestionService] [39m[31mMarketaux request failed: network blip[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux request started: currencies=EUR,USD[39m
+[32m[Nest] 11140  - [39m09/15/2026, 3:36:40 AM [32m    LOG[39m [38;5;3m[MarketNewsIngestionService] [39m[32mMarketaux ingestion: 1 upserted (1 already known, healed not duplicated), 0 skipped (missing fields)[39m
+ [32m✓[39m test/market-events/market-news-ingestion.service.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 740[2mms[22m[39m
+ [32m✓[39m test/autonomous/autonomous-execution-e2e.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 3566[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — autonomous execution poll/report (end-to-end)[2m > [22mreturns null when there is no pending order [33m480[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — autonomous execution poll/report (end-to-end)[2m > [22mreturns a correctly-shaped order and atomically claims it (flips PENDING to SENT) [33m300[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — autonomous execution poll/report (end-to-end)[2m > [22mnever returns the same order twice — a second poll after claiming sees nothing pending [33m347[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — autonomous execution poll/report (end-to-end)[2m > [22mclaims the OLDEST pending order first [33m319[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — autonomous execution poll/report (end-to-end)[2m > [22mrecords a successful execution result as FILLED [33m598[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 6 — autonomous execution poll/report (end-to-end)[2m > [22mrecords a failed execution result as FAILED, with the error message, and no ticket [33m487[2mms[22m[39m
+ [32m✓[39m test/technical-analysis/support-resistance.service.spec.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m test/ai/market-context-builder.service.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 565[2mms[22m[39m
+ [32m✓[39m test/idempotency.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 3892[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 2 Definition of Done — idempotency[2m > [22m1. submitting the same trade payload multiple times results in exactly one row [33m751[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 2 Definition of Done — idempotency[2m > [22m2. submitting the same snapshot repeatedly does not create duplicates [33m559[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 2 Definition of Done — idempotency[2m > [22m3. submitting an updated snapshot for the same capturedAt updates the record instead of duplicating it [33m681[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 2 Definition of Done — idempotency[2m > [22m4. submitting an updated position for the same externalPositionId updates rather than duplicates [33m433[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 2 Definition of Done — idempotency[2m > [22m5. a hard-restart-style replay of an overlapping trade window never produces duplicates [33m441[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 2 Definition of Done — idempotency[2m > [22m6. a rejected (failed) ingestion request never advances the sync cursor [33m537[2mms[22m[39m
+ [32m✓[39m test/autonomous/autonomous-rule-engine.service.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m test/ai/groq-provider.spec.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 93[2mms[22m[39m
+ [32m✓[39m test/isolation.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2976[2mms[22m[39m
+   [33m[2m✓[22m[39m isolation & security[2m > [22mreturns 401 (not 500, not 200) for every collector endpoint when unauthenticated [33m418[2mms[22m[39m
+   [33m[2m✓[22m[39m isolation & security[2m > [22mFIXED (production-readiness review, item 1): a collector token bound to one account is rejected — 403, not 201/200 — when used against a different account [33m462[2mms[22m[39m
+   [33m[2m✓[22m[39m isolation & security[2m > [22ma token bound to one account is also rejected for the GET cursor/heartbeat routes of another account [33m430[2mms[22m[39m
+   [33m[2m✓[22m[39m isolation & security[2m > [22ma token with no account binding at all (pre-fix legacy row) is rejected outright, not treated as unrestricted [33m358[2mms[22m[39m
+   [33m[2m✓[22m[39m isolation & security[2m > [22mdata pushed for one account never appears when reading another account's cursor or heartbeat [33m652[2mms[22m[39m
+[33m[Nest] 11636  - [39m09/15/2026, 3:37:11 AM [33m   WARN[39m [38;5;3m[AutonomousAiDecisionService] [39m[33mAI decision rejected/failed for EURUSD candidate at 2026-09-15T00:37:11.849Z: AI response "confidence" must be a number between 0 and 1, got undefined[39m
+[33m[Nest] 11636  - [39m09/15/2026, 3:37:11 AM [33m   WARN[39m [38;5;3m[AutonomousAiDecisionService] [39m[33mAI decision rejected/failed for EURUSD candidate at 2026-09-15T00:37:11.853Z: Gemini response was not valid JSON[39m
+ [32m✓[39m test/autonomous/autonomous-ai-decision.service.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/high-impact-event-exposure.spec.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m test/autonomous/level-confirmation.spec.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:14 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:14 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:14 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:14 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:14 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:14 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 1 upserted (1 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 3 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 2 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 1 upserted (0 already known, healed not duplicated), 1 skipped (missing fields)[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[31m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [31m  ERROR[39m [38;5;3m[FinnhubNewsIngestionService] [39m[31mFinnhub request failed: network blip[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 1 upserted (0 already known, healed not duplicated), 0 skipped (missing fields)[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub request started: category=forex[39m
+[32m[Nest] 13916  - [39m09/15/2026, 3:37:15 AM [32m    LOG[39m [38;5;3m[FinnhubNewsIngestionService] [39m[32mFinnhub ingestion: 1 upserted (1 already known, healed not duplicated), 0 skipped (missing fields)[39m
+ [32m✓[39m test/market-events/finnhub-news-ingestion.service.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 687[2mms[22m[39m
+ [32m✓[39m test/analytics/edge-cases.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 1114[2mms[22m[39m
+   [33m[2m✓[22m[39m analytics edge cases[2m > [22mexactly one closing deal never divides by zero and produces defined single-sample stats [33m339[2mms[22m[39m
+   [33m[2m✓[22m[39m analytics edge cases[2m > [22mfalls back to 90 when ANALYTICS_BASELINE_WINDOW_DAYS is unset or invalid [33m403[2mms[22m[39m
+ [32m✓[39m test/autonomous/autonomous-ai-provider-openrouter.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 106[2mms[22m[39m
+ [32m✓[39m test/autonomous/autonomous-ai-provider-groq.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 80[2mms[22m[39m
+ [32m✓[39m test/ai/gemini-provider.spec.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 103[2mms[22m[39m
+ [32m✓[39m test/analytics/baseline-window.spec.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 659[2mms[22m[39m
+   [33m[2m✓[22m[39m baseline window boundary[2m > [22mincludes a deal exactly at windowStart and excludes one 1ms before it [33m367[2mms[22m[39m
+ [32m✓[39m test/autonomous/risk-manager.spec.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m test/xtb-import/xtb-xlsx-parser.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 286[2mms[22m[39m
+ [32m✓[39m test/technical-analysis/ichimoku.service.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d, 5 candle(s), 1 level(s) found[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 28d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 56d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 112d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 224d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 365d, 0 candle(s), 0 level(s) found[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 28d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 56d, 5 candle(s), 1 level(s) found[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 14d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 28d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 56d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:29 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 112d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:30 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 224d found 0 levels, expanding[39m
+[95m[Nest] 2400  - [39m09/15/2026, 3:37:30 AM [95m  DEBUG[39m [38;5;3m[TechnicalAnalysisReportService] [39m[95mS/R H1 lookback: 365d, 0 candle(s), 0 level(s) found[39m
+ [32m✓[39m test/technical-analysis/technical-analysis-report.service.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 611[2mms[22m[39m
+ [32m✓[39m test/auth.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 2279[2mms[22m[39m
+   [33m[2m✓[22m[39m collector authentication[2m > [22maccepts a valid collector token [33m484[2mms[22m[39m
+   [33m[2m✓[22m[39m collector authentication[2m > [22mverifies against the stored hash — corrupting the hash breaks auth for an otherwise-correct token [33m363[2mms[22m[39m
+ [32m✓[39m test/ai/similar-past-events.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 543[2mms[22m[39m
+ [32m✓[39m test/historical-charts/feature-extraction.spec.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=H1 status=PENDING[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=H1 status=PENDING[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=H1 status=COMPLETED[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=M5 status=PENDING[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=M5 status=EMPTY_UNCONFIRMED[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=M5 status=FAILED[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=M5 status=INCOMPLETE[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=M5 status=SUSPECTED_TRUNCATED[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=M5 status=EMPTY_CONFIRMED[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=H1 status=COMPLETED[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=H1 status=INCOMPLETE[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=TICK timeframeKey=_TICK_ status=PENDING[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=H1 status=PENDING[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=TICK timeframeKey=_TICK_ status=PENDING[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=H1 status=COMPLETED[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=CANDLE timeframeKey=H1 status=FAILED[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=XAUUSD dataType=TICK timeframeKey=_TICK_ status=PENDING[39m
+[32m[Nest] 4760  - [39m09/15/2026, 3:37:41 AM [32m    LOG[39m [38;5;3m[BackfillIntervalService] [39m[32mbackfill interval upserted: symbol=EURUSD dataType=CANDLE timeframeKey=H1 status=COMPLETED[39m
+ [32m✓[39m test/market-data/backfill-interval.service.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 674[2mms[22m[39m
+ [32m✓[39m test/autonomous/autonomous-execution-coordinator.service.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/emergency-handler.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 18[2mms[22m[39m
+[33m[Nest] 11476  - [39m09/15/2026, 3:37:44 AM [33m   WARN[39m [38;5;3m[FallbackAiProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+[33m[Nest] 11476  - [39m09/15/2026, 3:37:44 AM [33m   WARN[39m [38;5;3m[FallbackAiProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+[33m[Nest] 11476  - [39m09/15/2026, 3:37:44 AM [33m   WARN[39m [38;5;3m[FallbackAiProvider] [39m[33mprovider 2/2 (Object) failed (non-transient, not retried), no more fallbacks: provider unavailable[39m
+[33m[Nest] 11476  - [39m09/15/2026, 3:37:58 AM [33m   WARN[39m [38;5;3m[FallbackAiProvider] [39m[33mprovider 1/2 (Object) failed (transient, retries exhausted), trying next: 429 rate limit[39m
+[33m[Nest] 11476  - [39m09/15/2026, 3:37:44 AM [33m   WARN[39m [38;5;3m[FallbackAiProvider] [39m[33mprovider 1/2 (Object) failed (non-transient, not retried), trying next: provider unavailable[39m
+ [32m✓[39m test/ai/fallback-provider.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/risk-policy.spec.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m test/historical-charts/historical-charts-e2e.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2358[2mms[22m[39m
+   [33m[2m✓[22m[39m historical EURUSD charts (end-to-end)[2m > [22mGET /accounts/:accountId/eurusd-trades lists round trips for that account [33m466[2mms[22m[39m
+   [33m[2m✓[22m[39m historical EURUSD charts (end-to-end)[2m > [22ma token bound to account A cannot read account B's EURUSD trades [33m450[2mms[22m[39m
+ [32m✓[39m test/ai/anthropic-provider.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 90[2mms[22m[39m
+ [32m✓[39m test/analytics/daily-reset.spec.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 521[2mms[22m[39m
+   [33m[2m✓[22m[39m daily reset uses the account trading-day timezone, not UTC midnight[2m > [22mthe same snapshot history produces a different startingBalance/dailyPl under different tz+resetHour config [33m338[2mms[22m[39m
+ [32m✓[39m test/cursor.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 4223[2mms[22m[39m
+   [33m[2m✓[22m[39m sync cursor[2m > [22mreturns a null cursor before any trade has ever been synced [33m471[2mms[22m[39m
+   [33m[2m✓[22m[39m sync cursor[2m > [22madvances after a successful trade push [33m436[2mms[22m[39m
+   [33m[2m✓[22m[39m sync cursor[2m > [22mkeeps the highest deal ticket seen, even if a later push includes a lower one [33m806[2mms[22m[39m
+   [33m[2m✓[22m[39m sync cursor[2m > [22mdoes not 500 when a ticket id is non-numeric, on a second push after a cursor already exists [33m418[2mms[22m[39m
+   [33m[2m✓[22m[39m sync cursor[2m > [22mdoes NOT advance when the request is rejected by validation [33m871[2mms[22m[39m
+   [33m[2m✓[22m[39m sync cursor[2m > [22mreplaying the same overlapping time window stays idempotent [33m772[2mms[22m[39m
+ [32m✓[39m test/research/confirmed-retest/gaps.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 135[2mms[22m[39m
+ [32m✓[39m test/autonomous/weekly-range-levels.service.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+[32m[Nest] 15776  - [39m09/15/2026, 3:38:08 AM [32m    LOG[39m [38;5;3m[MarketEventIngestionService] [39m[32mmarket-event ingestion: 1 upserted, 0 skipped (not in curated allowlist)[39m
+[32m[Nest] 15776  - [39m09/15/2026, 3:38:09 AM [32m    LOG[39m [38;5;3m[MarketEventIngestionService] [39m[32mmarket-event ingestion: 0 upserted, 1 skipped (not in curated allowlist)[39m
+[32m[Nest] 15776  - [39m09/15/2026, 3:38:09 AM [32m    LOG[39m [38;5;3m[MarketEventIngestionService] [39m[32mmarket-event ingestion: 1 upserted, 0 skipped (not in curated allowlist)[39m
+[32m[Nest] 15776  - [39m09/15/2026, 3:38:09 AM [32m    LOG[39m [38;5;3m[MarketEventIngestionService] [39m[32mmarket-event ingestion: 1 upserted, 0 skipped (not in curated allowlist)[39m
+[32m[Nest] 15776  - [39m09/15/2026, 3:38:09 AM [32m    LOG[39m [38;5;3m[MarketEventIngestionService] [39m[32mmarket-event ingestion: 2 upserted, 0 skipped (not in curated allowlist)[39m
+[32m[Nest] 15776  - [39m09/15/2026, 3:38:09 AM [32m    LOG[39m [38;5;3m[MarketEventIngestionService] [39m[32mmarket-event ingestion: 1 upserted, 0 skipped (not in curated allowlist)[39m
+[32m[Nest] 15776  - [39m09/15/2026, 3:38:09 AM [32m    LOG[39m [38;5;3m[MarketEventIngestionService] [39m[32mmarket-event ingestion: 1 upserted, 0 skipped (not in curated allowlist)[39m
+ [32m✓[39m test/market-events/market-event-ingestion.service.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 471[2mms[22m[39m
+ [32m✓[39m test/health/data-integrity-e2e.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1756[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 11 — data integrity audit (end-to-end)[2m > [22ma clean database reports DATA_INTEGRITY: OK via GET /health [33m591[2mms[22m[39m
+   [33m[2m✓[22m[39m Phase 11 — data integrity audit (end-to-end)[2m > [22ma negative-volume trade opens a DATA_INTEGRITY incident; fixing it closes the incident on the next run [33m474[2mms[22m[39m
+ [32m✓[39m test/autonomous/validate-autonomous-ai-decision.spec.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/position-size-multiple.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+ [32m✓[39m test/health/data-integrity-checks.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 1179[2mms[22m[39m
+   [33m[2m✓[22m[39m checkDataIntegrity (pure function against a real Postgres, no mocks)[2m > [22mis DOWN when a position has a negative volume [33m328[2mms[22m[39m
+ [32m✓[39m test/research/first-touch/level-construction.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+[32m[Nest] 17128  - [39m09/15/2026, 3:38:20 AM [32m    LOG[39m [38;5;3m[MarketauxClient] [39m[32mMarketaux request succeeded: 1 article(s) received[39m
+[32m[Nest] 17128  - [39m09/15/2026, 3:38:20 AM [32m    LOG[39m [38;5;3m[MarketauxClient] [39m[32mMarketaux request succeeded: 0 article(s) received[39m
+[32m[Nest] 17128  - [39m09/15/2026, 3:38:20 AM [32m    LOG[39m [38;5;3m[MarketauxClient] [39m[32mMarketaux request succeeded: 1 article(s) received[39m
+[32m[Nest] 17128  - [39m09/15/2026, 3:38:20 AM [32m    LOG[39m [38;5;3m[MarketauxClient] [39m[32mMarketaux request succeeded: 0 article(s) received[39m
+ [32m✓[39m test/market-events/marketaux-client.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 94[2mms[22m[39m
+[31m[Nest] 7352  - [39m09/15/2026, 3:38:27 AM [31m  ERROR[39m [38;5;3m[CollectorIngressController] [39m[31mrule evaluation failed for account=5f195158-2b48-4a1c-962b-40131cd45560: simulated rule engine failure[39m
+[31m[Nest] 7352  - [39m09/15/2026, 3:38:27 AM [31m  ERROR[39m [38;5;3m[CollectorIngressController] [39m[31mrule evaluation failed for account=7660c015-303e-43c6-a436-c37d451f8b6e: simulated rule engine failure[39m
+[31m[Nest] 7352  - [39m09/15/2026, 3:38:28 AM [31m  ERROR[39m [38;5;3m[CollectorIngressController] [39m[31mrule evaluation failed for account=804bb9aa-57c3-4d63-8bc6-5406c9d3f27e: simulated rule engine failure[39m
+ [32m✓[39m test/rules/ingestion-resilience.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 2005[2mms[22m[39m
+   [33m[2m✓[22m[39m rule engine failure isolation from ingestion[2m > [22ma throwing RuleEngineService never fails snapshot ingestion — the snapshot is still persisted and 201 is still returned [33m585[2mms[22m[39m
+   [33m[2m✓[22m[39m rule engine failure isolation from ingestion[2m > [22ma throwing RuleEngineService never fails trade ingestion — the trade is still persisted and 201 is still returned [33m334[2mms[22m[39m
+   [33m[2m✓[22m[39m rule engine failure isolation from ingestion[2m > [22man alert-layer failure can never corrupt or roll back already-committed trading data [33m544[2mms[22m[39m
+ [32m✓[39m test/collector-ingress/symbol-metadata.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 1427[2mms[22m[39m
+   [33m[2m✓[22m[39m symbol metadata ingestion (/collector/symbol-metadata)[2m > [22mstill accepts the original, pre-existing payload shape with none of the new fields (backward compatible) [33m411[2mms[22m[39m
+   [33m[2m✓[22m[39m symbol metadata ingestion (/collector/symbol-metadata)[2m > [22mupserting the same symbol again updates in place — one row, not two [33m319[2mms[22m[39m
+ [32m✓[39m test/analytics/isolation.spec.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 651[2mms[22m[39m
+   [33m[2m✓[22m[39m analytics account isolation[2m > [22maccount A's trades, positions, and snapshots never appear in account B's metrics [33m490[2mms[22m[39m
+ [32m✓[39m test/analytics/trade-frequency-window.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 437[2mms[22m[39m
+ [32m✓[39m test/xtb-import/xtb-csv-parser.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 26[2mms[22m[39m
+ [32m✓[39m test/ai/validate-ai-result.spec.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m test/ai/ai-enqueue-resilience.spec.ts [2m([22m[2m1 test[22m[2m)[22m[33m 941[2mms[22m[39m
+   [33m[2m✓[22m[39m AI analysis enqueue failure isolation[2m > [22ma throwing AI_ANALYSIS_QUEUE never prevents the Alert/AlertDelivery from being created and delivered [33m502[2mms[22m[39m
+ [32m✓[39m test/position-sync.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2612[2mms[22m[39m
+   [33m[2m✓[22m[39m position synchronization[2m > [22minserts a new position as OPEN [33m551[2mms[22m[39m
+   [33m[2m✓[22m[39m position synchronization[2m > [22mupdates an existing position rather than duplicating it [33m383[2mms[22m[39m
+   [33m[2m✓[22m[39m position synchronization[2m > [22mhandles multiple simultaneous positions in one push [33m364[2mms[22m[39m
+   [33m[2m✓[22m[39m position synchronization[2m > [22mmarks a position CLOSED when a later full snapshot no longer reports it [33m342[2mms[22m[39m
+   [33m[2m✓[22m[39m position synchronization[2m > [22mone account's empty snapshot does not close another account's open position [33m479[2mms[22m[39m
+[32m[Nest] 8220  - [39m09/15/2026, 3:38:55 AM [32m    LOG[39m [38;5;3m[HistoricalTickService] [39m[32mticks accepted: symbol=XAUUSD received=2 deduped=2 inserted=2[39m
+[32m[Nest] 8220  - [39m09/15/2026, 3:38:55 AM [32m    LOG[39m [38;5;3m[HistoricalTickService] [39m[32mticks accepted: symbol=XAUUSD received=2 deduped=1 inserted=1[39m
+[32m[Nest] 8220  - [39m09/15/2026, 3:38:56 AM [32m    LOG[39m [38;5;3m[HistoricalTickService] [39m[32mticks accepted: symbol=XAUUSD received=1 deduped=1 inserted=1[39m
+[32m[Nest] 8220  - [39m09/15/2026, 3:38:56 AM [32m    LOG[39m [38;5;3m[HistoricalTickService] [39m[32mticks accepted: symbol=XAUUSD received=1 deduped=1 inserted=0[39m
+[32m[Nest] 8220  - [39m09/15/2026, 3:38:56 AM [32m    LOG[39m [38;5;3m[HistoricalTickService] [39m[32mticks accepted: symbol=XAUUSD received=2 deduped=2 inserted=2[39m
+[32m[Nest] 8220  - [39m09/15/2026, 3:38:56 AM [32m    LOG[39m [38;5;3m[HistoricalTickService] [39m[32mticks accepted: symbol=XAUUSD received=1 deduped=1 inserted=1[39m
+[32m[Nest] 8220  - [39m09/15/2026, 3:38:56 AM [32m    LOG[39m [38;5;3m[HistoricalTickService] [39m[32mticks accepted: symbol=EURUSD received=1 deduped=1 inserted=1[39m
+ [32m✓[39m test/market-data/historical-tick.service.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 641[2mms[22m[39m
+ [32m✓[39m test/trade-ingestion.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 2641[2mms[22m[39m
+   [33m[2m✓[22m[39m trade (deal) ingestion[2m > [22minserts a new trade [33m448[2mms[22m[39m
+   [33m[2m✓[22m[39m trade (deal) ingestion[2m > [22msubmitting the same trade twice results in exactly one row [33m376[2mms[22m[39m
+   [33m[2m✓[22m[39m trade (deal) ingestion[2m > [22mscopes trade identity by account — the same externalTradeId on two accounts creates two independent rows [33m483[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/indicators.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m test/ai/retry.spec.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m test/technical-analysis/technical-analysis-e2e.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 2410[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /accounts/:accountId/technical-analysis (end-to-end)[2m > [22mreturns null when there is no EURUSD candle data at all — never fabricated [33m514[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /accounts/:accountId/technical-analysis (end-to-end)[2m > [22mreturns a full report once real candle data exists [33m366[2mms[22m[39m
+   [33m[2m✓[22m[39m GET /accounts/:accountId/technical-analysis (end-to-end)[2m > [22ma token bound to account A cannot read account B's technical-analysis endpoint [33m364[2mms[22m[39m
+ [32m✓[39m test/telegram/telegram-bot.client.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 34[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/trade-frequency-multiple.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m test/technical-analysis/market-direction.service.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 19[2mms[22m[39m
+ [32m✓[39m test/ai/safety-filter.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+[32m[Nest] 3692  - [39m09/15/2026, 3:39:17 AM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M5 count=3[39m
+[32m[Nest] 3692  - [39m09/15/2026, 3:39:17 AM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M5 count=1[39m
+[32m[Nest] 3692  - [39m09/15/2026, 3:39:17 AM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=H1 count=1[39m
+[32m[Nest] 3692  - [39m09/15/2026, 3:39:17 AM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=GBPUSD timeframe=M5 count=1[39m
+[32m[Nest] 3692  - [39m09/15/2026, 3:39:17 AM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M5 count=3[39m
+[32m[Nest] 3692  - [39m09/15/2026, 3:39:17 AM [32m    LOG[39m [38;5;3m[HistoricalCandleService] [39m[32mcandles upserted: symbol=EURUSD timeframe=M5 count=1[39m
+ [32m✓[39m test/market-data/historical-candle.service.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 467[2mms[22m[39m
+ [32m✓[39m test/research/confirmed-retest/watch.spec.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m test/heartbeat.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 2473[2mms[22m[39m
+   [33m[2m✓[22m[39m collector heartbeat[2m > [22mis written when an authenticated collector pushes a snapshot [33m737[2mms[22m[39m
+   [33m[2m✓[22m[39m collector heartbeat[2m > [22mupdates the existing row rather than creating a new one [33m420[2mms[22m[39m
+   [33m[2m✓[22m[39m collector heartbeat[2m > [22mstores MT5 connection status and clears a previous error once resolved [33m494[2mms[22m[39m
+ [32m✓[39m test/analytics/fixtures.spec.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 4073[2mms[22m[39m
+   [33m[2m✓[22m[39m analytics replay fixtures[2m > [22mempty-account: current metrics match hand-derived expected values [33m367[2mms[22m[39m
+   [33m[2m✓[22m[39m analytics replay fixtures[2m > [22mbad-session: historical baselines match hand-derived expected values [33m306[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/compound.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/ichimoku-breakout.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m test/autonomous/autonomous-ai-provider.factory.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/concentration.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+[32m[Nest] 17308  - [39m09/15/2026, 3:39:37 AM [32m    LOG[39m [38;5;3m[FinnhubClient] [39m[32mFinnhub request succeeded: 1 article(s) received[39m
+[32m[Nest] 17308  - [39m09/15/2026, 3:39:37 AM [32m    LOG[39m [38;5;3m[FinnhubClient] [39m[32mFinnhub request succeeded: 0 article(s) received[39m
+ [32m✓[39m test/market-events/finnhub-client.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 81[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/instrument-config.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m test/rules/dto/validate-rule-parameters.spec.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+[32m[Nest] 13660  - [39m09/15/2026, 3:39:41 AM [32m    LOG[39m [38;5;3m[CentralBankCalendarIngestionService] [39m[32mcentral bank calendar ingestion: 5 upserted[39m
+[32m[Nest] 13660  - [39m09/15/2026, 3:39:41 AM [32m    LOG[39m [38;5;3m[CentralBankCalendarIngestionService] [39m[32mcentral bank calendar ingestion: 5 upserted[39m
+[32m[Nest] 13660  - [39m09/15/2026, 3:39:41 AM [32m    LOG[39m [38;5;3m[CentralBankCalendarIngestionService] [39m[32mcentral bank calendar ingestion: 5 upserted[39m
+[32m[Nest] 13660  - [39m09/15/2026, 3:39:41 AM [32m    LOG[39m [38;5;3m[CentralBankCalendarIngestionService] [39m[32mcentral bank calendar ingestion: 5 upserted[39m
+ [32m✓[39m test/market-events/central-bank-calendar-ingestion.service.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 483[2mms[22m[39m
+ [32m✓[39m test/technical-analysis/fibonacci.service.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/daily-loss-limit.spec.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/sl-tp.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m test/technical-analysis/technical-analysis.config.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 62[2mms[22m[39m
+ [32m✓[39m test/market-events/fred-client.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 24[2mms[22m[39m
+ [32m✓[39m test/market-events/central-bank-calendar.provider.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/support-resistance-proximity.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m test/research/confirmed-retest/dashboard-read.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 31[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/schedule.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/drawdown.spec.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/margin-utilization.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/entry-timing.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m test/ai/mock-provider.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 13[2mms[22m[39m
+ [32m✓[39m test/research/confirmed-retest/boundary.spec.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m test/market-events/marketaux.config.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m test/market-events/finnhub.config.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/consecutive-losses.spec.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m test/alerts/daily-market-analysis.processor.spec.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m test/telegram/telegram.config.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/no-stop-loss.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m test/rules/evaluators/daily-market-analysis.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m test/market-events/market-events.config.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m test/collector-ingress/storage-health.spec.ts [2m([22m[2m2 tests[22m[2m)[22m[33m 987[2mms[22m[39m
+   [33m[2m✓[22m[39m storage health (/collector/storage-health)[2m > [22mreturns a positive databaseSizeBytes and a checkedAt timestamp, never throwing over an unavailable WAL probe [33m449[2mms[22m[39m
+ [32m✓[39m test/market-events/central-bank-calendar.config.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m test/autonomous/kill-switch.spec.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m test/market-events/curated-fred-releases.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m test/health/heartbeat-digest.processor.spec.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m test/trend-breakout/currency-conversion.spec.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m test/common/redact.spec.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m137 passed[39m[22m[90m (137)[39m
+[2m      Tests [22m [1m[32m1147 passed[39m[22m[90m (1147)[39m
+[2m   Start at [22m 03:33:15
+[2m   Duration [22m 415.48s[2m (transform 4.35s, setup 5.10s, collect 196.53s, tests 139.19s, environment 58ms, prepare 29.51s)[22m
+
+JSON report written to C:/Users/user/Desktop/trading-monitor-autonomous/backend/research-output/xauusd-h4-confirmed-retest-v1/verification/full-suite/current-round2.json
