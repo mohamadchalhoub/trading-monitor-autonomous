@@ -1,9 +1,102 @@
 # DEMO_HANDOFF — gold (XAUUSD) execution
 
-**Status: LIVE. DEMO automation is ACTIVE as of 2026-09-15T12:06:34Z.** The user restarted the
-backend manually; every remaining check passed; the scheduler is running and completing cycles
-on schedule. See "Update — 2026-09-15, activation" below for full evidence. No genuine order
-has occurred yet — the system is correctly idle, waiting for a real signal.
+**Status: PAUSED (kill switch), fix committed, awaiting a scheduler restart.** DEMO activation
+(2026-09-15T12:06:34Z) is still valid, but an entry-timing verification pass found and fixed a
+real gap (see "Update — 2026-09-15, entry-timing verification" below). `backend/KILL_SWITCH`
+is currently in place because the fix is committed to source but the already-running scheduler
+process predates it and has not picked it up — restart the scheduler to resume. No genuine
+order has occurred yet.
+
+## Update — 2026-09-15, entry-timing verification
+
+Traced the exact mechanism, per a direct request, without reopening a broad audit or touching
+any frozen level/formation rule:
+
+**1. What triggers a live first-touch entry.** Neither a live quote nor an open/in-progress
+candle — a **completed historical M1 candle**. `replay.ts:advance()` only processes stream bars
+where `bar.t + bar.dur <= endT` (`endT` = the current wall-clock time passed in as `nowT`), i.e.
+a bar is only ever evaluated once it has fully closed. `classifyTouch()` then checks that closed
+bar's own high/low against the level price. The live quote (`LiveTick`) is used ONLY afterward,
+to price the actual bracket order once a touch is already confirmed — never to detect the touch
+itself.
+
+**2. Timestamp trace, touch → submission, and why old touches can't silently become new
+orders.** `bar.t` is the M1 candle's true-UTC open time (converted from the broker's mislabeled
+wall-clock storage by `wallClockToUtc('EET', ...)` in `data-source.ts` — the same conversion
+`DEMO_HANDOFF`'s freshness checks use). The window check (`inWindow`) and the level-consumption
+rule are both evaluated once, using that bar's own time, when the touch is first classified.
+`observedAtT` is stamped with `nowT` at the moment the WATCH cycle (not backtest) processes it,
+and `actedEventIds` (persisted in `gold-watch-state.json`) guarantees each event is only ever
+acted on once — so a restart or a resumed backlog cannot re-fire an already-acted event. What
+was MISSING, until this fix: nothing re-verified that "now" (the actual submission instant) was
+still within bounds — only the touch's own bar-time was checked, at formation. Two live,
+independent checks now run in `GoldExecutionCoordinatorService.evaluate()`, immediately before
+any DB write, using the real `nowT` of that evaluation:
+  - **Signal age**: `(nowT - signal.touchEndT) / 1000` must be ≤ `GOLD_MAX_SIGNAL_AGE_SECONDS`
+    (600s — comfortably above the ~360s worst-case healthy latency of a 300s candle-sync
+    interval plus a 60s scheduler cycle, tight enough to reject a same-day backlog touch
+    discovered after real downtime).
+  - **Current-price deviation** (pre-existing, unchanged): `entryDeviationPoints =
+    |currentExecutablePrice - signalEntryPrice| / pointSize` must be ≤
+    `GOLD_MAX_ENTRY_DEVIATION_POINTS` (200pt / $2.00). This is a price-drift proxy, not a time
+    check — it was the ONLY guard before this fix, and a ranging market could satisfy it
+    indefinitely even for a genuinely stale touch, which is exactly the gap the new age check
+    closes.
+  - Both rejections are logged as their own `AutonomousDecision` row (`orderStatus: NONE`,
+    `riskManagerApproved: false`, a specific `riskManagerRejectionReason`), same audit-trail
+    posture as the existing STOP_NEW_ENTRIES recheck.
+
+**3. Live Beirut-window recheck, immediately before submission.** Also added in the same fix:
+`beirutSecondsOfDay(nowT)` is recomputed and compared against the same
+`SPEC.session.entryWindow*` bounds the touch itself was checked against — but using the
+CURRENT time, not the touch's bar time. If the touch was in-window at its own bar time but
+"now" has moved outside 04:00–12:00 Asia/Beirut (candle-sync/scheduler delay carried it past
+the boundary), the order is refused and logged, not submitted late. The observed
+12:07Z/12:08Z-UTC scheduler cycles noted in the verification request are 15:07/15:08 Beirut —
+correctly outside the window either way (no event was ever actionable at that hour, backtest or
+live), so they were never at risk of a wrongly-submitted order; the fix addresses the narrower,
+real edge case of a touch near the boundary picked up just late enough to cross it.
+
+**4. Concrete defect found and fixed, without widening any limit or touching level rules.**
+Confirmed: yes, a real gap existed — no live re-verification of window or age at actual
+submission time, only at formation time. Fixed in `gold-execution-coordinator.service.ts` (two
+new reject branches) + `gold-signal-source.ts` (`toGoldSignal` now carries `event.touchEndT`
+through onto the signal) + a new `GOLD_MAX_SIGNAL_AGE_SECONDS = 600` constant in
+`gold-safety-constants.ts`. Nothing in `confirmed-retest-v2/` (frozen research code, level
+formation, or the entry-window spec values themselves) was touched. Verified: `tsc --noEmit`
+clean; `test/gold-execution` 51/51; `test/autonomous` 139/139; `confirmed-retest-v2/boundary`
+15/15 (the v2→execution import direction is still one-way, matching the existing
+`gold-signal-source.ts` pattern — nothing under `confirmed-retest-v2/` imports execution code).
+One pre-existing, unrelated test gap noted, not touched: `gold-dashboard.spec.ts`'s "OFF by
+default" test now reads the real persisted `GOLD_EXECUTION_MODE=DEMO` from `.env` instead of an
+unset default — a test-isolation gap surfaced by activation itself, not a regression from this
+fix, and out of scope for an entry-timing change.
+
+**Paused, not restarted, because of a real constraint**: the fix is only live in the SOURCE —
+the scheduler process already running (`tsx scripts/gold-execution-scheduler.ts`, started
+earlier this session) loaded the old code at its own start time and does not hot-reload. Since
+stopping that process was denied by this environment's own classifier (same restriction as the
+backend restart earlier), `backend/KILL_SWITCH` was created to pause new entries (checked fresh
+on every evaluation, no restart needed) while the fix was written, and **remains in place now**
+specifically because the running scheduler still lacks the fix. Monitoring, the collector, and
+the backend were not touched and continue running normally.
+
+**Exact remaining manual step:**
+```powershell
+# Find and stop the currently-running scheduler (started earlier this session):
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*gold-execution-scheduler*' } | Select-Object ProcessId, CommandLine
+Stop-Process -Id <that-pid> -Force
+
+# Restart it (from backend/) so it loads the corrected code:
+cd C:\Users\user\Desktop\trading-monitor-autonomous\backend
+npm run gold-execution:scheduler
+```
+Then remove the kill switch to resume new entries:
+```powershell
+Remove-Item C:\Users\user\Desktop\trading-monitor-autonomous\backend\KILL_SWITCH
+```
+Watch its log for a couple of `cycle complete` lines before considering it fully resumed, same
+verification done at initial activation.
 
 ## Update — 2026-09-15, activation
 
