@@ -8,17 +8,15 @@ import { request } from '../helpers/http';
 import { GOLD_MAGIC_NUMBER } from '../../src/gold-execution/gold-safety-constants';
 
 /**
- * Task item 3, corrected — "restore-then-close" protection remediation.
- * End-to-end over the real HTTP layer: a snapshot reporting an unprotected,
- * this-strategy-owned (magic-matched) gold position -> a
- * GoldProtectionRestoreRequest is queued -> the collector polls/claims it
- * -> a SIMULATED broker result is reported (exactly the shape runner.py
- * sends for real). Proves BOTH branches: a successful restore reaches
- * RESTORED and creates no close request; a restore that fails
- * `maxAttempts` times in a row is exhausted and THEN (only then) falls
- * back to the existing close-position path.
+ * Task item 3, corrected a second time — the agreed policy is exactly ONE
+ * restoration attempt, THEN reconciliation against actual broker data on
+ * the next snapshot, THEN close if still unprotected. End-to-end over the
+ * real HTTP layer, with SIMULATED broker responses (exactly the shape
+ * runner.py sends for real) standing in for the executor's actual
+ * modify_protection/order_send result. No real MT5/collector process is
+ * involved and no broker trade is forced.
  */
-describe('Gold protection restore-then-close (snapshot -> restore request -> collector poll -> broker-confirmed result)', () => {
+describe('Gold protection: one restore attempt -> reconciliation -> close if still unprotected', () => {
   let app: NestFastifyApplication;
   let prisma: PrismaClient;
 
@@ -34,154 +32,144 @@ describe('Gold protection restore-then-close (snapshot -> restore request -> col
     await resetDatabase(prisma);
   });
 
-  function unprotectedOwnGoldPosition(ticket: string) {
+  function ownGoldPosition(ticket: string, overrides: Record<string, unknown> = {}) {
     return {
       externalPositionId: ticket,
       symbol: 'XAUUSD',
       side: 'BUY',
       volume: 0.01,
       openPrice: 2650,
-      // stopLoss/takeProfit deliberately omitted — unprotected.
       profit: 0,
       swap: 0,
       openedAt: new Date().toISOString(),
       raw: { magic: GOLD_MAGIC_NUMBER },
+      ...overrides,
     };
   }
 
-  it('a successful restore reaches RESTORED and never creates a close request', async () => {
+  async function seedPositionRow(accountId: string, ticket: string, overrides: Record<string, unknown> = {}) {
+    await prisma.position.create({
+      data: {
+        accountId, platform: 'MT5', externalPositionId: ticket, symbol: 'XAUUSD',
+        side: 'BUY', volume: 0.01, openPrice: 2650, profit: 0, swap: 0, status: 'OPEN', openedAt: new Date(),
+        ...overrides,
+      },
+    });
+  }
+
+  it('single-attempt-succeeds: snapshot -> restore queued -> collector claims -> reports ok -> NEXT snapshot shows real protection -> RESTORED, never closes', async () => {
     const { account: mt5Account, token: dashboardToken } = await setupAccountWithDashboardToken(prisma, { platform: 'MT5' });
     const { plaintext: collectorToken } = await createCollectorToken(prisma, mt5Account.id);
 
-    // 1. Snapshot reports an unprotected, this-strategy position -> queues a restore request.
-    const snapshotRes = await request(app, {
-      method: 'POST', url: '/collector/snapshot',
-      headers: { authorization: `Bearer ${collectorToken}` },
-      payload: validSnapshotPayload(mt5Account.id, { positions: [unprotectedOwnGoldPosition('888001')] }),
+    // Cycle 1: unprotected -> queues exactly one restore request.
+    await request(app, {
+      method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${collectorToken}` },
+      payload: validSnapshotPayload(mt5Account.id, { positions: [ownGoldPosition('771001')] }), // no stopLoss/takeProfit
     });
-    expect(snapshotRes.statusCode).toBeLessThan(300);
-
-    const restoreRows = await prisma.goldProtectionRestoreRequest.findMany({ where: { accountId: mt5Account.id, positionTicket: '888001' } });
+    const restoreRows = await prisma.goldProtectionRestoreRequest.findMany({ where: { positionTicket: '771001' } });
     expect(restoreRows).toHaveLength(1);
-    expect(restoreRows[0].status).toBe('PENDING');
-    expect(restoreRows[0].attemptNumber).toBe(1);
-    // Frozen distance from entry (2650), same formula every fill uses.
-    expect(restoreRows[0].stopLoss.toNumber()).toBeLessThan(2650);
-    expect(restoreRows[0].takeProfit.toNumber()).toBeGreaterThan(2650);
+    expect(restoreRows[0].maxAttempts).toBe(1);
 
-    // 2. Collector polls and claims it.
+    // Collector claims and reports a SIMULATED broker success for the modify attempt.
     const pollRes = await request(app, {
       method: 'GET', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request`,
       headers: { authorization: `Bearer ${collectorToken}` },
     });
-    expect(pollRes.body.request).not.toBeNull();
-    expect(pollRes.body.request.ticket).toBe(888001);
-
-    const afterClaim = await prisma.goldProtectionRestoreRequest.findUnique({ where: { id: restoreRows[0].id } });
-    expect(afterClaim?.status).toBe('SENT');
-
-    // 3. Collector reports a SIMULATED broker-confirmed success.
-    const resultRes = await request(app, {
+    expect(pollRes.body.request.attemptNumber).toBe(1);
+    await request(app, {
       method: 'POST', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request/${restoreRows[0].id}/result`,
       headers: { authorization: `Bearer ${collectorToken}` },
       payload: { ok: true },
     });
-    expect(resultRes.statusCode).toBeLessThan(300);
 
-    const restored = await prisma.goldProtectionRestoreRequest.findUnique({ where: { id: restoreRows[0].id } });
-    expect(restored?.status).toBe('RESTORED');
-    expect(restored?.restoredAt).not.toBeNull();
-
-    // Never fell back to closing.
-    const closeRows = await prisma.goldCloseRequest.findMany({ where: { accountId: mt5Account.id, positionTicket: '888001' } });
+    // The modify response ALONE does not resolve the incident — no close request yet, no second restore.
+    let closeRows = await prisma.goldCloseRequest.findMany({ where: { positionTicket: '771001' } });
     expect(closeRows).toHaveLength(0);
+    let allRestoreRows = await prisma.goldProtectionRestoreRequest.findMany({ where: { positionTicket: '771001' } });
+    expect(allRestoreRows).toHaveLength(1); // still just one attempt, ever
+
+    // Cycle 2 (reconciliation): the NEXT real snapshot shows actual protection now attached.
+    await request(app, {
+      method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${collectorToken}` },
+      payload: validSnapshotPayload(mt5Account.id, { positions: [ownGoldPosition('771001', { stopLoss: 2640, takeProfit: 2660 })] }),
+    });
+
+    closeRows = await prisma.goldCloseRequest.findMany({ where: { positionTicket: '771001' } });
+    expect(closeRows).toHaveLength(0); // never closes
+    allRestoreRows = await prisma.goldProtectionRestoreRequest.findMany({ where: { positionTicket: '771001' } });
+    expect(allRestoreRows).toHaveLength(1); // no second attempt was ever queued
   });
 
-  it('restore failing 3 times in a row is exhausted and THEN falls back to a close request — never before', async () => {
+  it('single-attempt-fails-then-reconciliation-confirms-unprotected-so-closes: reconciliation (not the failed response itself) triggers exactly one close, no retry', async () => {
     const { account: mt5Account, token: dashboardToken } = await setupAccountWithDashboardToken(prisma, { platform: 'MT5' });
     const { plaintext: collectorToken } = await createCollectorToken(prisma, mt5Account.id);
 
-    await prisma.position.create({
-      data: {
-        accountId: mt5Account.id, platform: 'MT5', externalPositionId: '888002', symbol: 'XAUUSD',
-        side: 'BUY', volume: 0.01, openPrice: 2650, profit: 0, swap: 0, status: 'OPEN', openedAt: new Date(),
-      },
+    await request(app, {
+      method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${collectorToken}` },
+      payload: validSnapshotPayload(mt5Account.id, { positions: [ownGoldPosition('771002')] }),
     });
+    const restoreRow = await prisma.goldProtectionRestoreRequest.findFirst({ where: { positionTicket: '771002' } });
 
     await request(app, {
-      method: 'POST', url: '/collector/snapshot',
+      method: 'GET', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request`,
       headers: { authorization: `Bearer ${collectorToken}` },
-      payload: validSnapshotPayload(mt5Account.id, { positions: [unprotectedOwnGoldPosition('888002')] }),
+    });
+    // SIMULATED broker failure on the one attempt.
+    await request(app, {
+      method: 'POST', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request/${restoreRow!.id}/result`,
+      headers: { authorization: `Bearer ${collectorToken}` },
+      payload: { ok: false, errorMessage: 'simulated broker rejection: invalid stops' },
     });
 
-    // Drive 3 attempts, each: poll/claim -> report a SIMULATED broker failure.
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const pending = await prisma.goldProtectionRestoreRequest.findFirst({
-        where: { accountId: mt5Account.id, positionTicket: '888002', status: 'PENDING' },
-        orderBy: { requestedAt: 'desc' },
-      });
-      expect(pending?.attemptNumber).toBe(attempt);
+    // The failed response alone still does not queue a close or a second attempt.
+    let closeRows = await prisma.goldCloseRequest.findMany({ where: { positionTicket: '771002' } });
+    expect(closeRows).toHaveLength(0);
 
-      const pollRes = await request(app, {
-        method: 'GET', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request`,
-        headers: { authorization: `Bearer ${collectorToken}` },
-      });
-      expect(pollRes.body.request?.attemptNumber).toBe(attempt);
+    // Cycle 2 (reconciliation): next real snapshot STILL shows unprotected.
+    await request(app, {
+      method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${collectorToken}` },
+      payload: validSnapshotPayload(mt5Account.id, { positions: [ownGoldPosition('771002')] }), // still no stopLoss/takeProfit
+    });
 
-      await request(app, {
-        method: 'POST', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request/${pending!.id}/result`,
-        headers: { authorization: `Bearer ${collectorToken}` },
-        payload: { ok: false, errorMessage: `simulated broker rejection, attempt ${attempt}` },
-      });
-    }
-
-    // No 4th attempt was queued.
-    const allRestoreRows = await prisma.goldProtectionRestoreRequest.findMany({ where: { accountId: mt5Account.id, positionTicket: '888002' } });
-    expect(allRestoreRows).toHaveLength(3);
-    expect(allRestoreRows.every((r) => r.status === 'FAILED')).toBe(true);
-
-    // NOW (only now) a close request exists.
-    const closeRows = await prisma.goldCloseRequest.findMany({ where: { accountId: mt5Account.id, positionTicket: '888002' } });
+    closeRows = await prisma.goldCloseRequest.findMany({ where: { positionTicket: '771002' } });
     expect(closeRows).toHaveLength(1);
     expect(closeRows[0].status).toBe('PENDING');
+
+    const allRestoreRows = await prisma.goldProtectionRestoreRequest.findMany({ where: { positionTicket: '771002' } });
+    expect(allRestoreRows).toHaveLength(1); // no retry was ever queued — exactly one attempt, ever
   });
 
-  it('a restore that succeeds on the 2nd attempt (1st fails) never reaches close', async () => {
+  it('ambiguous-response-triggers-reconciliation-not-blind-retry: an ok:true response that reconciliation later contradicts still closes — the modify response is never trusted over real data', async () => {
     const { account: mt5Account, token: dashboardToken } = await setupAccountWithDashboardToken(prisma, { platform: 'MT5' });
     const { plaintext: collectorToken } = await createCollectorToken(prisma, mt5Account.id);
 
     await request(app, {
-      method: 'POST', url: '/collector/snapshot',
-      headers: { authorization: `Bearer ${collectorToken}` },
-      payload: validSnapshotPayload(mt5Account.id, { positions: [unprotectedOwnGoldPosition('888003')] }),
+      method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${collectorToken}` },
+      payload: validSnapshotPayload(mt5Account.id, { positions: [ownGoldPosition('771003')] }),
     });
+    const restoreRow = await prisma.goldProtectionRestoreRequest.findFirst({ where: { positionTicket: '771003' } });
 
-    const first = await prisma.goldProtectionRestoreRequest.findFirst({ where: { positionTicket: '888003' } });
     await request(app, {
       method: 'GET', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request`,
       headers: { authorization: `Bearer ${collectorToken}` },
     });
+    // The collector reports SUCCESS (an "ambiguous" case: order_send acknowledged, but reality later disagrees).
     await request(app, {
-      method: 'POST', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request/${first!.id}/result`,
-      headers: { authorization: `Bearer ${collectorToken}` },
-      payload: { ok: false, errorMessage: 'simulated transient rejection' },
-    });
-
-    const second = await prisma.goldProtectionRestoreRequest.findFirst({ where: { positionTicket: '888003', status: 'PENDING' } });
-    expect(second?.attemptNumber).toBe(2);
-    await request(app, {
-      method: 'GET', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request`,
-      headers: { authorization: `Bearer ${collectorToken}` },
-    });
-    await request(app, {
-      method: 'POST', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request/${second!.id}/result`,
+      method: 'POST', url: `/collector/${mt5Account.id}/gold-execution/restore-protection-request/${restoreRow!.id}/result`,
       headers: { authorization: `Bearer ${collectorToken}` },
       payload: { ok: true },
     });
 
-    const restored = await prisma.goldProtectionRestoreRequest.findUnique({ where: { id: second!.id } });
-    expect(restored?.status).toBe('RESTORED');
-    const closeRows = await prisma.goldCloseRequest.findMany({ where: { positionTicket: '888003' } });
-    expect(closeRows).toHaveLength(0);
+    // Cycle 2 (reconciliation): the broker's ACTUAL position data still shows no stops attached —
+    // this must still close, proving the close decision never trusted the ok:true response.
+    await request(app, {
+      method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${collectorToken}` },
+      payload: validSnapshotPayload(mt5Account.id, { positions: [ownGoldPosition('771003')] }),
+    });
+
+    const closeRows = await prisma.goldCloseRequest.findMany({ where: { positionTicket: '771003' } });
+    expect(closeRows).toHaveLength(1);
+    const allRestoreRows = await prisma.goldProtectionRestoreRequest.findMany({ where: { positionTicket: '771003' } });
+    expect(allRestoreRows).toHaveLength(1); // still no retry, even though the response said ok:true
   });
 });

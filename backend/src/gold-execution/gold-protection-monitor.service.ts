@@ -5,6 +5,7 @@ import { GOLD_MAGIC_NUMBER, GOLD_POINT_SIZE, GOLD_SYMBOL } from './gold-safety-c
 import { GoldTelegramService } from './gold-telegram.service';
 import { GoldAiSummaryService } from './gold-ai-summary.service';
 import { GoldProtectionRestoreService } from './gold-protection-restore.service';
+import { GoldCloseExecutionService } from './gold-close-execution.service';
 
 /**
  * Task item C — protective SL/TP verification against ACTUAL broker
@@ -13,36 +14,46 @@ import { GoldProtectionRestoreService } from './gold-protection-restore.service'
  * `GoldClosureReconciliationService`, task item B — a plain step on the
  * existing poll cycle, not a queued job), reading `stopLoss`/`takeProfit`
  * straight off the same `IncomingPositionDto` the collector already sends
- * every push (`gold-account-state.service.ts`/`gold-dashboard.controller.ts`
- * already consume this same feed for other purposes — this is not a new
- * data source). Covers BOTH "unprotected right after a fill" (the position
- * simply appears unprotected on its very first reported snapshot) and
- * "previously protected, lost protection later" (the same check re-run on
- * every subsequent cycle) with one mechanism.
+ * every push. Covers BOTH "unprotected right after a fill" and
+ * "previously protected, lost protection later" with one mechanism.
  *
  * MT5 convention: 0 (or absent) means "no stop set" — both null and 0 are
- * treated as unprotected, matching how MT5 itself represents "no SL/TP" on
- * a position.
+ * treated as unprotected.
  *
- * REMEDIATION (task item 3, corrected — "restore-then-close," NOT
- * direct-close-only): on a NEW missing-protection incident, this queues a
- * `GoldProtectionRestoreRequest` (`GoldProtectionRestoreService`) to
- * re-attach SL/TP at the FROZEN distance from the position's own entry
- * price — the same mechanism every fill already uses. Only after that
- * restore path is exhausted (bounded retries, all failed — decided by
- * `GoldExecutionController.postRestoreProtectionResult`, which then falls
- * back to `GoldCloseExecutionService`) is the position actually closed.
- * This class itself never calls close directly; it only ever starts the
- * restore attempt.
+ * REMEDIATION (task item 3, corrected a second time) — the agreed policy is
+ * exactly: ONE restoration attempt, THEN verify actual broker protection
+ * via reconciliation, THEN close if still unprotected. This is a state
+ * machine driven entirely by the most recent `GoldTelegramNotification`
+ * row for this position (Postgres-backed, survives a restart, no in-memory
+ * state):
  *
- * Transition-only alerting (not a resend every ~10s while unprotected):
- * reads the most recent `GoldTelegramNotification` row for this position
- * (`dedupKey` prefixed `protection:<positionId>:`) to know the
- * last-announced state, entirely from Postgres — no in-memory state, so
- * this survives a process restart exactly like B's dedup does. A fresh
- * incident (state flips OK -> missing, or missing -> OK) gets a
- * timestamp-suffixed dedupKey so it is never silently swallowed by an
- * earlier, already-resolved incident's row.
+ *   no incident / PROTECTION_RESTORED  --(now unprotected)-->  MISSING_PROTECTION alert
+ *                                                                -> (if this strategy's own
+ *                                                                    position) queue ONE
+ *                                                                    restore attempt
+ *                                                                -> PROTECTION_RESTORE_REQUESTED
+ *
+ *   PROTECTION_RESTORE_REQUESTED  --(still unprotected on the NEXT real snapshot)-->
+ *       genuine reconciliation confirms the one attempt did not actually fix it
+ *       (regardless of what the collector's own modify-response said — an
+ *       "ambiguous" or even a falsely-optimistic report is caught here, by
+ *       checking ACTUAL position state instead of trusting that response)
+ *       -> queue a close (`GoldCloseExecutionService`, dedup'd) ->
+ *       PROTECTION_REMEDIATION_CLOSE_REQUESTED
+ *
+ *   PROTECTION_REMEDIATION_CLOSE_REQUESTED  --(still unprotected)-->  no-op
+ *       (close is already in flight; the position will stop appearing in
+ *       snapshots once MT5 confirms the close, ending this loop naturally)
+ *
+ *   MISSING_PROTECTION only (magic didn't match this strategy)  -->  no-op
+ *       (alerted once, deliberately never remediated — see ownership check)
+ *
+ *   isProtected && last state was any of the above  -->  PROTECTION_RESTORED alert
+ *
+ * Ownership scoping (task item 4's principle, applied here too): the ALERT
+ * fires for any unprotected XAUUSD position, but restore/close remediation
+ * is strictly scoped to positions matching this strategy's own MT5 magic
+ * number — never a manual trade or another bot's position.
  */
 @Injectable()
 export class GoldProtectionMonitorService {
@@ -53,6 +64,7 @@ export class GoldProtectionMonitorService {
     private readonly goldTelegram: GoldTelegramService,
     private readonly goldAiSummary: GoldAiSummaryService,
     private readonly protectionRestore: GoldProtectionRestoreService,
+    private readonly closeExecution: GoldCloseExecutionService,
   ) {}
 
   async checkPositions(accountId: string, positions: IncomingPositionDto[]): Promise<void> {
@@ -76,10 +88,22 @@ export class GoldProtectionMonitorService {
       where: { dedupKey: { startsWith: `protection:${positionId}:` } },
       orderBy: { createdAt: 'desc' },
     });
-    const lastKnownMissing = lastNotification?.eventType === 'MISSING_PROTECTION';
+    const lastEventType = lastNotification?.eventType;
 
-    if (!isProtected && !lastKnownMissing) {
-      // New incident: was protected (or never checked before) -> now missing.
+    if (isProtected) {
+      if (lastEventType === 'MISSING_PROTECTION' || lastEventType === 'PROTECTION_RESTORE_REQUESTED' || lastEventType === 'PROTECTION_REMEDIATION_CLOSE_REQUESTED') {
+        const dedupKey = `protection:${positionId}:restored:${Date.now()}`;
+        const text = `GOLD DEMO — protection restored (reconciled against actual broker data). position=${positionId} stopLoss=${position.stopLoss} takeProfit=${position.takeProfit}`;
+        await this.goldTelegram.notify('PROTECTION_RESTORED', dedupKey, text);
+        this.logger.log(`gold position ${positionId}: protection restored`);
+      }
+      return;
+    }
+
+    // From here on: NOT protected right now.
+
+    if (lastEventType === undefined || lastEventType === 'PROTECTION_RESTORED') {
+      // New incident.
       const dedupKey = `protection:${positionId}:missing:${Date.now()}`;
       const text =
         `GOLD DEMO — CRITICAL: missing protection. position=${positionId} side=${position.side} volume=${position.volume} ` +
@@ -89,24 +113,11 @@ export class GoldProtectionMonitorService {
       void this.goldAiSummary.generateForEvent('MISSING_PROTECTION', new Date().toISOString(), text);
       this.logger.warn(`gold position ${positionId}: missing protection detected`);
 
-      // Task item 4's ownership-scoping principle applied here too — the
-      // ALERT above fires for any unprotected XAUUSD position (still useful
-      // information), but auto-REMEDIATION (closing it) is strictly scoped
-      // to positions this strategy itself opened (magic number match). This
-      // system must never auto-close a manual trade, or another bot's
-      // position, just because it happens to be unprotected gold.
       if (!isOwnMagic(position)) {
         this.logger.warn(`gold position ${positionId}: unprotected but magic does not match this strategy (or is absent) — alerted only, NOT auto-remediated (not confirmed to be this strategy's own position).`);
         return;
       }
 
-      // Remediation, corrected: queue a RESTORE attempt first — never a
-      // direct close. requestRestore() computes the target SL/TP at the
-      // frozen GOLD_TP_SL_POINTS distance from the position's own entry
-      // price (same formula every fill uses). The collector executes it via
-      // executor.py's modify_protection (TRADE_ACTION_SLTP); only after
-      // GoldExecutionController.postRestoreProtectionResult sees this
-      // exhaust its bounded retries does anything fall back to closing.
       try {
         const { id: restoreRequestId } = await this.protectionRestore.requestRestore({
           accountId,
@@ -115,26 +126,55 @@ export class GoldProtectionMonitorService {
           entryPrice: position.openPrice,
           goldPointSize: GOLD_POINT_SIZE,
         });
-        const remediationText =
-          `GOLD DEMO — REMEDIATION: requesting protection restore for unprotected position=${positionId} (request=${restoreRequestId}). ` +
-          `Queued for the collector's next poll — will retry (bounded) before falling back to close.`;
-        await this.goldTelegram.notify('PROTECTION_RESTORE_REQUESTED', `protection-restore-request:${positionId}:${Date.now()}`, remediationText);
+        const text2 =
+          `GOLD DEMO — REMEDIATION: requesting ONE protection-restore attempt for unprotected position=${positionId} (request=${restoreRequestId}). ` +
+          `Queued for the collector's next poll. If still unprotected on the next snapshot (verified against actual broker data), this will be closed — no further restore retries.`;
+        await this.goldTelegram.notify('PROTECTION_RESTORE_REQUESTED', `protection:${positionId}:restore-requested:${Date.now()}`, text2);
       } catch (err) {
         this.logger.error(`remediation restore-request failed for position ${positionId}: ${err instanceof Error ? err.message : String(err)}`);
         await this.goldTelegram.notify(
           'PROTECTION_REMEDIATION_FAILED',
-          `protection-remediation-failed:${positionId}:${Date.now()}`,
+          `protection:${positionId}:remediation-failed:${Date.now()}`,
           `GOLD DEMO — CRITICAL: could not queue a protection restore for unprotected position=${positionId}: ${err instanceof Error ? err.message : String(err)}. Manual intervention required.`,
         );
       }
-    } else if (isProtected && lastKnownMissing) {
-      // Recovery: was missing -> now protected again.
-      const dedupKey = `protection:${positionId}:restored:${Date.now()}`;
-      const text =
-        `GOLD DEMO — protection restored. position=${positionId} stopLoss=${position.stopLoss} takeProfit=${position.takeProfit}`;
-      await this.goldTelegram.notify('PROTECTION_RESTORED', dedupKey, text);
-      this.logger.log(`gold position ${positionId}: protection restored`);
+      return;
     }
+
+    if (lastEventType === 'PROTECTION_RESTORE_REQUESTED') {
+      // Reconciliation: the ONE restore attempt has already been made (in an
+      // earlier cycle), and the position is STILL unprotected right now,
+      // according to REAL broker-reported data on this snapshot — not the
+      // modify-request's own response, which is deliberately never
+      // consulted here. This is the agreed trigger to close.
+      if (!isOwnMagic(position)) {
+        // Should not normally happen (we only ever reach RESTORE_REQUESTED for
+        // our own positions), but never close something not confirmed ours.
+        this.logger.warn(`gold position ${positionId}: reconciliation found still-unprotected but magic no longer matches — not closing.`);
+        return;
+      }
+      try {
+        const { request, duplicate } = await this.closeExecution.requestClose({
+          accountId, positionTicket: positionId, side: position.side, volume: position.volume,
+        });
+        const text =
+          `GOLD DEMO — REMEDIATION: reconciliation confirms position=${positionId} is still unprotected after the one restore attempt — closing (request=${request.id}${duplicate ? ', already queued' : ''}).`;
+        await this.goldTelegram.notify('PROTECTION_REMEDIATION_CLOSE_REQUESTED', `protection:${positionId}:remediation-close:${Date.now()}`, text);
+        this.logger.warn(`gold position ${positionId}: restore attempt did not result in protection — closing`);
+      } catch (err) {
+        this.logger.error(`remediation close-request failed for position ${positionId}: ${err instanceof Error ? err.message : String(err)}`);
+        await this.goldTelegram.notify(
+          'PROTECTION_REMEDIATION_FAILED',
+          `protection:${positionId}:remediation-failed:${Date.now()}`,
+          `GOLD DEMO — CRITICAL: could not queue a remediation close for unprotected position=${positionId}: ${err instanceof Error ? err.message : String(err)}. Manual intervention required.`,
+        );
+      }
+      return;
+    }
+
+    // lastEventType is 'MISSING_PROTECTION' (not our position, alerted once,
+    // never remediated) or 'PROTECTION_REMEDIATION_CLOSE_REQUESTED' (close
+    // already in flight) — either way, nothing further to do this cycle.
   }
 }
 

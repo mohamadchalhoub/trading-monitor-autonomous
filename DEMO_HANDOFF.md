@@ -696,39 +696,49 @@ item 7 below).
    broker failure never reaches CLOSED, duplicate-request handling, ticket/symbol scoping). NOT
    runtime/broker-event-verified — no real MT5 close has been observed.
 
-3. CORRECTED — protection remediation is now genuinely "restore-then-close," matching the
-   originally specified policy, NOT a direct-close substitute. An earlier round of this session
-   implemented immediate-close-on-missing-protection and described it as "stricter, not weaker"
-   than the two-step policy — the user correctly pointed out that mischaracterized it: it was a
-   DIFFERENT policy, not a safer version of the same one. This has been corrected:
+3. CORRECTED TWICE — protection remediation is now exactly the agreed policy: ONE restoration
+   attempt, THEN verify actual broker protection via reconciliation (the next real snapshot),
+   THEN close if still unprotected. Round 1 of this session built immediate-close-only
+   (mischaracterized as "stricter, not weaker" than restore-then-close — actually a different
+   policy). Round 2 corrected that to restore-then-close but used 3 retry attempts with
+   poll-cycle backoff — the user pointed out that is ALSO a different policy than the one
+   agreed (exactly one attempt), not a refinement. This is now fixed for real:
    - On a NEW missing-protection incident (still strictly magic-number-scoped to this strategy's
-     own positions — that ownership fix from the earlier round is unchanged and still correct),
-     `GoldProtectionMonitorService` now queues a `GoldProtectionRestoreRequest` via the new
-     `GoldProtectionRestoreService`, asking the collector to re-attach SL/TP at the FROZEN
-     `GOLD_TP_SL_POINTS` distance from the position's own entry price — the exact same formula
-     every fill already uses (`gold-protection-restore.service.ts`'s `computeFrozenProtection`).
-   - The collector executes it via a new `Executor.modify_protection` (MT5 `TRADE_ACTION_SLTP`,
-     `executor.py`) and reports back through a new poll/report pair
-     (`GET/POST /collector/:accountId/gold-execution/restore-protection-request...`).
-   - A FAILED attempt with retries remaining queues a fresh attempt (poll-cycle-driven backoff,
-     consistent with every other retry in this codebase — no sleep-based loop invented). Bounded
-     at 3 attempts (`GoldProtectionRestoreRequest.maxAttempts`).
-   - Only after 3 consecutive FAILED attempts does `GoldExecutionController
-     .postRestoreProtectionResult` fall back to the existing close-position path from item 2 —
-     still magic-scoped, reading the live Position row's own side/volume, never trusted from the
-     request.
-   - A successful restore (at any attempt) sends `PROTECTION_RESTORED` and stops — no close ever
-     queued.
-   Unit-tested (`gold-protection-monitor.spec.ts`, 12 tests) and integration-tested end-to-end
-   with SIMULATED broker responses covering all three real branches: restore succeeds on attempt
-   1; restore succeeds on attempt 2 after attempt 1 fails; restore fails all 3 attempts and THEN
-   (only then) a close request is created (`gold-protection-restore-e2e.spec.ts`, 3 tests).
-   Python-unit-tested (`test_executor_modify_protection.py` 4 tests,
-   `test_runner_gold_restore_protection.py` 6 tests). A real test-isolation bug was found and
-   fixed while building this: `test/helpers/db.ts`'s `resetDatabase()` never cleared
-   `GoldTelegramNotification`/`GoldCloseRequest`/`GoldProtectionRestoreRequest` between tests,
-   so a leftover row from an earlier test run could silently make a fresh incident look
-   already-handled — now fixed, all three tables are cleared every test.
+     own positions), `GoldProtectionMonitorService` queues exactly ONE
+     `GoldProtectionRestoreRequest` (`maxAttempts` is hardcoded to 1 — there is no retry-queuing
+     code left in `GoldProtectionRestoreService.recordResult` at all) asking the collector to
+     re-attach SL/TP at the FROZEN `GOLD_TP_SL_POINTS` distance from the position's own entry
+     price (`gold-protection-restore.service.ts`'s `computeFrozenProtection`, unchanged formula).
+   - The collector executes it via `Executor.modify_protection` (MT5 `TRADE_ACTION_SLTP`,
+     `executor.py`) and reports back through
+     `GET/POST /collector/:accountId/gold-execution/restore-protection-request...`.
+   - Critical design point: `GoldExecutionController.postRestoreProtectionResult` now ONLY
+     records what the collector reported (informational Telegram notification) — it no longer
+     makes ANY close-or-retry decision. The collector's own `ok`/error response is never trusted
+     as proof of the position's real state (this is the "ambiguous/uncertain broker responses
+     handled through reconciliation, not blind retries" requirement) — an `ok:true` response
+     that reality later contradicts still results in a close, proven by a dedicated test.
+   - The REAL decision is made by `GoldProtectionMonitorService.checkOne`, driven by a small
+     state machine over the most recent `GoldTelegramNotification` for that position: if the
+     NEXT real snapshot (broker-reported `stopLoss`/`takeProfit`, not the modify response) shows
+     the position still unprotected after that one attempt was already made, THAT is reconciled
+     confirmation, and a close is queued (`GoldCloseExecutionService`, still magic-scoped, still
+     reading live Position data for side/volume). If the next snapshot shows real protection,
+     `PROTECTION_RESTORED` is sent and nothing closes.
+   - Fixed a real bug found while correcting this: several of the notification dedupKeys used
+     (e.g. `protection-restore-request:...`) did not actually start with the `protection:<ticket>:`
+     prefix the state-machine's own lookup query filters on, so the restore-requested/close-
+     requested states were never found on the next cycle — silently breaking the whole
+     reconciliation chain. All dedupKeys are now consistently prefixed.
+   Unit-tested (`gold-protection-monitor.spec.ts`, 15 tests, including a dedicated
+   "ambiguous-response-triggers-reconciliation-not-blind-retry" case) and integration-tested
+   end-to-end with SIMULATED broker responses covering all three real branches: single attempt
+   succeeds and reconciliation confirms it; single attempt fails and reconciliation confirms
+   still-unprotected so it closes (no retry); an `ok:true` response that reconciliation
+   contradicts still closes (`gold-protection-restore-e2e.spec.ts`, 3 tests). Python-unit-tested
+   (unchanged from round 2: `test_executor_modify_protection.py` 4 tests,
+   `test_runner_gold_restore_protection.py` 6 tests — the Python side of a restore attempt was
+   already correct, only the backend's retry/decision logic needed correcting).
    NOT runtime/broker-event-verified — no real MT5 modify-position or close has been observed.
 
 4. Closure notifications are now magic-scoped, not just symbol-scoped, and report BOTH per-deal
@@ -829,3 +839,103 @@ time against the regenerated client, (d) watch one real snapshot/trades ingestio
 confirm `recentNotifications`/`GoldCloseRequest` behave as expected with no errors in the
 backend log. Only then clear the switch — that decision stays yours per the task's own
 instruction, not something this session takes on your behalf.
+
+## Update — 2026-09-15, log diagnosis, stable run scripts, and a blocked restart
+
+### 1. Why the backend kept going quiet with nothing captured
+
+`backend/.run-backend.log` exists but its last write is 2026-09-10 16:34 — five days stale. The
+backend the user has been running interactively (`npm run dev`, in their own console window) was
+never redirecting its stdout/stderr anywhere this session could read. That absence of logging IS
+the diagnosis: there is no captured startup error to point to, because nothing was capturing it.
+Fixed going forward — see item 2.
+
+### 2. Stable, non-watching run commands (now what `start-gold-demo.ps1` uses)
+
+Inspected `backend/package.json` directly rather than guessing:
+- `"build": "tsc -p tsconfig.json"`, `"start": "node dist/src/main.js"` — already correct, and
+  confirmed `dist/src/main.js` actually exists after a real build.
+- The scheduler compiles too: `scripts/**/*.ts` is in `tsconfig.json`'s own `include`, so
+  `npm run build` also produces `dist/scripts/gold-execution-scheduler.js` — confirmed present
+  after building, not assumed. `backend/scripts/start-gold-demo.ps1` now builds once, then runs
+  `node dist/src/main.js` and `node dist/scripts/gold-execution-scheduler.js` directly (both with
+  stdout/stderr redirected to `.gold-demo-runtime/logs/*.log`) instead of `npm run dev` / `tsx`'s
+  watch mode — a stable process that won't respawn out from under a manual demo session, with a
+  real log file this time. `status-gold-demo.ps1`/`stop-gold-demo.ps1` needed no changes (already
+  PID-based, not command-specific). The collector's own `run.ps1` already runs `python main.py`
+  directly, no watcher — confirmed unchanged, no edit needed there.
+
+### 3. Final restart — BLOCKED, not attempted
+
+All code edits for this round (single-attempt restore-then-close policy, §ITEM-3-CORRECTION
+below) are complete, typechecked, and tested. Per the task's own instruction, I attempted the
+final coordinated restart (backend + scheduler; the collector deliberately excluded, see the
+duplicate-process finding below) using the freshly-rebuilt stable commands from item 2, against
+freshly re-inspected current PIDs (backend: npm 20084 -> ts-node-dev 20732 -> worker 22056,
+listening; scheduler: npm 11788 -> tsx 12120 -> worker 20372). **The `Stop-Process` calls were
+refused by this environment's own sandbox ("Interfere With Workloads")** — I am not able to stop
+these processes myself in this session, independent of the task's own kill-switch/process-
+restraint instructions. I did not attempt to work around that block.
+
+**Consequence**: the backend and scheduler currently still running are the OLD dev-mode
+(`ts-node-dev`/`tsx`) processes from BEFORE this round's protection-policy correction. The
+single-attempt restore-then-close code is committed and tested but **not yet loaded into any
+running process**.
+
+**Also found while inspecting processes** (not touched, reporting only): there are currently TWO
+separate `collector\main.py` process trees running —
+- PID 16084 (-> child 5568), started 2026-09-15 14:52
+- PID 21768 (-> child 7044), started 2026-09-15 21:10
+
+One of these is very likely a stale leftover that was never stopped after an earlier restart;
+running two collector instances against the same MT5 terminal/account at once is not something
+this session can safely reason about (which one, if either, is safe to stop) without your input.
+**Please check which one is the one you intend to keep before running the collector restart
+command below** — stop the other one first if you have your own way to tell them apart (e.g. by
+window/console), otherwise flag it back to me.
+
+**What WAS verified against the still-running OLD backend** (real evidence, distinguished from
+the new code, which is untested live):
+- `GET /health/live` -> `{"status":"ok"}`.
+- **`/gold-demo` was rendered, not just its API** — fetched the actual page HTML from the
+  frontend dev server (port 3000), confirmed real content in the response (not an error
+  boundary): the page title text, `Execution mode: DEMO`, `Account trade mode: DEMO`,
+  `Gold kill switch: ENGAGED`, `Stop new entries: active` all present in the rendered HTML.
+
+### Exact ordered commands for you to run (stop -> build -> start, backend + scheduler; collector separately once you've resolved the duplicate above)
+
+```
+# 1. Stop the OLD dev-mode backend and scheduler (adjust PIDs if they've
+#    changed since — re-check with Get-CimInstance Win32_Process first):
+Stop-Process -Id 22056   # backend worker (ts-node-dev child)
+Stop-Process -Id 20732   # backend ts-node-dev wrapper
+Stop-Process -Id 20084   # backend npm wrapper
+Stop-Process -Id 20372   # scheduler worker (tsx child)
+Stop-Process -Id 12120   # scheduler tsx wrapper
+Stop-Process -Id 11788   # scheduler npm wrapper
+
+# 2. Build once (also confirms the compiled entry points exist):
+cd backend
+npm run build
+
+# 3. Start both STABLE (no watcher), with real logs this time:
+Start-Process -FilePath node.exe -ArgumentList 'dist\src\main.js' -WorkingDirectory . `
+  -RedirectStandardOutput .gold-demo-runtime\logs\backend.log -RedirectStandardError .gold-demo-runtime\logs\backend.log.err
+Start-Process -FilePath node.exe -ArgumentList 'dist\scripts\gold-execution-scheduler.js' -WorkingDirectory . `
+  -RedirectStandardOutput .gold-demo-runtime\logs\gold-scheduler.log -RedirectStandardError .gold-demo-runtime\logs\gold-scheduler.log.err
+
+# (or simply: powershell -ExecutionPolicy Bypass -File backend\scripts\start-gold-demo.ps1,
+#  which does exactly the above, plus the collector, plus duplicate-process checks)
+
+# 4. Collector — only after you've resolved which of PID 16084 or 21768 to
+#    keep/stop; the new modify_protection code needs a restart to load:
+#    stop the stale one, then re-run collector/scripts/run.ps1 for a fresh one
+#    if neither current instance was started after this session's collector
+#    edits landed.
+```
+
+After that restart, re-run the same read-only verification this session did earlier (health,
+`/gold-demo` render, fresh account/data check, a synthetic-style read of the new endpoints) before
+considering the single-attempt restore-then-close policy live-verified — it is currently only
+unit- and integration-tested (simulated broker), not yet observed against a running process.
+GOLD_KILL_SWITCH remains engaged throughout; not cleared by this session.

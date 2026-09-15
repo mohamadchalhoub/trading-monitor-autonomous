@@ -2,28 +2,31 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GOLD_SYMBOL, GOLD_TP_SL_POINTS } from './gold-safety-constants';
 
-const MAX_RESTORE_ATTEMPTS = 3;
-
 export interface GoldProtectionRestoreResult {
   ok: boolean;
   errorMessage?: string | null;
 }
 
 /**
- * Task item 3, corrected — "restore-then-close," the RESTORE half. On a
- * missing-protection incident, this queues a request to re-attach SL/TP at
- * the FROZEN `GOLD_TP_SL_POINTS` distance from the position's own entry
- * price (never a different distance/policy — same constant every fill
- * already uses). The collector's own poll/claim/report cycle
- * (`GoldExecutionController.getRestoreProtectionRequest`/
- * `postRestoreProtectionResult`) executes it via `executor.py`'s new
- * `modify_protection` (TRADE_ACTION_SLTP). A FAILED attempt with retries
- * remaining creates a NEW PENDING row for the next attempt — the natural
- * ~poll-interval gap between collector polls IS the "brief backoff,"
- * consistent with every other retry in this codebase being poll-cycle-
- * driven rather than a sleep-based loop. After `MAX_RESTORE_ATTEMPTS`
- * consecutive failures, `GoldProtectionMonitorService` (the caller) falls
- * back to `GoldCloseExecutionService`.
+ * Task item 3, corrected a second time — the agreed policy is exactly ONE
+ * restoration attempt, THEN verify actual broker protection via
+ * reconciliation (the next real snapshot cycle), THEN close if still
+ * unprotected. An earlier round of this session built a 3-attempt,
+ * poll-cycle-backoff retry chain — that is a DIFFERENT policy than what was
+ * agreed, not a refinement of it, and has been removed. This service now
+ * only ever creates ONE `GoldProtectionRestoreRequest` per incident and
+ * never queues a second attempt itself.
+ *
+ * "Ambiguous/uncertain broker responses handled through reconciliation, not
+ * blind retries": this service deliberately does NOT branch the
+ * close-fallback decision on the collector's own reported `ok`/error for
+ * the modify attempt — that response only proves what the ONE order_send
+ * call returned, not what the position's actual current SL/TP is. The real
+ * decision (restored vs. still needs closing) is made by
+ * `GoldProtectionMonitorService.checkOne` on the NEXT snapshot cycle,
+ * reading the position's actual broker-reported `stopLoss`/`takeProfit` —
+ * genuine reconciliation against live state, not a re-attempt driven by
+ * this response alone.
  */
 @Injectable()
 export class GoldProtectionRestoreService {
@@ -48,7 +51,7 @@ export class GoldProtectionRestoreService {
         stopLoss,
         takeProfit,
         attemptNumber: 1,
-        maxAttempts: MAX_RESTORE_ATTEMPTS,
+        maxAttempts: 1,
       },
     });
     return { id: row.id };
@@ -71,16 +74,17 @@ export class GoldProtectionRestoreService {
   }
 
   /**
-   * Returns `{ exhausted: true }` when this was the last permitted attempt
-   * and it also failed — the caller (protection monitor) is responsible for
-   * falling back to a close request in that case, never this service
-   * (keeps "restore" and "close" as two separately-testable concerns).
+   * Records the ONE attempt's outcome and stops — never queues another
+   * attempt, never itself decides to close. Whether the position actually
+   * ends up protected is determined separately, by reconciliation against
+   * real broker data on the next snapshot cycle
+   * (`GoldProtectionMonitorService.checkOne`).
    */
-  async recordResult(requestId: string, result: GoldProtectionRestoreResult): Promise<{ exhausted: boolean }> {
+  async recordResult(requestId: string, result: GoldProtectionRestoreResult): Promise<void> {
     const request = await this.prisma.goldProtectionRestoreRequest.findUnique({ where: { id: requestId } });
     if (!request) {
       this.logger.error(`recordResult: no GoldProtectionRestoreRequest found for id=${requestId}`);
-      return { exhausted: false };
+      return;
     }
 
     if (result.ok) {
@@ -88,37 +92,14 @@ export class GoldProtectionRestoreService {
         where: { id: requestId },
         data: { status: 'RESTORED', restoredAt: new Date() },
       });
-      this.logger.log(`gold protection restore ${requestId}: RESTORED (attempt ${request.attemptNumber}/${request.maxAttempts})`);
-      return { exhausted: false };
+      this.logger.log(`gold protection restore ${requestId}: broker reported success (still subject to reconciliation on the next snapshot cycle)`);
+    } else {
+      await this.prisma.goldProtectionRestoreRequest.update({
+        where: { id: requestId },
+        data: { status: 'FAILED', resultError: result.errorMessage ?? null },
+      });
+      this.logger.warn(`gold protection restore ${requestId}: broker reported failure/ambiguous result (${result.errorMessage ?? 'no detail'}) — no retry queued; reconciliation on the next snapshot cycle will decide whether to close`);
     }
-
-    await this.prisma.goldProtectionRestoreRequest.update({
-      where: { id: requestId },
-      data: { status: 'FAILED', resultError: result.errorMessage ?? null },
-    });
-
-    const nextAttempt = request.attemptNumber + 1;
-    if (nextAttempt > request.maxAttempts) {
-      this.logger.warn(`gold protection restore ${requestId}: FAILED, attempt ${request.attemptNumber}/${request.maxAttempts} was the last one — exhausted`);
-      return { exhausted: true };
-    }
-
-    // Queue the next attempt — same target SL/TP price (frozen distance
-    // from entry, which never changes), fresh row for full attempt history.
-    await this.prisma.goldProtectionRestoreRequest.create({
-      data: {
-        accountId: request.accountId,
-        symbol: request.symbol,
-        positionTicket: request.positionTicket,
-        side: request.side,
-        stopLoss: request.stopLoss,
-        takeProfit: request.takeProfit,
-        attemptNumber: nextAttempt,
-        maxAttempts: request.maxAttempts,
-      },
-    });
-    this.logger.warn(`gold protection restore ${requestId}: FAILED, queuing attempt ${nextAttempt}/${request.maxAttempts}`);
-    return { exhausted: false };
   }
 }
 
