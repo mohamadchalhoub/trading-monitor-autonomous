@@ -131,6 +131,15 @@ class Config:
     # collection is unchanged.
     candle_timeframes_by_symbol: dict[str, tuple[str, ...]] | None = None
 
+    # Gold (XAUUSD) execution poll — deliberately a SEPARATE flag from
+    # autonomous_execution_enabled (EURUSD), off by default, so the two
+    # strategies' activation can never be coupled by one env var. When
+    # true, the collector's poll loop additionally checks the backend's
+    # gold-execution route for an approved pending gold order and executes
+    # it via executor.py (same module, gold's own magic number/symbol/point
+    # size passed through — no gold-specific order code in executor.py).
+    gold_execution_enabled: bool = False
+
     def timeframes_for(self, symbol: str) -> tuple[str, ...]:
         return (self.candle_timeframes_by_symbol or {}).get(symbol, self.candle_timeframes)
 
@@ -236,6 +245,7 @@ class Config:
         candle_initial_sync_days = _read_positive_int(e, "CANDLE_INITIAL_SYNC_DAYS", default=730)
 
         autonomous_execution_enabled = e.get("AUTONOMOUS_EXECUTION_ENABLED", "false").strip().lower() == "true"
+        gold_execution_enabled = e.get("GOLD_EXECUTION_ENABLED", "false").strip().lower() == "true"
 
         return Config(
             mt5_login=mt5_login,
@@ -262,6 +272,7 @@ class Config:
             candle_initial_sync_days=candle_initial_sync_days,
             autonomous_execution_enabled=autonomous_execution_enabled,
             candle_timeframes_by_symbol=candle_timeframes_by_symbol,
+            gold_execution_enabled=gold_execution_enabled,
         )
 
     @property

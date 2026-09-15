@@ -59,6 +59,7 @@ class _FakeConfig:
     candle_sync_interval_seconds: int = 300
     candle_initial_sync_days: int = 1000
     autonomous_execution_enabled: bool = False
+    gold_execution_enabled: bool = False
     candle_timeframes_by_symbol: dict = field(default_factory=lambda: {"XAUUSD": ("M1", "H4")})
 
 
@@ -150,3 +151,87 @@ def test_one_full_loop_cycle_with_gold_configured_never_reaches_order_polling():
     app._poll_and_execute_pending_order.assert_not_called()
     api.get_pending_order.assert_not_called()
     executor.send_bracket_order.assert_not_called()
+
+
+def test_gold_execution_disabled_by_default_and_independent_of_eurusd_flag():
+    # Separate flag from EURUSD's own: enabling one must never enable the other.
+    assert Config.from_env(BASE_ENV).gold_execution_enabled is False
+    assert Config.from_env({**BASE_ENV, "AUTONOMOUS_EXECUTION_ENABLED": "true"}).gold_execution_enabled is False
+    assert Config.from_env({**BASE_ENV, "GOLD_EXECUTION_ENABLED": "yes"}).gold_execution_enabled is False
+    assert Config.from_env({**BASE_ENV, "GOLD_EXECUTION_ENABLED": "true"}).gold_execution_enabled is True
+    assert Config.from_env({**BASE_ENV, "GOLD_EXECUTION_ENABLED": "true"}).autonomous_execution_enabled is False
+
+
+def test_gold_order_polling_unreachable_when_gold_execution_disabled():
+    app, client, api, executor = _app()
+    client.is_connected.return_value = True
+    for name in ("_push_and_print_snapshot", "_sync_trades", "_sync_candles", "_sync_symbol_metadata", "_maybe_start_tick_sync"):
+        setattr(app, name, MagicMock())
+    app._poll_and_execute_pending_gold_order = MagicMock(side_effect=AssertionError("gold order polling must be unreachable"))
+    app._stop_event.wait = lambda timeout=None: app._stop_event.set()
+
+    app.run()
+
+    app._poll_and_execute_pending_gold_order.assert_not_called()
+    api.get_pending_gold_order.assert_not_called()
+
+
+def test_gold_order_polling_reached_when_gold_execution_enabled():
+    config = _FakeConfig(gold_execution_enabled=True)
+    app, client, api, executor = _app(config)
+    client.is_connected.return_value = True
+    for name in ("_push_and_print_snapshot", "_sync_trades", "_sync_candles", "_sync_symbol_metadata", "_maybe_start_tick_sync"):
+        setattr(app, name, MagicMock())
+    api.get_pending_gold_order.return_value = {"order": None}
+    app._stop_event.wait = lambda timeout=None: app._stop_event.set()
+
+    app.run()
+
+    api.get_pending_gold_order.assert_called_once_with(config.collector_account_id)
+    executor.send_bracket_order.assert_not_called()
+
+
+def test_gold_order_execution_passes_symbol_and_point_size_through():
+    app, client, api, executor = _app(_FakeConfig(gold_execution_enabled=True))
+    api.get_pending_gold_order.return_value = {
+        "order": {
+            "decisionId": "d-1", "side": "BUY", "volume": 0.01,
+            "stopLossPoints": 1000, "takeProfitPoints": 1000,
+            "magic": 262610181, "comment": "gold-abcd1234",
+            "symbol": "XAUUSD", "pointSize": 0.01,
+        }
+    }
+    executor.send_bracket_order.return_value = MagicMock(ok=True, ticket=555, price=2650.5, retcode=10009, error_message=None)
+
+    app._poll_and_execute_pending_gold_order()
+
+    executor.send_bracket_order.assert_called_once_with(
+        side="BUY", volume=0.01, stop_loss_points=1000, take_profit_points=1000,
+        magic=262610181, comment="gold-abcd1234", symbol="XAUUSD", point_size=0.01,
+    )
+    api.post_gold_execution_result.assert_called_once()
+    call_args = api.post_gold_execution_result.call_args
+    assert call_args[0][1] == "d-1"
+    assert call_args[0][2]["ok"] is True
+    assert call_args[0][2]["ticket"] == 555
+
+
+def test_gold_order_execution_reports_demo_account_failure_never_crashes():
+    from app.executor import DemoAccountRequiredError
+
+    app, client, api, executor = _app(_FakeConfig(gold_execution_enabled=True))
+    api.get_pending_gold_order.return_value = {
+        "order": {
+            "decisionId": "d-2", "side": "SELL", "volume": 0.01,
+            "stopLossPoints": 1000, "takeProfitPoints": 1000,
+            "magic": 262610181, "comment": "gold-xyz", "symbol": "XAUUSD", "pointSize": 0.01,
+        }
+    }
+    executor.send_bracket_order.side_effect = DemoAccountRequiredError("account is REAL, refusing")
+
+    app._poll_and_execute_pending_gold_order()  # must not raise
+
+    api.post_gold_execution_result.assert_called_once()
+    call_args = api.post_gold_execution_result.call_args
+    assert call_args[0][2]["ok"] is False
+    assert "refusing" in call_args[0][2]["errorMessage"]

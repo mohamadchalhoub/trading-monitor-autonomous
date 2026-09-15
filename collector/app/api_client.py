@@ -109,6 +109,16 @@ class ApiClient:
     def post_execution_result(self, account_id: str, decision_id: str, result: dict[str, Any]) -> dict[str, Any]:
         return self._post(f"/collector/{account_id}/autonomous/pending-order/{decision_id}/result", result)
 
+    # Gold (XAUUSD) execution — its OWN route, deliberately separate from
+    # the EURUSD pair above (backend's GoldExecutionController), never the
+    # same URL with a symbol parameter, so the two strategies' wire
+    # contracts can never be confused at the HTTP layer either.
+    def get_pending_gold_order(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/gold-execution/pending-order")
+
+    def post_gold_execution_result(self, account_id: str, decision_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/gold-execution/pending-order/{decision_id}/result", result)
+
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         try:

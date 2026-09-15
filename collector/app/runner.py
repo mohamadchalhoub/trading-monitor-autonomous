@@ -166,6 +166,7 @@ class CollectorApp:
             "candle_symbols": self._config.candle_symbols,
             "candle_timeframes": self._config.candle_timeframes if self._config.candle_symbols else (),
             "autonomous_execution_enabled": self._config.autonomous_execution_enabled,
+            "gold_execution_enabled": self._config.gold_execution_enabled,
         })
 
         backoff = self._config.reconnect_initial_backoff_seconds
@@ -195,6 +196,8 @@ class CollectorApp:
                         self._sync_symbol_metadata()
                     if self._config.autonomous_execution_enabled:
                         self._poll_and_execute_pending_order()
+                    if self._config.gold_execution_enabled:
+                        self._poll_and_execute_pending_gold_order()
                 finally:
                     self._mt5_call_lock.release()
 
@@ -390,6 +393,75 @@ class CollectorApp:
             # visibility problem, not a trading-safety one, but it does mean
             # the decision row stays stuck as SENT until this is noticed.
             logger.error("failed to report execution result back to backend", extra={"decision_id": decision_id, "error": str(exc)})
+
+    def _poll_and_execute_pending_gold_order(self) -> None:
+        """Gold (XAUUSD) analog of `_poll_and_execute_pending_order` — its
+        OWN backend route (`get_pending_gold_order`), only ever reached
+        when `gold_execution_enabled` is explicitly true, fully independent
+        of the EURUSD flag above. Same failure posture: never crashes the
+        main loop, every outcome (including DemoAccountRequiredError) is
+        reported back, never left stuck. Passes the order's own
+        `symbol`/`pointSize` through to `send_bracket_order` — executor.py
+        already supports this per-call, no executor.py change was needed.
+        """
+        try:
+            response = self._api.get_pending_gold_order(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("gold pending-order poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        order = response.get("order")
+        if not order:
+            return
+
+        logger.info("gold pending order claimed, attempting execution", extra={
+            "decision_id": order["decisionId"], "side": order["side"], "volume": order["volume"], "symbol": order["symbol"],
+        })
+
+        try:
+            result = self._executor.send_bracket_order(
+                side=order["side"],
+                volume=order["volume"],
+                stop_loss_points=order["stopLossPoints"],
+                take_profit_points=order["takeProfitPoints"],
+                magic=order["magic"],
+                comment=order["comment"],
+                symbol=order["symbol"],
+                point_size=order["pointSize"],
+            )
+        except DemoAccountRequiredError as exc:
+            logger.critical("GOLD: DEMO ACCOUNT CHECK FAILED — refusing to trade", extra={"error": str(exc)})
+            self._report_gold_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("gold order execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_gold_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("gold order execution result", extra={
+            "decision_id": order["decisionId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_gold_execution_result(
+            order["decisionId"], ok=result.ok, ticket=result.ticket,
+            filled_price=result.price, error_message=result.error_message,
+        )
+
+    def _report_gold_execution_result(
+        self, decision_id: str, *, ok: bool, ticket: int | None = None,
+        filled_price: float | None = None, error_message: str | None = None,
+    ) -> None:
+        payload: dict = {"ok": ok}
+        if ticket is not None:
+            payload["ticket"] = ticket
+        if filled_price is not None:
+            payload["filledPrice"] = filled_price
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_gold_execution_result(self._config.collector_account_id, decision_id, payload)
+        except ApiClientError as exc:
+            logger.error("failed to report gold execution result back to backend", extra={"decision_id": decision_id, "error": str(exc)})
 
     def _trade_sync_due(self) -> bool:
         if self._last_trade_sync_at is None:
