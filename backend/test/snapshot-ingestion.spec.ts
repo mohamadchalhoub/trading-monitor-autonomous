@@ -150,4 +150,54 @@ describe('snapshot ingestion', () => {
     expect(positions).toHaveLength(1);
     expect(positions[0].platform).toBe('MT5');
   });
+
+  // Gold collection alongside EURUSD — one quote per configured symbol
+  // (collector/app/api_mapper.py's `liveTicks`), landing in the same
+  // symbol-keyed LiveTick table `liveTick` (single-symbol, kept for
+  // existing consumers) already writes to.
+  it('upserts one LiveTick row per symbol from liveTicks[]', async () => {
+    const { account, token } = await setupAccountWithToken(prisma);
+    const payload = validSnapshotPayload(account.id, {
+      liveTicks: [
+        { symbol: 'EURUSD', bid: 1.1, ask: 1.1005, tickAt: new Date().toISOString() },
+        { symbol: 'XAUUSD', bid: 2500.1, ask: 2500.5, tickAt: new Date().toISOString() },
+      ],
+    });
+
+    const res = await request(app, { method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${token}` }, payload });
+
+    expect(res.statusCode).toBe(201);
+    const eur = await prisma.liveTick.findUnique({ where: { symbol: 'EURUSD' } });
+    const gold = await prisma.liveTick.findUnique({ where: { symbol: 'XAUUSD' } });
+    expect(Number(eur?.bid)).toBe(1.1);
+    expect(Number(gold?.bid)).toBe(2500.1);
+  });
+
+  it('a symbol present in both liveTick and liveTicks is upserted once, not twice, for the same value', async () => {
+    // LiveTick is a shared, symbol-keyed table (not account-scoped, not reset between
+    // tests — same posture as HistoricalCandle) — a unique symbol isolates this test.
+    const { account, token } = await setupAccountWithToken(prisma);
+    const symbol = `TEST${randomUUID().slice(0, 8).toUpperCase()}`;
+    const tickAt = new Date().toISOString();
+    const payload = validSnapshotPayload(account.id, {
+      liveTick: { symbol, bid: 1.2, ask: 1.2005, tickAt },
+      liveTicks: [{ symbol, bid: 1.2, ask: 1.2005, tickAt }],
+    });
+
+    const res = await request(app, { method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${token}` }, payload });
+
+    expect(res.statusCode).toBe(201);
+    expect(await prisma.liveTick.count({ where: { symbol } })).toBe(1);
+  });
+
+  it('a snapshot with no liveTick/liveTicks at all still succeeds (existing EURUSD-only deployments unaffected)', async () => {
+    const { account, token } = await setupAccountWithToken(prisma);
+    const before = await prisma.liveTick.count();
+    const payload = validSnapshotPayload(account.id);
+
+    const res = await request(app, { method: 'POST', url: '/collector/snapshot', headers: { authorization: `Bearer ${token}` }, payload });
+
+    expect(res.statusCode).toBe(201);
+    expect(await prisma.liveTick.count()).toBe(before); // no row created
+  });
 });
