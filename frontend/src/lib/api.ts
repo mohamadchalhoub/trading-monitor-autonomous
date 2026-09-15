@@ -434,16 +434,24 @@ export interface GoldRetestResearch {
   currentSpecHash: string;
   executionBoundary: string;
   watch: {
+    orderExecution: 'NONE';
     lastCycleAtUtc: string;
-    latestStoredM1CloseUtc: string;
-    settledEndUtc: string;
+    evaluation: { status: string; reason: string };
+    timestampVerification: {
+      recorded: { interpretation: string; status: string; verifiedOn: string; evidence: string[]; limitations: string[] };
+      live: { status: 'LIVE_CONSISTENT' | 'LIVE_CONTRADICTED' | 'LIVE_UNAVAILABLE'; detail: string };
+    };
+    goldData: { latestStoredM1CloseUtc: string | null; latestStoredM1AgeSeconds: number | null; stale: boolean; note: string };
+    quotes: Array<{ symbol: string; bid: number; ask: number; tickAtUtc: string; receivedAtUtc: string; receiptAgeSeconds: number; spread: number }>;
+    collector: { lastHeartbeatUtc: string; ageSeconds: number; mt5Connected: boolean } | null;
+    symbolMetadata: { digits: number; tradeTickSize: number } | null;
+    settledEndUtc: string | null;
     volumeLots: number;
+    volumeAudit: Array<{ atUtc: string; fromLots: number; toLots: number; changedBy: string }>;
     activeLevels: Array<{ id: string; role: string; price: string; activatedUtc: string; h4BarsSinceActivation: number }>;
     counts: { levelsEver: number; eventsEver: number; forwardEvents: number; pendingOutcomes: number };
-    forwardEvents: Array<Record<string, unknown>>;
     quoteGate: Record<string, { pass: boolean; reason: string; decidedAtUtc: string }>;
-    warnings: string[];
-    limitations: string[];
+    watcher: { pid: number; startedAtUtc: string; cycle: number; loop: boolean; intervalSeconds: number; consecutiveErrors: number; nextCycleAtUtc: string | null } | null;
   } | null;
   run: {
     runId: string;

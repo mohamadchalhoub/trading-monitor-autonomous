@@ -8,6 +8,10 @@ import { EmptyState } from "@/components/EmptyState";
 export const dynamic = "force-dynamic";
 
 const pct = (x: number | null | undefined) => (x === null || x === undefined ? "n/a" : `${(x * 100).toFixed(1)}%`);
+// Zero trades is not a 0% win rate — it is no sample at all. Only the resolved-count cell decides this;
+// counts (WIN/LOSS/etc.) are shown regardless so "0" is still visible where it is genuinely zero.
+const winRateCell = (numerator: number, denominator: number, rate: number | null) =>
+  denominator === 0 ? "No sample" : `${numerator}/${denominator} (${pct(rate)})`;
 const range = (r: [number, number] | null, money = false) => {
   if (!r) return "n/a";
   const f = (x: number) => (money ? `$${x.toFixed(2)}` : `${+x.toFixed(2)}`);
@@ -26,9 +30,9 @@ function BucketRow({ label, b }: { label: string; b: RetestBucket }) {
       <td className="font-mono">{b.counts.AMBIGUOUS}</td>
       <td className="font-mono">{b.counts.INDETERMINATE}</td>
       <td className="font-mono">{b.counts.UNRESOLVED}</td>
-      <td className="font-mono">{b.resolvedWinRate.numerator}/{b.resolvedWinRate.denominator} ({pct(b.resolvedWinRate.rate)})</td>
-      <td className="font-mono">{ci ? `${pct(ci[0])}–${pct(ci[1])}` : "n/a"}</td>
-      <td className="font-mono">{pct(b.allEligibleBounds.low)} – {pct(b.allEligibleBounds.high)}</td>
+      <td className="font-mono">{winRateCell(b.resolvedWinRate.numerator, b.resolvedWinRate.denominator, b.resolvedWinRate.rate)}</td>
+      <td className="font-mono">{b.resolvedWinRate.denominator === 0 ? "—" : ci ? `${pct(ci[0])}–${pct(ci[1])}` : "n/a"}</td>
+      <td className="font-mono">{b.eligibleEvents === 0 ? "—" : `${pct(b.allEligibleBounds.low)} – ${pct(b.allEligibleBounds.high)}`}</td>
     </tr>
   );
 }
@@ -63,6 +67,7 @@ export default async function GoldRetestResearchPage() {
         <p><span className="text-text-muted">Spec hash</span> <span className="font-mono text-xs break-all">{data.currentSpecHash}</span></p>
         <p><span className="text-text-muted">Execution</span> {data.executionBoundary}</p>
         <p className="text-xs text-text-muted">Fixed research assumptions — not a claim of profitability. Rules partly completed by GPT from the friend&apos;s principles; not an exact reproduction of discretionary trading.</p>
+        <p className="text-xs text-text-muted font-medium">This page shows research replay and collection status only. A recent quote or a fresh chart below means data is arriving — it does not mean this strategy is profitable, validated, or running live in any account.</p>
       </div>
 
       {!run ? (
@@ -114,7 +119,12 @@ export default async function GoldRetestResearchPage() {
 
           <section className="rounded-lg border border-border bg-surface px-4 py-3.5 overflow-x-auto">
             <h2 className="text-sm font-medium mb-1">Output B — one-position paper simulation (skip reasons per scenario)</h2>
-            <p className="text-xs text-text-muted mb-2">$1,000 is an assumed balance (no demo equity snapshot); $10,000 is a pre-declared sensitivity. All costs are labeled assumptions.</p>
+            <p className="text-xs text-text-muted mb-2">$1,000 is an assumed balance (no demo equity snapshot exists for this account); $10,000 is a pre-declared sensitivity only. All costs are labeled assumptions, not observed history.</p>
+            <div className="rounded-md border border-warn/40 bg-warn-soft/40 px-3 py-2 text-xs mb-3">
+              <span className="font-medium">Why the $1,000 scenario would block every entry: </span>
+              at the frozen 0.01 lot and 100 oz/lot contract, a $10 stop risks $10.00 — 1% of $1,000, above the frozen 0.5% stop-risk cap.
+              The minimum equity that clears that cap at this fixed volume is <span className="font-mono">$2,000</span>; volume and risk caps are not changed here.
+            </div>
             <table className="w-full text-xs">
               <thead className="text-text-muted text-left"><tr><th>Balance</th><th>Costs</th><th>Branches</th><th>Trades</th><th>Net P&amp;L</th><th>Exp./trade</th><th>PF</th><th>Max DD</th><th>Exposure %</th><th>Decisions (incl. skips)</th></tr></thead>
               <tbody>{run.paper.map((p) => <PaperRow key={`${p.summary.balanceId}-${p.summary.costId}`} s={p.summary} />)}</tbody>
@@ -169,16 +179,60 @@ export default async function GoldRetestResearchPage() {
       )}
 
       <section className="rounded-lg border border-border bg-surface px-4 py-3.5">
-        <h2 className="text-sm font-medium mb-2">Watch-only status</h2>
+        <h2 className="text-sm font-medium mb-2">Collector &amp; watch-only status (live observations)</h2>
         {!data.watch ? (
-          <p className="text-xs text-text-muted">The watch-only runner has not written a status yet (<code>npm run confirmed-retest:watch</code>).</p>
+          <p className="text-xs text-text-muted">The watcher has not written a status yet. Start it with <code>npm run confirmed-retest:watch</code> (one cycle) or <code>npm run confirmed-retest:watcher</code> (persistent).</p>
         ) : (
-          <div className="text-xs flex flex-col gap-1">
-            <p>Last cycle {data.watch.lastCycleAtUtc} · settled through {data.watch.settledEndUtc} · latest stored M1 close {data.watch.latestStoredM1CloseUtc} · volume {data.watch.volumeLots} lot</p>
-            <p>Active levels {data.watch.activeLevels.length} · forward first returns {data.watch.counts.forwardEvents} · pending outcomes {data.watch.counts.pendingOutcomes}</p>
-            {data.watch.warnings.map((w) => <p key={w} className="text-warn">{w}</p>)}
-            {Object.values(data.watch.quoteGate).map((g, i) => <p key={i} className="font-mono">{g.decidedAtUtc} {g.pass ? "shadow entry allowed" : `skipped: ${g.reason}`}</p>)}
-            <ul className="text-text-muted list-disc ml-4">{data.watch.limitations.map((l) => <li key={l}>{l}</li>)}</ul>
+          <div className="text-xs flex flex-col gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <Tile label="Order execution" value={data.watch.orderExecution} tone="ok" />
+              <Tile label="Watcher evaluation" value={data.watch.evaluation.status.replace(/_/g, " ")} tone={data.watch.evaluation.status === "EVALUATED_NEW_DATA" || data.watch.evaluation.status === "WAITING_FOR_NEW_COMPLETED_DATA" ? "ok" : "warn"} />
+              <Tile label="Timestamp verification" value={data.watch.timestampVerification.recorded.status} tone={data.watch.timestampVerification.live.status === "LIVE_CONTRADICTED" ? "down" : "ok"} />
+              <Tile label="Collector" value={data.watch.collector ? (data.watch.collector.mt5Connected ? `connected, ${data.watch.collector.ageSeconds}s ago` : "MT5 disconnected") : "no heartbeat seen"} tone={data.watch.collector?.mt5Connected ? "ok" : "warn"} />
+            </div>
+
+            <p>{data.watch.evaluation.reason}</p>
+
+            <div className="rounded-md border border-border px-3 py-2">
+              <p className="font-medium mb-1">Timestamp basis</p>
+              <p>Recorded: {data.watch.timestampVerification.recorded.interpretation} — verified {data.watch.timestampVerification.recorded.verifiedOn}.</p>
+              <p className={data.watch.timestampVerification.live.status === "LIVE_CONTRADICTED" ? "text-down font-medium" : "text-text-muted"}>
+                Live re-check just now: {data.watch.timestampVerification.live.status.replace(/_/g, " ")} — {data.watch.timestampVerification.live.detail}
+              </p>
+              {data.watch.timestampVerification.live.status === "LIVE_CONTRADICTED" && (
+                <p className="text-down">Session-dependent evaluation is blocked until this is resolved. Raw data collection is unaffected.</p>
+              )}
+            </div>
+
+            <div className="rounded-md border border-border px-3 py-2">
+              <p className="font-medium mb-1">Last available data (with timezone)</p>
+              <p className={data.watch.goldData.stale ? "text-warn" : ""}>
+                Latest stored XAUUSD M1 close: <span className="font-mono">{data.watch.goldData.latestStoredM1CloseUtc ?? "none"} UTC</span>
+                {data.watch.goldData.latestStoredM1AgeSeconds !== null && ` (${Math.round(data.watch.goldData.latestStoredM1AgeSeconds / 60)} min ago${data.watch.goldData.stale ? ", stale" : ""})`}
+              </p>
+              <p className="text-text-muted">{data.watch.goldData.note}</p>
+              {data.watch.quotes.map((q) => (
+                <p key={q.symbol} className="font-mono">
+                  {q.symbol}: bid {q.bid} / ask {q.ask} (spread {q.spread}) · quote time {q.tickAtUtc} UTC · received {q.receiptAgeSeconds}s ago
+                </p>
+              ))}
+              {data.watch.quotes.length === 0 && <p className="text-text-muted">No live quote received yet for any symbol.</p>}
+            </div>
+
+            <p>Settled through {data.watch.settledEndUtc ?? "—"} · volume {data.watch.volumeLots} lot (user-set only; {data.watch.volumeAudit.length} change{data.watch.volumeAudit.length === 1 ? "" : "s"} logged)</p>
+            <p>
+              Active levels {data.watch.activeLevels.length} · forward first returns {data.watch.counts.forwardEvents} · pending outcomes {data.watch.counts.pendingOutcomes}
+              {data.watch.counts.forwardEvents === 0 && " — zero forward events is not zero performance: no level has formed to produce one (see “Why levels did or did not form” above)."}
+            </p>
+            {data.watch.watcher && (
+              <p className="text-text-muted">Watcher pid {data.watch.watcher.pid}, cycle {data.watch.watcher.cycle}, started {data.watch.watcher.startedAtUtc}{data.watch.watcher.loop ? `, next cycle ~${data.watch.watcher.nextCycleAtUtc}` : " (single cycle, not currently looping)"}{data.watch.watcher.consecutiveErrors > 0 ? ` — ${data.watch.watcher.consecutiveErrors} consecutive errors` : ""}.</p>
+            )}
+            {Object.keys(data.watch.quoteGate).length > 0 && (
+              <div>
+                <p className="font-medium">Shadow entry gate decisions</p>
+                {Object.values(data.watch.quoteGate).map((g, i) => <p key={i} className="font-mono">{g.decidedAtUtc}: {g.pass ? "shadow entry allowed" : `skipped: ${g.reason}`}</p>)}
+              </div>
+            )}
           </div>
         )}
       </section>
