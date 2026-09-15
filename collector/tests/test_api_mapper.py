@@ -6,7 +6,7 @@ def test_snapshot_payload_shape():
         account_id="acct-1",
         account={"balance": 3000.0, "equity": 2990.0, "margin": 10.0,
                   "margin_free": 2980.0, "margin_level": 29900.0, "profit": -10.0,
-                  "trade_mode": 1},
+                  "trade_mode": 0},  # ACCOUNT_TRADE_MODE_DEMO's real raw value (see api_mapper.py's corrected _TRADE_MODE_LABELS)
         positions=[{
             "ticket": 555, "symbol": "XAUUSD", "side": "BUY", "volume": 0.5,
             "price_open": 2400.0, "price_current": 2410.0, "sl": 2380.0, "tp": 0.0,
@@ -39,9 +39,14 @@ def test_snapshot_payload_includes_last_error_when_present():
 
 
 def test_trade_mode_label_maps_mt5s_known_values():
-    assert _trade_mode_label(0) == "REAL"
-    assert _trade_mode_label(1) == "DEMO"
-    assert _trade_mode_label(2) == "CONTEST"
+    # Corrected against the actually-installed MetaTrader5 package's own
+    # ACCOUNT_TRADE_MODE_* constants (collector/.venv/Lib/site-packages/
+    # MetaTrader5/__init__.py) — this test previously asserted a completely
+    # wrong permutation ({0: "REAL", 1: "DEMO", 2: "CONTEST"}), self-confirming
+    # the bug in _TRADE_MODE_LABELS instead of catching it.
+    assert _trade_mode_label(0) == "DEMO"
+    assert _trade_mode_label(1) == "CONTEST"
+    assert _trade_mode_label(2) == "REAL"
 
 
 def test_trade_mode_label_is_none_when_absent_or_unrecognized():

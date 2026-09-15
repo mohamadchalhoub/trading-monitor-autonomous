@@ -14,7 +14,29 @@ from typing import Any
 # wire format, not something that needs a live import to know. Autonomous
 # demo trading (v2) — the single most safety-critical field this collector
 # pushes (AUTONOMOUS_DEMO_TRADING_PLAN.md §1).
-_TRADE_MODE_LABELS = {0: "REAL", 1: "DEMO", 2: "CONTEST"}
+#
+# CORRECTED — found and fixed while wiring gold execution live-verification:
+# this was previously {0: "REAL", 1: "DEMO", 2: "CONTEST"}, a complete
+# permutation error against MT5's actual, real enum values. Verified
+# directly against the literal installed `MetaTrader5` package in this
+# project's own venv (`collector/.venv/Lib/site-packages/MetaTrader5/__init__.py`):
+# `ACCOUNT_TRADE_MODE_DEMO = 0`, `ACCOUNT_TRADE_MODE_CONTEST = 1`,
+# `ACCOUNT_TRADE_MODE_REAL = 2` — not assumed from memory. The old mapping
+# meant a genuine DEMO account (raw int 0) was being labeled "REAL" in
+# every `AccountSnapshot.tradeMode` this collector ever pushed, and a
+# genuine REAL account (raw int 2) was being labeled "CONTEST". Because
+# every downstream consumer (risk-manager.ts, gold-risk-manager.ts) fails
+# closed on anything other than the literal string "DEMO", the PRACTICAL
+# effect of this bug was safety-conservative (it could only ever cause a
+# genuine demo account to be wrongly REFUSED, never a real account to be
+# wrongly ALLOWED) — but it was still wrong, and it was actively affecting
+# this task's own DEMO-verification evidence, so it is fixed here rather
+# than left for later. `executor.py`'s own live order-placement gate
+# (`verify_demo_account`) was NEVER affected by this bug — it compares
+# against the real `MetaTrader5` module's own live constant directly, not
+# against this hardcoded label map, so no order-placement safety check was
+# ever using the wrong mapping.
+_TRADE_MODE_LABELS = {0: "DEMO", 1: "CONTEST", 2: "REAL"}
 
 
 def _trade_mode_label(trade_mode: int | None) -> str | None:
