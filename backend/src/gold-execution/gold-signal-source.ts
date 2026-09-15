@@ -9,11 +9,15 @@
  * and only ever READS v2's exported types/pipeline/replay — it never
  * modifies them, and v2 never imports anything from here.
  *
- * `toGoldSignal` is the pure mapping (heavily unit-tested); `runGoldWatchCycle`
- * is the thin, DB-touching orchestration (loads data, advances replay state,
- * finds newly-observed eligible in-window events not yet acted on, and
- * calls the coordinator once per such event) — kept separate specifically
- * so the mapping logic can be tested without needing a live database.
+ * `toGoldSignal`/`toGoldSignalFromLiveTouch` are pure mappings (heavily
+ * unit-tested); `runGoldWatchCycle` is the thin, DB-touching orchestration.
+ * It advances v2's M1 replay every cycle (frozen — level FORMATION and
+ * anything the live-quote layer's sampling can't see), but that path is
+ * audit-only: an M1-discovered touch is, by construction, already in the
+ * past, so it is only ever logged (`orderStatus: NONE`) and consumed, NEVER
+ * submitted as an order. The live-quote layer (`gold-live-touch.ts`) run
+ * afterward, against the exact state the M1 pass just advanced, is the ONLY
+ * path that can produce a real submission — see its own header for why.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,17 +34,19 @@ import {
   LiveTouchEvent,
   LiveTouchTrackerState,
 } from './gold-live-touch';
-import { GOLD_LIVE_OBSERVATION_MAX_GAP_SECONDS, GOLD_LIVE_TICK_MAX_STALENESS_SECONDS, GOLD_POINT_SIZE } from './gold-safety-constants';
+import { GOLD_LIVE_OBSERVATION_MAX_GAP_SECONDS, GOLD_LIVE_TICK_MAX_STALENESS_SECONDS, GOLD_POINT_SIZE, GOLD_SYMBOL } from './gold-safety-constants';
 
 /**
- * A signal is only ever derived from an event that:
- * - was actually observed live by THIS watch cycle machinery (`observedAtT`
- *   is set — never a historical/backfilled event, per the task's explicit
- *   "do not execute stale historical touches as new live orders" rule),
- * - is `eligible` (already passed formation/window/gap/ambiguity checks),
- * - fell inside the entry window (`inWindow === true`), and
- * - has not already been acted on in a previous cycle (tracked by
- *   `actedEventIds`, persisted in `GoldWatchState`).
+ * Identifies an M1-replay-discovered event worth recording for audit —
+ * NOT "worth submitting as an order." A closed M1 candle is, by definition,
+ * already in the past by the time it is processed, so this path (see
+ * `runGoldWatchCycle` below) only ever LOGS these (audit-only, `orderStatus:
+ * NONE`) and marks them acted-on; it never calls the coordinator and never
+ * queues a real order. The live-quote layer (`gold-live-touch.ts`) is the
+ * ONLY path that can produce a real submission — this function's name
+ * predates that split and is kept for the events it still identifies
+ * (M1-visible, eligible, in-window, not yet acted on), not for what used to
+ * happen to them.
  */
 export function isActionableLiveEvent(event: FirstReturnEvent, actedEventIds: ReadonlySet<string>): boolean {
   return (
@@ -152,10 +158,21 @@ export class GoldWatchStore {
 }
 
 export interface GoldWatchCycleResult {
-  /** M1-replay-derived events acted on this cycle (secondary/backstop path — see gold-live-touch.ts's header for why). */
+  /**
+   * M1-replay-discovered events this cycle — NEVER submitted as an order.
+   * Each is recorded as an audit-only `AutonomousDecision` row
+   * (`orderStatus: NONE`) via `auditOnlyDecisionIds` below and marked
+   * acted-on, purely so the opportunity is consumed (never later mistaken
+   * for a fresh live touch) and there is a durable record of it — the
+   * live-quote layer (`gold-live-touch.ts`) is the only path that can ever
+   * produce a real submission. A closed M1 candle is, by definition,
+   * already in the past by the time it's processed; queuing an order from
+   * it would always be a delayed order, which the friend's actual rule
+   * (first touch AS IT HAPPENS) does not allow.
+   */
   actionableEvents: FirstReturnEvent[];
-  results: Array<{ event: FirstReturnEvent; signal: GoldSignal; coordinatorResult: Awaited<ReturnType<GoldExecutionCoordinatorService['evaluate']>> }>;
-  skippedNoExecutablePrice: FirstReturnEvent[];
+  /** One audit-only `AutonomousDecision` id per event in `actionableEvents`, in the same order. */
+  auditOnlyDecisionIds: string[];
   /** Live-quote-detected touches acted on this cycle (primary path). */
   liveTouchEvents: LiveTouchEvent[];
   liveTouchResults: Array<{ event: LiveTouchEvent; signal: GoldSignal; coordinatorResult: Awaited<ReturnType<GoldExecutionCoordinatorService['evaluate']>> }>;
@@ -205,21 +222,30 @@ export async function runGoldWatchCycle(params: {
     const actedIds = new Set(state.actedEventIds);
     const actionableEvents = run.events.filter((e) => isActionableLiveEvent(e, actedIds));
 
-    const results: GoldWatchCycleResult['results'] = [];
-    const skippedNoExecutablePrice: FirstReturnEvent[] = [];
-
+    // Audit-only: NEVER calls the coordinator, NEVER fetches a live price, NEVER queues an
+    // order. A closed M1 candle is already in the past by construction — see this interface's
+    // own doc comment on `actionableEvents` for why a real submission from here would always be
+    // a delayed order, which the friend's rule does not allow.
+    const auditOnlyDecisionIds: string[] = [];
     for (const event of actionableEvents) {
-      const direction = event.direction === 'BUY' ? 'BUY' : 'SELL';
-      const price = await getExecutablePrice(direction);
-      if (price === null) {
-        skippedNoExecutablePrice.push(event);
-        continue; // never invent an unavailable executable price
-      }
-      const signal = toGoldSignal(event, price);
-      const context = await buildContext();
-      const coordinatorResult = await coordinator.evaluate(signal, { ...context, accountId, nowT });
-      results.push({ event, signal, coordinatorResult });
-      actedIds.add(event.id); // marked acted-on regardless of approval — an event is a one-shot opportunity, per the friend's "first return consumes it" rule
+      const row = await prisma.autonomousDecision.create({
+        data: {
+          accountId,
+          symbol: GOLD_SYMBOL,
+          action: event.direction === 'BUY' ? 'OPEN_BUY' : 'OPEN_SELL',
+          source: 'RULES_ONLY',
+          entryPrice: event.levelPrice / 100,
+          stopLoss: null,
+          takeProfit: null,
+          reasoning: `M1 replay discovered first-return event ${event.id}, level ${event.levelId} (${event.role}), generation ${event.generation}, touch kind ${event.kind} — a closed M1 candle is already in the past; the live-quote layer (gold-live-touch.ts) is the only path that submits a real order. Recorded for audit and consumed, never queued as a delayed live order.`,
+          inputSnapshot: { event } as any,
+          riskManagerApproved: false,
+          riskManagerRejectionReason: 'M1-discovered touch — audit-only by design, never submitted regardless of age or price.',
+          orderStatus: 'NONE',
+        },
+      });
+      auditOnlyDecisionIds.push(row.id);
+      actedIds.add(event.id); // marked acted-on regardless — an event is a one-shot opportunity, per the friend's "first return consumes it" rule
     }
 
     // Live-quote layer — runs against run.state.levels AFTER the M1 layer above has already
@@ -265,8 +291,7 @@ export async function runGoldWatchCycle(params: {
     });
     return {
       actionableEvents,
-      results,
-      skippedNoExecutablePrice,
+      auditOnlyDecisionIds,
       liveTouchEvents: liveDetection.events,
       liveTouchResults,
       liveTouchOutsideWindow,

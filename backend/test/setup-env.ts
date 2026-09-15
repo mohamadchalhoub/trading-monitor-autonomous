@@ -17,3 +17,14 @@ config({ path: resolve(__dirname, '../.env.test'), override: true });
 // default; a test that specifically exercises kill-switch behavior overrides this further in its
 // own beforeEach (see test/autonomous/kill-switch.spec.ts).
 process.env.AUTONOMOUS_KILL_SWITCH_PATH = join(mkdtempSync(join(tmpdir(), 'test-kill-switch-')), 'KILL_SWITCH');
+
+// `AppModule`'s `ConfigModule.forRoot({ isGlobal: true })` loads the REAL `backend/.env` (not
+// `.env.test`) the first time it runs inside a test file (via `createTestApp()`), using dotenv's
+// default `override: false` — so it only fills in keys not already set, but for any key `.env.test`
+// above didn't define, whatever this repo's own real `.env` currently has for it silently becomes
+// this test process's value. `GOLD_EXECUTION_MODE` is a real example: this deployment's `.env` was
+// set to `DEMO` once gold DEMO was activated operationally, which then leaked into a test
+// asserting the OFF default. Setting it explicitly here (running BEFORE ConfigModule ever loads
+// `.env`) means ConfigModule's later, non-destructive load leaves it alone — tests get a
+// deterministic default regardless of this repo's own current operational `.env` state.
+process.env.GOLD_EXECUTION_MODE = 'OFF';

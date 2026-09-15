@@ -67,15 +67,8 @@ async function main() {
       mode,
       actionableEventCount: result.actionableEvents.length,
       actionableEventIds: result.actionableEvents.map((e) => e.id),
-      skippedNoExecutablePriceCount: result.skippedNoExecutablePrice.length,
-      results: result.results.map((r) => ({
-        eventId: r.event.id,
-        signal: r.signal,
-        coordinatorMode: r.coordinatorResult.mode,
-        verdictApproved: r.coordinatorResult.verdict?.approved ?? null,
-        verdictRejectionReason: r.coordinatorResult.verdict?.rejectionReason ?? null,
-        queuedDecisionId: r.coordinatorResult.queuedDecisionId,
-      })),
+      // Audit-only — see GoldWatchCycleResult's own doc comment. Never an order.
+      auditOnlyDecisionIds: result.auditOnlyDecisionIds,
       liveTouchEventCount: result.liveTouchEvents.length,
       liveTouchOutsideWindowCount: result.liveTouchOutsideWindow.length,
       liveTouchSkippedNoExecutablePriceCount: result.liveTouchSkippedNoExecutablePrice.length,
