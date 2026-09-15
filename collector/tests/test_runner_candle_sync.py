@@ -28,6 +28,7 @@ class _FakeConfig:
     candle_sync_interval_seconds: int = 300
     candle_initial_sync_days: int = 730
     autonomous_execution_enabled: bool = False
+    mt5_broker_timezone: str = "UTC"  # UTC makes stored_candle_time_to_true_utc a no-op, isolating these tests' own overlap-arithmetic assertions from the timezone-conversion fix itself (covered separately below)
 
 
 def _app(config: _FakeConfig) -> tuple[CollectorApp, MagicMock, MagicMock]:
@@ -146,6 +147,28 @@ def test_incremental_sync_uses_cursor_minus_overlap():
     date_from = client.get_candles.call_args_list[0].args[2]
     # 3 bars of M5 = 15 minutes overlap (CANDLE_SYNC_OVERLAP_BARS=3 in runner.py)
     assert date_from == datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc) - timedelta(minutes=15)
+
+
+def test_incremental_sync_converts_the_stored_broker_mislabeled_cursor_to_true_utc_first():
+    """Regression test for a live-found bug: the stored cursor
+    (`latestOpenTime`) is the broker-wall-clock-mislabeled-as-UTC value, not
+    true UTC. Computing date_from directly from it (treating it as already
+    true UTC) produced a date_from roughly the broker's own UTC offset
+    AHEAD of true now — an inverted range that MT5 answers with zero bars,
+    forever, every cycle. With a broker offset of +3h (EEST) and a stored
+    cursor of 12:44 UTC (mislabeled), the correct true-UTC anchor is 09:44,
+    so date_from (minus 15min overlap for M5's 3-bar window) must be
+    09:29 — NOT 12:29 (what the pre-fix code would have produced).
+    """
+    config = _FakeConfig(candle_symbols=("XAUUSD",), candle_timeframes=("M5",), mt5_broker_timezone="EET")  # this deployment's real broker timezone; +3h (EEST) in September
+    app, client, api = _app(config)
+    api.get_latest_candle_time.return_value = {"latestOpenTime": "2026-09-15T12:44:00.000Z"}
+    client.get_candles.return_value = []
+
+    app._sync_one_candle_series("XAUUSD", "M5")
+
+    date_from = client.get_candles.call_args_list[0].args[2]
+    assert date_from == datetime(2026, 9, 15, 9, 29, tzinfo=timezone.utc)
 
 
 def test_large_date_range_is_fetched_in_bounded_chunks():

@@ -753,6 +753,27 @@ class Mt5Client:
         }
 
 
+def stored_candle_time_to_true_utc(raw_mislabeled_utc: datetime, broker_timezone: str) -> datetime:
+    """Converts a STORED `historical_candles.open_time` value (the raw,
+    broker-wall-clock-mislabeled-as-UTC epoch `get_candles()` deliberately
+    leaves uncorrected on the way in — see that function's own docstring)
+    into true UTC, for a CONSUMER that needs a genuine UTC instant to reason
+    with (e.g. computing a correct incremental-sync query bound). This is
+    the exact same reinterpretation `confirmed-retest-v2/time.ts`'s
+    `wallClockToUtc` already performs on the TypeScript side for research
+    reads — this is its Python-side counterpart, added specifically because
+    `runner.py`'s own incremental candle-sync cursor was found doing the
+    naive (wrong) thing: treating the stored cursor as if it were already
+    true UTC when computing its next `date_from`, which silently produced a
+    `date_from` roughly `broker_timezone`'s own UTC offset AHEAD of the true
+    current time — an inverted (from > to) query range that `copy_rates_range`
+    answers with zero rows, forever, every cycle, for every timeframe.
+    """
+    epoch_seconds = int(raw_mislabeled_utc.timestamp())
+    true_utc_iso = _mt5_time_to_utc(epoch_seconds, broker_timezone)
+    return datetime.fromisoformat(true_utc_iso)
+
+
 def _mt5_time_to_utc(epoch_seconds: int | None, broker_timezone: str) -> str | None:
     """Converts a position/deal `time` field to a true UTC ISO timestamp.
 

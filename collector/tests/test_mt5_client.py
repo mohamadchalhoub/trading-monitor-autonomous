@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app import mt5_client as mt5_client_module
-from app.mt5_client import Mt5Client, _mt5_time_to_utc, _utc_to_mt5_epoch
+from app.mt5_client import Mt5Client, _mt5_time_to_utc, _utc_to_mt5_epoch, stored_candle_time_to_true_utc
 
 
 class _FakeConfig:
@@ -141,6 +141,21 @@ def test_mt5_time_to_utc_uses_winter_offset_across_a_dst_boundary():
     # a hardcoded fixed offset — January is outside EU summer time.
     winter_epoch = int(datetime(2026, 1, 15, 10, 0, 0, tzinfo=timezone.utc).timestamp())
     assert _mt5_time_to_utc(winter_epoch, "EET") == "2026-01-15T08:00:00+00:00"
+
+
+def test_stored_candle_time_to_true_utc_corrects_a_stored_open_time():
+    # The exact live-observed value found while diagnosing the candle-sync
+    # stall: a stored (broker-mislabeled) open_time of 12:44 UTC is really
+    # 09:44 true UTC in EEST (+3h) — matching this session's own live
+    # measurement, not a hypothetical.
+    raw = datetime(2026, 9, 15, 12, 44, 0, tzinfo=timezone.utc)
+    result = stored_candle_time_to_true_utc(raw, "EET")
+    assert result == datetime(2026, 9, 15, 9, 44, 0, tzinfo=timezone.utc)
+
+
+def test_stored_candle_time_to_true_utc_is_a_no_op_in_utc():
+    raw = datetime(2026, 9, 15, 12, 44, 0, tzinfo=timezone.utc)
+    assert stored_candle_time_to_true_utc(raw, "UTC") == raw
 
 
 def test_mt5_time_to_utc_uses_summer_offset_across_a_dst_boundary():

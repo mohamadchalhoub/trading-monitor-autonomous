@@ -33,7 +33,7 @@ from app.formatting import (
     format_deals_table,
     format_positions_table,
 )
-from app.mt5_client import Mt5Client
+from app.mt5_client import Mt5Client, stored_candle_time_to_true_utc
 
 logger = logging.getLogger("collector.runner")
 
@@ -535,8 +535,19 @@ class CollectorApp:
 
         now = datetime.now(tz=timezone.utc)
         if latest:
+            # `latest` (from `historical_candles.open_time`) is the STORED,
+            # broker-wall-clock-mislabeled-as-UTC value (see get_candles()'s
+            # own docstring) — NOT true UTC. Found live: computing date_from
+            # directly from it (as this line used to) produced a date_from
+            # roughly this broker's own UTC offset AHEAD of true `now`, an
+            # inverted (from > to) range that copy_rates_range answers with
+            # zero rows every cycle, silently stalling incremental sync for
+            # every symbol/timeframe using this path. Converted to true UTC
+            # first, the same way confirmed-retest-v2/time.ts's
+            # wallClockToUtc already does on the read side.
+            true_utc_latest = stored_candle_time_to_true_utc(_parse_iso(latest), self._config.mt5_broker_timezone)
             bar_duration = CANDLE_DURATION_BY_TIMEFRAME[timeframe]
-            date_from = _parse_iso(latest) - (bar_duration * CANDLE_SYNC_OVERLAP_BARS)
+            date_from = true_utc_latest - (bar_duration * CANDLE_SYNC_OVERLAP_BARS)
             logger.info("candle sync (incremental)", extra={"symbol": symbol, "timeframe": timeframe, "date_from": date_from.isoformat()})
         else:
             initial_sync_days = max(

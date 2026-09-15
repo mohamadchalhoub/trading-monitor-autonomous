@@ -60,6 +60,7 @@ class _FakeConfig:
     candle_initial_sync_days: int = 1000
     autonomous_execution_enabled: bool = False
     gold_execution_enabled: bool = False
+    mt5_broker_timezone: str = "UTC"  # UTC makes the candle-sync timezone conversion a no-op for tests unrelated to it
     candle_timeframes_by_symbol: dict = field(default_factory=lambda: {"XAUUSD": ("M1", "H4")})
 
 
