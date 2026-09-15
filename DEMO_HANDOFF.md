@@ -696,19 +696,40 @@ item 7 below).
    broker failure never reaches CLOSED, duplicate-request handling, ticket/symbol scoping). NOT
    runtime/broker-event-verified — no real MT5 close has been observed.
 
-3. Protection remediation now actually acts, not just alerts. On a NEW missing-protection
-   incident, `GoldProtectionMonitorService` immediately queues a close via the same
-   `GoldCloseExecutionService` from item 2 — but only for positions matching this strategy's own
-   MT5 magic number (a critical fix made mid-session: the first draft would have auto-closed ANY
-   unprotected XAUUSD position, including a manual trade). A non-matching or missing magic still
-   ALERTS but does not auto-close. The originally-discussed two-step policy ("re-request SL/TP
-   first, close only after bounded retries fail") was NOT built — that needs a new MT5
-   position-modify (`TRADE_ACTION_SLTP`) executor method and a third poll route, comparable in
-   size to item 2's build but not done this session. What IS implemented (immediate close) is
-   stricter than the two-step policy, not weaker. Unit-tested, including the two
-   ownership-scoping cases and a "remediation queuing itself fails -> CRITICAL alert, never
-   silent" case (13 tests, `gold-protection-monitor.spec.ts`). Simulated-broker-verified via the
-   same close-execution e2e suite (item 2) since remediation reuses that exact path.
+3. CORRECTED — protection remediation is now genuinely "restore-then-close," matching the
+   originally specified policy, NOT a direct-close substitute. An earlier round of this session
+   implemented immediate-close-on-missing-protection and described it as "stricter, not weaker"
+   than the two-step policy — the user correctly pointed out that mischaracterized it: it was a
+   DIFFERENT policy, not a safer version of the same one. This has been corrected:
+   - On a NEW missing-protection incident (still strictly magic-number-scoped to this strategy's
+     own positions — that ownership fix from the earlier round is unchanged and still correct),
+     `GoldProtectionMonitorService` now queues a `GoldProtectionRestoreRequest` via the new
+     `GoldProtectionRestoreService`, asking the collector to re-attach SL/TP at the FROZEN
+     `GOLD_TP_SL_POINTS` distance from the position's own entry price — the exact same formula
+     every fill already uses (`gold-protection-restore.service.ts`'s `computeFrozenProtection`).
+   - The collector executes it via a new `Executor.modify_protection` (MT5 `TRADE_ACTION_SLTP`,
+     `executor.py`) and reports back through a new poll/report pair
+     (`GET/POST /collector/:accountId/gold-execution/restore-protection-request...`).
+   - A FAILED attempt with retries remaining queues a fresh attempt (poll-cycle-driven backoff,
+     consistent with every other retry in this codebase — no sleep-based loop invented). Bounded
+     at 3 attempts (`GoldProtectionRestoreRequest.maxAttempts`).
+   - Only after 3 consecutive FAILED attempts does `GoldExecutionController
+     .postRestoreProtectionResult` fall back to the existing close-position path from item 2 —
+     still magic-scoped, reading the live Position row's own side/volume, never trusted from the
+     request.
+   - A successful restore (at any attempt) sends `PROTECTION_RESTORED` and stops — no close ever
+     queued.
+   Unit-tested (`gold-protection-monitor.spec.ts`, 12 tests) and integration-tested end-to-end
+   with SIMULATED broker responses covering all three real branches: restore succeeds on attempt
+   1; restore succeeds on attempt 2 after attempt 1 fails; restore fails all 3 attempts and THEN
+   (only then) a close request is created (`gold-protection-restore-e2e.spec.ts`, 3 tests).
+   Python-unit-tested (`test_executor_modify_protection.py` 4 tests,
+   `test_runner_gold_restore_protection.py` 6 tests). A real test-isolation bug was found and
+   fixed while building this: `test/helpers/db.ts`'s `resetDatabase()` never cleared
+   `GoldTelegramNotification`/`GoldCloseRequest`/`GoldProtectionRestoreRequest` between tests,
+   so a leftover row from an earlier test run could silently make a fresh incident look
+   already-handled — now fixed, all three tables are cleared every test.
+   NOT runtime/broker-event-verified — no real MT5 modify-position or close has been observed.
 
 4. Closure notifications are now magic-scoped, not just symbol-scoped, and report BOTH per-deal
    and total-position net P&L. `GoldClosureReconciliationService` reads `raw.magic` from the MT5

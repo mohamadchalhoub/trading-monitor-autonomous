@@ -434,6 +434,33 @@ class Executor:
             result = self._mt5.order_send(request)
             return self._result_from_response(result)
 
+    def modify_protection(self, *, ticket: int, stop_loss: float, take_profit: float, symbol: str = DEFAULT_SYMBOL) -> OrderResult:
+        """Re-attaches SL/TP to an EXISTING position at the EXACT prices the
+        caller supplies. Task item 3 ("restore-then-close") — the RESTORE
+        half; gold-execution's backend (gold-protection-restore.service.ts's
+        `computeFrozenProtection`) is the ONE place the frozen
+        GOLD_TP_SL_POINTS distance from the position's own entry price is
+        turned into absolute prices, so that formula exists in exactly one
+        language, not duplicated here — this method just sends whatever
+        absolute stop_loss/take_profit it's given. gold-execution's backend
+        falls back to `close_position` above only after this fails a bounded
+        number of times. Uses TRADE_ACTION_SLTP — the MT5 request type for
+        modifying an existing position's stop levels without touching its
+        volume/price, distinct from TRADE_ACTION_DEAL (open/close) used
+        everywhere else in this file."""
+        with self._lock:
+            self.verify_demo_account()
+
+            request = {
+                "action": self._mt5.TRADE_ACTION_SLTP,
+                "symbol": symbol,
+                "position": ticket,
+                "sl": stop_loss,
+                "tp": take_profit,
+            }
+            result = self._mt5.order_send(request)
+            return self._result_from_response(result)
+
     def _build_bracket_request(
         self, *, side: str, volume: float, stop_loss_points: float, take_profit_points: float,
         magic: int, comment: str, deviation_points: int, symbol: str = DEFAULT_SYMBOL, point_size: float = EURUSD_POINT_SIZE,

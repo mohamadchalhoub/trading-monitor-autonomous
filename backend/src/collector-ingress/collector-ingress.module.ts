@@ -11,6 +11,7 @@ import { GoldProtectionMonitorService } from '../gold-execution/gold-protection-
 import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 import { GoldAiSummaryService } from '../gold-execution/gold-ai-summary.service';
 import { GoldCloseExecutionService } from '../gold-execution/gold-close-execution.service';
+import { GoldProtectionRestoreService } from '../gold-execution/gold-protection-restore.service';
 import { AiModule } from '../ai/ai.module';
 
 // AlertsModule (→ RuleEngineService) is imported here per RULE_ENGINE_SPEC.md
@@ -23,6 +24,6 @@ import { AiModule } from '../ai/ai.module';
 @Module({
   imports: [AccountsModule, TradingDataModule, AuthModule, AlertsModule, MarketDataModule, TrendBreakoutModule, AiModule],
   controllers: [CollectorIngressController],
-  providers: [GoldClosureReconciliationService, GoldProtectionMonitorService, GoldTelegramService, GoldAiSummaryService, GoldCloseExecutionService],
+  providers: [GoldClosureReconciliationService, GoldProtectionMonitorService, GoldTelegramService, GoldAiSummaryService, GoldCloseExecutionService, GoldProtectionRestoreService],
 })
 export class CollectorIngressModule {}

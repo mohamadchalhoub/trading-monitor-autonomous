@@ -4,6 +4,14 @@ import { PrismaClient } from '@prisma/client';
 // each test starts from a genuinely empty, known state — repeatable, no
 // ordering dependencies between tests.
 export async function resetDatabase(prisma: PrismaClient): Promise<void> {
+  // Gold execution isolation tables — no FKs to anything else, but must
+  // still be cleared between tests (their absence here was a real test-
+  // isolation bug: leftover rows from an earlier test's ticket/dedupKey
+  // silently changed a LATER test's behavior, e.g. a stale MISSING_PROTECTION
+  // notification row made a fresh incident look already-alerted).
+  await prisma.goldProtectionRestoreRequest.deleteMany();
+  await prisma.goldCloseRequest.deleteMany();
+  await prisma.goldTelegramNotification.deleteMany();
   await prisma.trendBreakoutSlotLock.deleteMany();
   await prisma.trendBreakoutDecision.deleteMany();
   await prisma.trendBreakoutEmergencyIncident.deleteMany();

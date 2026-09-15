@@ -15,6 +15,7 @@ import { GoldControlsController } from './gold-controls.controller';
 import { GoldAiSummaryService } from './gold-ai-summary.service';
 import { GoldNewsService } from './gold-news.service';
 import { GoldCloseExecutionService } from './gold-close-execution.service';
+import { GoldProtectionRestoreService } from './gold-protection-restore.service';
 
 /**
  * Gold (XAUUSD) execution — fully separate module from AutonomousModule
@@ -33,7 +34,7 @@ import { GoldCloseExecutionService } from './gold-close-execution.service';
 @Module({
   imports: [AccountsModule, AuthModule, AiModule, JobsModule],
   controllers: [GoldExecutionController, GoldDashboardController, GoldControlsController],
-  providers: [AutonomousDecisionLoggerService, GoldExecutionCoordinatorService, GoldAccountStateService, GoldPreSendGuardService, GoldTelegramService, GoldRuntimeSettingsService, GoldAiSummaryService, GoldNewsService, GoldCloseExecutionService],
+  providers: [AutonomousDecisionLoggerService, GoldExecutionCoordinatorService, GoldAccountStateService, GoldPreSendGuardService, GoldTelegramService, GoldRuntimeSettingsService, GoldAiSummaryService, GoldNewsService, GoldCloseExecutionService, GoldProtectionRestoreService],
   exports: [GoldExecutionCoordinatorService, GoldAccountStateService, GoldTelegramService, GoldRuntimeSettingsService, GoldAiSummaryService],
 })
 export class GoldExecutionModule {}

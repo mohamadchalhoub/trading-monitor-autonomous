@@ -199,6 +199,7 @@ class CollectorApp:
                     if self._config.gold_execution_enabled:
                         self._poll_and_execute_pending_gold_order()
                         self._poll_and_execute_gold_close_request()
+                        self._poll_and_execute_gold_restore_protection_request()
                 finally:
                     self._mt5_call_lock.release()
 
@@ -524,6 +525,55 @@ class CollectorApp:
             # visibility problem, not a trading-safety one, but it does mean
             # the request row stays stuck as SENT until this is noticed.
             logger.error("failed to report gold close result back to backend", extra={"request_id": request_id, "error": str(exc)})
+
+    def _poll_and_execute_gold_restore_protection_request(self) -> None:
+        """Gold protection-restore — task item 3 ("restore-then-close"), the
+        RESTORE half, symmetric to `_poll_and_execute_gold_close_request`.
+        Calls `executor.modify_protection` (TRADE_ACTION_SLTP) to re-attach
+        SL/TP at the exact price the backend already computed (frozen
+        distance from the position's own entry price — never recomputed
+        here). Reports `ok=True` ONLY on a broker-confirmed success; the
+        backend (not this collector) decides whether a failure means "queue
+        another attempt" or "fall back to close" — this method's only job is
+        to attempt exactly the one claimed request and report what happened.
+        """
+        try:
+            response = self._api.get_gold_restore_protection_request(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("gold restore-protection-request poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        request = response.get("request")
+        if not request:
+            return
+
+        logger.info("gold restore-protection-request claimed, attempting execution", extra={
+            "request_id": request["requestId"], "ticket": request["ticket"],
+            "attempt": request.get("attemptNumber"), "max_attempts": request.get("maxAttempts"),
+        })
+
+        try:
+            result = self._executor.modify_protection(
+                ticket=request["ticket"], stop_loss=request["stopLoss"], take_profit=request["takeProfit"], symbol=request["symbol"],
+            )
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("gold protection-restore execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_gold_restore_protection_result(request["requestId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("gold protection-restore execution result", extra={
+            "request_id": request["requestId"], "ok": result.ok, "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_gold_restore_protection_result(request["requestId"], ok=result.ok, error_message=result.error_message)
+
+    def _report_gold_restore_protection_result(self, request_id: str, *, ok: bool, error_message: str | None = None) -> None:
+        payload: dict = {"ok": ok}
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_gold_restore_protection_result(self._config.collector_account_id, request_id, payload)
+        except ApiClientError as exc:
+            logger.error("failed to report gold restore-protection result back to backend", extra={"request_id": request_id, "error": str(exc)})
 
     def _trade_sync_due(self) -> bool:
         if self._last_trade_sync_at is None:

@@ -479,6 +479,45 @@ model GoldCloseRequest {
   @@map("gold_close_requests")
 }
 
+// Task item 3, corrected — "restore-then-close" protection remediation
+// (NOT direct-close-only, per explicit correction: the original spec is a
+// DIFFERENT policy, not something direct-close approximates). One row per
+// RESTORE ATTEMPT (not one row per incident) — on a FAILED attempt with
+// retries remaining, GoldProtectionRestoreService creates a NEW PENDING row
+// for the next attempt (attemptNumber+1) rather than mutating this one, so
+// the full attempt history stays visible. Restores SL/TP at the frozen
+// GOLD_TP_SL_POINTS distance from the position's own entry price (executor.py's
+// modify_protection, TRADE_ACTION_SLTP) — never a different distance/policy.
+// Only after maxAttempts consecutive FAILED attempts does the backend fall
+// back to GoldCloseRequest (still magic-number-scoped to this strategy).
+enum GoldProtectionRestoreStatus {
+  PENDING
+  SENT
+  RESTORED
+  FAILED
+}
+
+model GoldProtectionRestoreRequest {
+  id             String                      @id @default(uuid())
+  accountId      String                      @map("account_id")
+  symbol         String
+  positionTicket String                      @map("position_ticket")
+  side           String
+  stopLoss       Decimal                     @db.Decimal(18, 6) // the exact price this attempt asked the broker to set
+  takeProfit     Decimal                     @db.Decimal(18, 6)
+  attemptNumber  Int                         @default(1) @map("attempt_number")
+  maxAttempts    Int                         @default(3) @map("max_attempts")
+  status         GoldProtectionRestoreStatus @default(PENDING)
+  requestedAt    DateTime                    @default(now()) @map("requested_at")
+  sentAt         DateTime?                   @map("sent_at")
+  resultError    String?                     @map("result_error")
+  restoredAt     DateTime?                   @map("restored_at")
+
+  @@index([status, requestedAt])
+  @@index([positionTicket, status])
+  @@map("gold_protection_restore_requests")
+}
+
 enum HealthStatusValue {
   OK
   DEGRADED

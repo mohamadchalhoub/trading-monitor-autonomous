@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Logger, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsInt, IsNumber, IsOptional, IsString } from 'class-validator';
 import { AccountsService } from '../accounts/accounts.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CollectorTokenGuard } from '../auth/collector-token.guard';
 import { AutonomousDecisionLoggerService } from '../autonomous/autonomous-decision-logger.service';
 import { ExecutionResultDto } from '../autonomous/dto/execution-result.dto';
@@ -8,6 +9,7 @@ import { GoldPreSendGuardService } from './gold-pre-send-guard.service';
 import { GoldTelegramService } from './gold-telegram.service';
 import { GoldAiSummaryService } from './gold-ai-summary.service';
 import { GoldCloseExecutionService } from './gold-close-execution.service';
+import { GoldProtectionRestoreService } from './gold-protection-restore.service';
 import { GOLD_MAGIC_NUMBER, GOLD_POINT_SIZE, GOLD_SYMBOL, GOLD_VOLUME_LOTS } from './gold-safety-constants';
 
 /** What the collector reports back after attempting a claimed close request (runner.py's OrderResult, over the wire). */
@@ -15,6 +17,12 @@ class GoldCloseResultDto {
   @IsBoolean() ok!: boolean;
   @IsOptional() @IsInt() dealTicket?: number;
   @IsOptional() @IsNumber() closedPrice?: number;
+  @IsOptional() @IsString() errorMessage?: string;
+}
+
+/** What the collector reports back after attempting a claimed protection-restore request (runner.py's OrderResult, over the wire). */
+class GoldRestoreResultDto {
+  @IsBoolean() ok!: boolean;
   @IsOptional() @IsString() errorMessage?: string;
 }
 
@@ -40,6 +48,8 @@ export class GoldExecutionController {
     private readonly goldTelegram: GoldTelegramService,
     private readonly goldAiSummary: GoldAiSummaryService,
     private readonly closeExecution: GoldCloseExecutionService,
+    private readonly protectionRestore: GoldProtectionRestoreService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get('pending-order')
@@ -184,6 +194,95 @@ export class GoldExecutionController {
         `close-failed:${requestId}`,
         `GOLD DEMO — close request FAILED at the broker. request=${requestId} error=${dto.errorMessage ?? 'unknown'}. Position may still be open — verify manually.`,
       );
+    }
+
+    return { ok: true };
+  }
+
+  // --- Protection-restore poll/report — task item 3 ("restore-then-close",
+  // the RESTORE half). Symmetric to the close-request pair above. ---
+
+  @Get('restore-protection-request')
+  async getRestoreProtectionRequest(@Param('accountId', ParseUUIDPipe) accountId: string) {
+    await this.accounts.getOrThrow(accountId);
+    const request = await this.protectionRestore.claimOldestPendingRequest(accountId);
+    if (!request) return { request: null };
+
+    return {
+      request: {
+        requestId: request.id,
+        ticket: Number(request.positionTicket),
+        side: request.side,
+        stopLoss: request.stopLoss.toNumber(),
+        takeProfit: request.takeProfit.toNumber(),
+        symbol: request.symbol,
+        attemptNumber: request.attemptNumber,
+        maxAttempts: request.maxAttempts,
+      },
+    };
+  }
+
+  @Post('restore-protection-request/:requestId/result')
+  async postRestoreProtectionResult(
+    @Param('accountId', ParseUUIDPipe) accountId: string,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: GoldRestoreResultDto,
+  ) {
+    await this.accounts.getOrThrow(accountId);
+    const request = await this.prisma.goldProtectionRestoreRequest.findUnique({ where: { id: requestId } });
+    const { exhausted } = await this.protectionRestore.recordResult(requestId, { ok: dto.ok, errorMessage: dto.errorMessage ?? null });
+
+    if (dto.ok) {
+      void this.goldTelegram.notify(
+        'PROTECTION_RESTORED',
+        `protection-restored:${requestId}`,
+        `GOLD DEMO — protection RESTORED (broker-confirmed). request=${requestId} position=${request?.positionTicket ?? 'n/a'} stopLoss=${request?.stopLoss.toNumber() ?? 'n/a'} takeProfit=${request?.takeProfit.toNumber() ?? 'n/a'}`,
+      );
+      return { ok: true };
+    }
+
+    if (!exhausted) {
+      void this.goldTelegram.notify(
+        'PROTECTION_RESTORE_RETRYING',
+        `protection-restore-retry:${requestId}`,
+        `GOLD DEMO — protection restore attempt failed, retrying. request=${requestId} position=${request?.positionTicket ?? 'n/a'} attempt=${request?.attemptNumber ?? '?'}/${request?.maxAttempts ?? '?'} error=${dto.errorMessage ?? 'unknown'}`,
+      );
+      return { ok: true };
+    }
+
+    // Exhausted — fall back to the close path, still magic-scoped (the live
+    // Position row's own side/volume are used, never trusted from this request).
+    void this.goldTelegram.notify(
+      'PROTECTION_RESTORE_EXHAUSTED',
+      `protection-restore-exhausted:${requestId}`,
+      `GOLD DEMO — protection restore FAILED after ${request?.maxAttempts ?? '?'} attempts for position=${request?.positionTicket ?? 'n/a'} — falling back to close.`,
+    );
+
+    if (request) {
+      const account = await this.prisma.tradingAccount.findFirst({ where: { platform: 'MT5' }, orderBy: { createdAt: 'asc' } });
+      const position = account
+        ? await this.prisma.position.findUnique({
+            where: { accountId_platform_externalPositionId: { accountId: account.id, platform: 'MT5', externalPositionId: request.positionTicket } },
+          })
+        : null;
+      if (account && position && position.status === 'OPEN') {
+        const { duplicate } = await this.closeExecution.requestClose({
+          accountId: account.id, positionTicket: request.positionTicket, side: position.side as 'BUY' | 'SELL', volume: position.volume.toNumber(),
+        });
+        if (!duplicate) {
+          void this.goldTelegram.notify(
+            'PROTECTION_REMEDIATION_CLOSE_REQUESTED',
+            `protection-remediation-fallback:${request.positionTicket}:${Date.now()}`,
+            `GOLD DEMO — remediation close queued after exhausted restore attempts for position=${request.positionTicket}.`,
+          );
+        }
+      } else {
+        void this.goldTelegram.notify(
+          'PROTECTION_REMEDIATION_FAILED',
+          `protection-remediation-fallback-failed:${request.positionTicket}:${Date.now()}`,
+          `GOLD DEMO — CRITICAL: could not queue a remediation close after exhausted restore attempts for position=${request.positionTicket} (position not found or no longer open). Manual intervention required.`,
+        );
+      }
     }
 
     return { ok: true };

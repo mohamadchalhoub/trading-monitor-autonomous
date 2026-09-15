@@ -1,10 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { IncomingPositionDto } from '../collector-ingress/dto/snapshot.dto';
-import { GOLD_MAGIC_NUMBER, GOLD_SYMBOL } from './gold-safety-constants';
+import { GOLD_MAGIC_NUMBER, GOLD_POINT_SIZE, GOLD_SYMBOL } from './gold-safety-constants';
 import { GoldTelegramService } from './gold-telegram.service';
 import { GoldAiSummaryService } from './gold-ai-summary.service';
-import { GoldCloseExecutionService } from './gold-close-execution.service';
+import { GoldProtectionRestoreService } from './gold-protection-restore.service';
 
 /**
  * Task item C — protective SL/TP verification against ACTUAL broker
@@ -24,20 +24,16 @@ import { GoldCloseExecutionService } from './gold-close-execution.service';
  * treated as unprotected, matching how MT5 itself represents "no SL/TP" on
  * a position.
  *
- * REMEDIATION (task item 3 — "do not leave an unprotected position handled
- * only by an alert"): on a NEW missing-protection incident, this
- * immediately queues a `GoldCloseRequest` (the same mechanism the dashboard's
- * close button uses — `GoldCloseExecutionService`), so the position is
- * actually removed from risk, not just alerted on. Reuses the existing
- * close path rather than inventing a different one. NOTE: the originally
- * discussed two-step policy ("re-request SL/TP at the frozen distance
- * first, close only after bounded retries fail") is NOT implemented — that
- * would require a new MT5 position-modify (TRADE_ACTION_SLTP) executor
- * method and a third collector poll route, symmetric in size to the
- * close-request path but not built this session (named explicitly as a gap,
- * not hidden). What IS implemented — immediate close on confirmed missing
- * protection — is a stricter, not weaker, remediation than the two-step
- * policy would have been.
+ * REMEDIATION (task item 3, corrected — "restore-then-close," NOT
+ * direct-close-only): on a NEW missing-protection incident, this queues a
+ * `GoldProtectionRestoreRequest` (`GoldProtectionRestoreService`) to
+ * re-attach SL/TP at the FROZEN distance from the position's own entry
+ * price — the same mechanism every fill already uses. Only after that
+ * restore path is exhausted (bounded retries, all failed — decided by
+ * `GoldExecutionController.postRestoreProtectionResult`, which then falls
+ * back to `GoldCloseExecutionService`) is the position actually closed.
+ * This class itself never calls close directly; it only ever starts the
+ * restore attempt.
  *
  * Transition-only alerting (not a resend every ~10s while unprotected):
  * reads the most recent `GoldTelegramNotification` row for this position
@@ -56,7 +52,7 @@ export class GoldProtectionMonitorService {
     private readonly prisma: PrismaService,
     private readonly goldTelegram: GoldTelegramService,
     private readonly goldAiSummary: GoldAiSummaryService,
-    private readonly closeExecution: GoldCloseExecutionService,
+    private readonly protectionRestore: GoldProtectionRestoreService,
   ) {}
 
   async checkPositions(accountId: string, positions: IncomingPositionDto[]): Promise<void> {
@@ -104,27 +100,31 @@ export class GoldProtectionMonitorService {
         return;
       }
 
-      // Remediation: immediately queue a close for this position — see this
-      // class's own header comment on why "close" rather than "re-request
-      // SL/TP first." requestClose() is itself dedup'd (no duplicate active
-      // request created if one already exists for this ticket).
+      // Remediation, corrected: queue a RESTORE attempt first — never a
+      // direct close. requestRestore() computes the target SL/TP at the
+      // frozen GOLD_TP_SL_POINTS distance from the position's own entry
+      // price (same formula every fill uses). The collector executes it via
+      // executor.py's modify_protection (TRADE_ACTION_SLTP); only after
+      // GoldExecutionController.postRestoreProtectionResult sees this
+      // exhaust its bounded retries does anything fall back to closing.
       try {
-        const { request, duplicate } = await this.closeExecution.requestClose({
+        const { id: restoreRequestId } = await this.protectionRestore.requestRestore({
           accountId,
           positionTicket: positionId,
           side: position.side,
-          volume: position.volume,
+          entryPrice: position.openPrice,
+          goldPointSize: GOLD_POINT_SIZE,
         });
         const remediationText =
-          `GOLD DEMO — REMEDIATION: closing unprotected position=${positionId} (request=${request.id}${duplicate ? ', already queued' : ''}). ` +
-          `Queued for the collector's next poll — will confirm once the broker responds.`;
-        await this.goldTelegram.notify('PROTECTION_REMEDIATION_CLOSE_REQUESTED', `protection-remediation:${positionId}:${Date.now()}`, remediationText);
+          `GOLD DEMO — REMEDIATION: requesting protection restore for unprotected position=${positionId} (request=${restoreRequestId}). ` +
+          `Queued for the collector's next poll — will retry (bounded) before falling back to close.`;
+        await this.goldTelegram.notify('PROTECTION_RESTORE_REQUESTED', `protection-restore-request:${positionId}:${Date.now()}`, remediationText);
       } catch (err) {
-        this.logger.error(`remediation close-request failed for position ${positionId}: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.error(`remediation restore-request failed for position ${positionId}: ${err instanceof Error ? err.message : String(err)}`);
         await this.goldTelegram.notify(
           'PROTECTION_REMEDIATION_FAILED',
           `protection-remediation-failed:${positionId}:${Date.now()}`,
-          `GOLD DEMO — CRITICAL: could not queue a remediation close for unprotected position=${positionId}: ${err instanceof Error ? err.message : String(err)}. Manual intervention required.`,
+          `GOLD DEMO — CRITICAL: could not queue a protection restore for unprotected position=${positionId}: ${err instanceof Error ? err.message : String(err)}. Manual intervention required.`,
         );
       }
     } else if (isProtected && lastKnownMissing) {

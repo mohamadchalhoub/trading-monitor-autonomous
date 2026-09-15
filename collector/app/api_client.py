@@ -130,6 +130,14 @@ class ApiClient:
     def post_gold_close_result(self, account_id: str, request_id: str, result: dict[str, Any]) -> dict[str, Any]:
         return self._post(f"/collector/{account_id}/gold-execution/close-request/{request_id}/result", result)
 
+    # Gold protection-restore — task item 3 ("restore-then-close"): the
+    # RESTORE half, symmetric to the close-request pair above.
+    def get_gold_restore_protection_request(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/gold-execution/restore-protection-request")
+
+    def post_gold_restore_protection_result(self, account_id: str, request_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/gold-execution/restore-protection-request/{request_id}/result", result)
+
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         try:
