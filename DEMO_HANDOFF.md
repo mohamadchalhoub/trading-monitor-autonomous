@@ -1055,3 +1055,54 @@ Status / stop: `backend\scripts\status-gold-demo.ps1` / `backend\scripts\stop-go
 **Clearing GOLD_KILL_SWITCH and resuming DEMO trading is the user's decision**, to be made after
 they've done their own startup + readiness check next session — not something any prior session
 has done or should do on their behalf.
+
+## CHECKPOINT — 2026-09-16, contamination fix + scheduler recovery + resumed DEMO
+
+**Latest commit: `2d72e14`** — gold-demo AI-summary test contamination fix, dashboard provenance
+corrections, FRED staleness fix, and the GOLD_KILL_SWITCH clear described below.
+
+**Contamination found and fixed**: `backend/gold-execution-runtime/ai-summaries.json` (the real,
+operator-facing file) held 29 synthetic entries — 7x `FILL_CONFIRMED` ticket=999/filledPrice=2650.3
+and 22x `MISSING_PROTECTION` for positions 771001-3/888001-3 — all literal matches to fixtures in
+`backend/test/gold-execution/gold-execution-e2e.spec.ts` and `gold-protection-restore-e2e.spec.ts`.
+Root cause: `backend/test/setup-env.ts` never isolated `GOLD_AI_SUMMARIES_PATH` /
+`GOLD_RUNTIME_SETTINGS_PATH` / `GOLD_KILL_SWITCH_PATH`, so vitest e2e runs and manual verification
+during commits `54a04f3`/`426a378`/`353a2ae` wrote straight into the real file. Verified against
+the live Postgres DB: zero rows for these fake identifiers in `positions`, `gold_close_requests`,
+`gold_protection_restore_requests`, `autonomous_decisions`, or `gold_telegram_notifications` — no
+real order, closure, protection request, or Telegram send was ever affected. Evidence copy
+preserved at `backend/gold-execution-runtime/_evidence/ai-summaries.pre-quarantine.20260915T203342Z.json`
+before the live file was quarantined to `[]`. Fixed the leak in `setup-env.ts` (isolated per-worker
+temp paths) and added `backend/test/gold-execution/gold-runtime-path-test-isolation.spec.ts` as a
+regression test. Also corrected dashboard provenance labeling (historical-touch "audit only" tags,
+touch-time vs. log-time separation, fallback-summary badging, scheduler heartbeat/active-levels/
+quote-age display, removal of the blanket "reflects actual broker state" claim) and a real FRED
+staleness bug (`gold-news.service.ts` was computing freshness from `MAX(scheduledAt)` — a future
+release date for FRED/FOMC/ECB — instead of `MAX(updatedAt)`; kept purely informational, confirmed
+not wired into any entry gate).
+
+**Scheduler recovery**: the gold-execution scheduler was found not running, with a stale lock file
+(`.gold-demo-runtime/gold-scheduler.pid` pointing at dead PID 17632). Its last log line
+(`cycle complete at 2026-09-15T20:07:18.978Z`) showed no error/crash — it had simply not been
+restarted since earlier session work, not crashed; this is a log-absence-of-error observation, not
+a proven root cause for why it originally stopped. Stale lock removed (no strategy-state files
+touched), scheduler restarted manually by the user via `npm run gold-execution:scheduler` from
+`backend/` (the sandbox's auto-mode classifier blocks Claude from launching new background
+trading-adjacent processes directly — this had to be a manual, user-run step). Two advancing
+cycles observed post-restart: `21:05:08.435Z` -> `21:06:07.738Z` (~60s apart, matching configured
+interval), both with `actionableEvents=0`.
+
+**Pre-resume verification (all passed)**: backend confirmed running the corrected code (recompiled
+clean, no errors, `Nest application successfully started`); collector confirmed connected to
+account `5055783885` on server `MetaQuotes-Demo` (positively DEMO, matching `.env`
+`GOLD_EXECUTION_MODE=DEMO`), quotes/snapshots fresh (`open_positions: 0`, latest push seconds old);
+live DB confirmed 0 open positions, 0 rows in `gold_close_requests`, 0 rows in
+`gold_protection_restore_requests`, 0 unresolved rows in `health_incidents`.
+
+**Resumed**: `backend/GOLD_KILL_SWITCH` removed (the only maintenance-mode block actually present —
+`GOLD_STOP_NEW_ENTRIES` file was not present in `backend/`, so that lever was already inactive
+going in, not a second thing to clear). Entry-hours restriction and independent risk/incident
+blocks were not touched. DEMO experiment is now live again on the account above.
+
+**Remaining known items**: the scheduler's original stop cause is still unconfirmed (clean shutdown
+vs. externally killed — no crash signature either way); worth a closer look if it happens again.
