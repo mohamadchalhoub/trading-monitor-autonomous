@@ -20,7 +20,11 @@ import { GoldWatchStore, runGoldWatchCycle } from '../src/gold-execution/gold-si
 async function main() {
   const prisma = new PrismaClient();
   try {
-    const account = await prisma.tradingAccount.findFirst({ orderBy: { createdAt: 'asc' } });
+    // Gold trades on MT5 only — explicit platform filter, NOT "first
+    // created" (this deployment holds an XTB account too; picking the
+    // wrong one was a real bug found live during this task's own
+    // verification pass — see the trade_mode-mapping-fix commit).
+    const account = await prisma.tradingAccount.findFirst({ where: { platform: 'MT5' }, orderBy: { createdAt: 'asc' } });
     if (!account) {
       console.log(JSON.stringify({ error: 'no trading account found — nothing to evaluate' }));
       return;

@@ -37,9 +37,14 @@ export class GoldDashboardController {
     const stopNewEntriesActive = isStopNewEntriesActive();
     const killSwitchActive = isKillSwitchActive();
 
-    // Single-account convenience read — same convention this dashboard
-    // family already uses elsewhere (no multi-tenant UI exists yet).
-    const account = await this.prisma.tradingAccount.findFirst({ orderBy: { createdAt: 'asc' } });
+    // Gold trades on MT5 only — this deployment holds more than one
+    // TradingAccount row (an XTB account exists alongside the MT5 one), so
+    // "first created" is NOT a safe way to pick "the" account (found live,
+    // the hard way, while verifying trade_mode: an earlier version of this
+    // query picked the XTB account, which has no snapshots at all, instead
+    // of the actual MT5 MetaQuotes-Demo account). Explicit platform filter
+    // instead.
+    const account = await this.prisma.tradingAccount.findFirst({ where: { platform: 'MT5' }, orderBy: { createdAt: 'asc' } });
 
     const eurusdBanner = {
       strategy: 'EURUSD (friend\'s legacy 2024 rules)',
