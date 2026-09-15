@@ -55,12 +55,16 @@ export class GoldAccountStateService {
   }
 
   async resolveAccountRiskInfo(accountId: string): Promise<GoldAccountRiskInfo> {
-    const snapshot = await this.prisma.accountSnapshot.findFirst({
-      where: { accountId },
-      orderBy: { capturedAt: 'desc' },
-    });
+    const [snapshot, account, symbolMeta] = await Promise.all([
+      this.prisma.accountSnapshot.findFirst({ where: { accountId }, orderBy: { capturedAt: 'desc' } }),
+      this.prisma.tradingAccount.findUnique({ where: { id: accountId } }),
+      this.prisma.symbolMetadata.findUnique({ where: { symbol: GOLD_SYMBOL } }),
+    ]);
     const tradeMode: GoldAccountTradeMode = (snapshot?.tradeMode as GoldAccountTradeMode | undefined) ?? 'REAL';
     const equity = snapshot ? snapshot.equity.toNumber() : 0;
+    const accountCurrency = account?.currency ?? 'EUR'; // fails closed to a real currency, never blank — if wrong, the conversion-rate lookup below will simply fail to find a rate and reject rather than silently misprice risk
+    const profitCurrency = symbolMeta?.profitCurrency ?? 'USD';
+    const profitCurrencyToAccountCurrencyRate = await this.resolveConversionRate(profitCurrency, accountCurrency);
 
     // Combined open risk from any OTHER currently-open position this
     // account holds (not just gold) — approximated here as each position's
@@ -97,7 +101,38 @@ export class GoldAccountStateService {
     const peakEquity = recentSnapshots.length > 0 ? Math.max(...recentSnapshots.map((s) => s.equity.toNumber())) : equity;
     const currentDrawdownPct = peakEquity > 0 ? Math.max(0, ((peakEquity - equity) / peakEquity) * 100) : 0;
 
-    return { tradeMode, equity, existingCombinedRiskAmount, todaysLossAmount, currentDrawdownPct };
+    return {
+      tradeMode, equity, accountCurrency, profitCurrency, profitCurrencyToAccountCurrencyRate,
+      existingCombinedRiskAmount, todaysLossAmount, currentDrawdownPct,
+    };
+  }
+
+  /**
+   * Live FX conversion, `from` currency amount -> `to` currency amount
+   * multiplier. Returns 1 when no conversion is needed. Only ever derives
+   * a rate from a live `LiveTick` row (the same collector-pushed table
+   * gold's own price comes from) — NEVER an assumed or hardcoded rate.
+   * Only USD<->EUR is wired (this deployment's actual pairing, XAUUSD's
+   * profit currency vs. the trading account's own currency); an
+   * unsupported pair returns null so the risk gate fails closed rather
+   * than silently assume 1:1 — documented delegated-implementation
+   * limitation, not silently ignored.
+   */
+  private async resolveConversionRate(from: string, to: string): Promise<number | null> {
+    if (from === to) return 1;
+    if (from === 'USD' && to === 'EUR') {
+      const tick = await this.prisma.liveTick.findUnique({ where: { symbol: 'EURUSD' } });
+      if (!tick) return null;
+      const mid = (tick.bid.toNumber() + tick.ask.toNumber()) / 2;
+      return mid > 0 ? 1 / mid : null; // EURUSD quotes USD per 1 EUR; invert to get EUR per 1 USD
+    }
+    if (from === 'EUR' && to === 'USD') {
+      const tick = await this.prisma.liveTick.findUnique({ where: { symbol: 'EURUSD' } });
+      if (!tick) return null;
+      const mid = (tick.bid.toNumber() + tick.ask.toNumber()) / 2;
+      return mid > 0 ? mid : null;
+    }
+    return null;
   }
 
   /**

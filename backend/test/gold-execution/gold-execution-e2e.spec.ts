@@ -231,6 +231,35 @@ describe('GoldAccountStateService — occupancy resolution', () => {
     expect(constraints.maxLots).toBe(0);
   });
 
+  it('resolves EUR account currency + USD profit currency + a live EURUSD conversion rate', async () => {
+    await prisma.symbolMetadata.deleteMany({ where: { symbol: 'XAUUSD' } });
+    await prisma.symbolMetadata.create({
+      data: { symbol: 'XAUUSD', volumeMin: 0.01, volumeMax: 50, volumeStep: 0.01, digits: 2, point: 0.01, contractSize: 100, profitCurrency: 'USD' },
+    });
+    await prisma.liveTick.deleteMany({ where: { symbol: 'EURUSD' } });
+    await prisma.liveTick.create({ data: { symbol: 'EURUSD', bid: 1.15, ask: 1.15, tickAt: new Date() } });
+    const { account } = await setupAccountWithToken(prisma);
+    await prisma.tradingAccount.update({ where: { id: account.id }, data: { currency: 'EUR' } });
+
+    const info = await service.resolveAccountRiskInfo(account.id);
+    expect(info.accountCurrency).toBe('EUR');
+    expect(info.profitCurrency).toBe('USD');
+    expect(info.profitCurrencyToAccountCurrencyRate).toBeCloseTo(1 / 1.15, 4);
+  });
+
+  it('returns a null conversion rate (fails closed downstream) when no EURUSD tick is available', async () => {
+    await prisma.symbolMetadata.deleteMany({ where: { symbol: 'XAUUSD' } });
+    await prisma.symbolMetadata.create({
+      data: { symbol: 'XAUUSD', volumeMin: 0.01, volumeMax: 50, volumeStep: 0.01, digits: 2, point: 0.01, contractSize: 100, profitCurrency: 'USD' },
+    });
+    await prisma.liveTick.deleteMany({ where: { symbol: 'EURUSD' } });
+    const { account } = await setupAccountWithToken(prisma);
+    await prisma.tradingAccount.update({ where: { id: account.id }, data: { currency: 'EUR' } });
+
+    const info = await service.resolveAccountRiskInfo(account.id);
+    expect(info.profitCurrencyToAccountCurrencyRate).toBeNull();
+  });
+
   it('reports real broker volume constraints from a fresh SymbolMetadata row', async () => {
     await prisma.symbolMetadata.deleteMany({ where: { symbol: 'XAUUSD' } });
     await prisma.symbolMetadata.create({

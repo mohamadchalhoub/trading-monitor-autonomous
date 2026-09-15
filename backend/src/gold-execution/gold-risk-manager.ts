@@ -40,11 +40,25 @@ export interface GoldOccupancyState {
 
 export interface GoldAccountRiskInfo {
   tradeMode: GoldAccountTradeMode;
-  /** Real, live-queried equity — never an assumed balance. */
+  /** Real, live-queried equity, in the ACCOUNT's own currency — never an assumed balance. */
   equity: number;
-  /** Sum of stop-risk of any other currently-open combined-risk-counted positions, in account currency. */
+  /** The account's own currency (e.g. 'EUR') — read live from TradingAccount.currency, never assumed. */
+  accountCurrency: string;
+  /**
+   * Gold's own profit currency (from live SymbolMetadata, e.g. 'USD') and a
+   * live conversion rate FROM that profit currency TO the account currency
+   * (i.e. multiply a profit-currency amount by this to get account-currency
+   * amount). Required whenever profitCurrency !== accountCurrency — the
+   * risk gate fails closed (rejects) rather than assume 1:1 if a
+   * conversion is needed but this is null/unavailable, since XAUUSD's P&L
+   * is USD-denominated while this account's equity is EUR-denominated and
+   * silently treating $1 as €1 would understate risk by the EURUSD rate.
+   */
+  profitCurrency: string;
+  profitCurrencyToAccountCurrencyRate: number | null;
+  /** Sum of stop-risk of any other currently-open combined-risk-counted positions, in ACCOUNT currency. */
   existingCombinedRiskAmount: number;
-  /** Realized+floating loss so far today, in account currency (positive number = loss). */
+  /** Realized+floating loss so far today, in ACCOUNT currency (positive number = loss). */
   todaysLossAmount: number;
   /** Peak-to-current drawdown percentage already incurred, independent of this candidate. */
   currentDrawdownPct: number;
@@ -151,7 +165,25 @@ export function evaluateGoldRiskManager(input: GoldRiskManagerInput): GoldRiskMa
   if (accountInfo.equity <= 0) {
     return { approved: false, rejectionReason: 'Refusing to size risk against non-positive or unavailable account equity.', volumeLots: null };
   }
-  const stopRiskAmount = volume * candidate.stopLossDistancePoints; // approximate; exact $/point conversion is broker contract-size dependent, handled by caller if more precision is needed
+
+  // Currency conversion — XAUUSD's P&L is denominated in gold's own
+  // profit currency (from live SymbolMetadata, typically USD), while this
+  // account's equity is in its own currency (this deployment: EUR). Never
+  // assume 1:1: fail closed if a conversion is actually needed but no live
+  // rate is available, since silently treating $1 as €1 (a ~13-15%
+  // understatement at typical EURUSD rates) would let a trade through that
+  // actually exceeds the intended risk cap.
+  const needsConversion = accountInfo.profitCurrency !== accountInfo.accountCurrency;
+  if (needsConversion && (accountInfo.profitCurrencyToAccountCurrencyRate === null || accountInfo.profitCurrencyToAccountCurrencyRate <= 0)) {
+    return {
+      approved: false,
+      rejectionReason: `Refusing to size risk: gold's profit currency (${accountInfo.profitCurrency}) differs from the account currency (${accountInfo.accountCurrency}) and no live conversion rate is available — never assuming 1:1.`,
+      volumeLots: null,
+    };
+  }
+  const conversionRate = needsConversion ? (accountInfo.profitCurrencyToAccountCurrencyRate as number) : 1;
+
+  const stopRiskAmount = volume * candidate.stopLossDistancePoints * conversionRate; // approximate $/point-to-lot scaling; exact contract-size-based value is handled by caller if more precision is needed
   const stopRiskPct = (stopRiskAmount / accountInfo.equity) * 100;
   if (stopRiskPct > GOLD_STOP_RISK_CAP_PCT) {
     return {
