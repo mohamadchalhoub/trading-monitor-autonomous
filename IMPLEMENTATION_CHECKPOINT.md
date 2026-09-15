@@ -299,6 +299,27 @@ actual repo/runtime rather than trusting the prior checkpoint text:
   by the attempt. Exact manual restart command is in `DEMO_HANDOFF.md`'s newest update section.
 - No genuine order has occurred (`recentDecisions`/`closedTrades` empty, confirmed live).
 
+## Update 7 — ACTIVATED. Backend restarted by user; all checks passed; scheduler running live.
+
+The user restarted the backend themselves with `GOLD_EXECUTION_MODE=DEMO` set, clearing the
+last blocker from Update 6. Re-verified fresh rather than trusting the restart report:
+`accountMode`/`accountTradeMode` both `DEMO`, kill switch off, no occupancy conflict, settings
+match spec, XAUUSD M1 ~5min stale (fresh), zero prior decisions/trades. Started
+`gold-execution:scheduler` (no scheduler was running before); confirmed single process tree and
+two real, ~60s-apart cycle-complete log lines (`actionableEvents=0` both — correct idle state).
+Documented fully in `DEMO_HANDOFF.md`'s "Update — 2026-09-15, activation" section.
+
+**The task's core objective is now complete**: gold DEMO automation is genuinely live, per the
+user's prior explicit authorization, with no shortcuts taken and no order forced. No genuine
+order has occurred yet (correct — no signal has confirmed since activation). Remaining items
+are optional hardening, not blockers:
+- Explicit "close gold strategy positions" HTTP route (task step 6E) — still not built;
+  `executor.py`'s `close_position` exists and could be called directly if ever needed before
+  this route is added.
+- No automated restart-on-crash/boot supervisor for the scheduler itself (it must be manually
+  restarted if its terminal/process is closed) — was never in scope as a requirement, just
+  worth naming for whoever operates this day to day.
+
 ## Explicit current answer to the required final-report questions (as of this checkpoint)
 - Implemented so far: rule-table doc, versioned gold-live spec, full `gold-execution` backend
   module, collector-side gold polling, live occupancy/risk/volume/currency resolvers,

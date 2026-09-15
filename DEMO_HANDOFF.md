@@ -1,10 +1,54 @@
 # DEMO_HANDOFF — gold (XAUUSD) execution
 
-**Status: BLOCKED ONE STEP FROM ACTIVATION.** All three prior blockers (collector not running,
-stale XAUUSD data, unconfirmed effective flags) are now cleared this session. The only
-remaining step is restarting the backend dev process so it picks up `GOLD_EXECUTION_MODE=DEMO`
-from `.env` — see "Update — 2026-09-15 11:5x UTC" below for the exact command and why an agent
-cannot run it itself in this environment.
+**Status: LIVE. DEMO automation is ACTIVE as of 2026-09-15T12:06:34Z.** The user restarted the
+backend manually; every remaining check passed; the scheduler is running and completing cycles
+on schedule. See "Update — 2026-09-15, activation" below for full evidence. No genuine order
+has occurred yet — the system is correctly idle, waiting for a real signal.
+
+## Update — 2026-09-15, activation
+
+The user restarted the backend themselves (`ts-node-dev`, new PID 20244) with
+`GOLD_EXECUTION_MODE=DEMO` explicitly set, confirming clean startup (API on :8420,
+GoldExecutionModule loaded, collector snapshots/candles/ticks arriving, no errors). Re-verified
+everything fresh rather than trusting the restart alone:
+
+- `GET /research/gold-execution-status`: `"accountMode": "DEMO"`, `"accountTradeMode": "DEMO"`,
+  `killSwitchActive: false`, `stopNewEntriesActive: false`, `occupancy.hasExistingXauusdExposure:
+  false`, settings match the frozen spec exactly (0.01 lots, magic 262610181, $10 TP/SL, 200pt
+  max deviation), `accountSnapshotStale: false` (2.3s old), `recentDecisions`/`closedTrades`
+  both empty.
+- XAUUSD M1 freshness re-checked with the true-UTC EET conversion: ~5 minutes stale — fresh.
+  Collector process (PID 16084 + its expected MT5-IPC child 5568, single tree) confirmed alive
+  and cycling in its own log, current to within the same window as the DB check.
+- No scheduler process existed yet. Started `npm run gold-execution:scheduler` from `backend/`
+  in the environment's own background process (this was NOT denied — only *stopping* existing
+  processes is restricted here, starting new ones is not). Confirmed via
+  `Get-CimInstance Win32_Process`: single scheduler process tree (`tsx
+  scripts/gold-execution-scheduler.ts` → node → ts-node-dev-hook), no duplicates.
+- Watched its own log directly for two consecutive real cycles, ~60s apart as configured:
+  `cycle complete at 2026-09-15T12:07:08.123Z, actionableEvents=0` and
+  `cycle complete at 2026-09-15T12:08:05.332Z, actionableEvents=0` — genuinely running, not
+  just started-and-assumed. `actionableEvents=0` both times is correct/expected (no confirmed
+  first-return event yet), not a fault.
+
+**The system is now genuinely live**: the collector polls MT5, the backend evaluates real
+occupancy/risk/volume/currency each cycle, and the scheduler runs continuously and
+single-instance-locked. It will place a real (demo-account) bracket order the next time a
+first-return event confirms inside the 04:00–12:00 Asia/Beirut window with no existing XAUUSD
+exposure and risk caps clear — no further code or config changes are needed for that to happen.
+
+**To stop/pause**: Ctrl+C the scheduler's terminal (clean shutdown, no order left mid-flight
+since it only ever queues via the same DB-row mechanism the collector polls), or set
+`GOLD_STOP_NEW_ENTRIES=true` in the backend's environment (rechecked every cycle, no restart
+needed) to halt new entries without touching EURUSD or an already-open position. See
+`GOLD_STARTUP_SHUTDOWN_RECOVERY.md` for the full kill-switch/close-position notes (an explicit
+"close gold position" HTTP route still does not exist — `executor.py`'s `close_position` would
+need to be called directly if a position must be force-closed without the strategy's own logic
+doing it via SL/TP).
+
+Everything below this point is retained from the prior sessions for context; the blockers those
+sections describe (collector down, stale data, unconfirmed backend mode) are all cleared as of
+this update.
 
 ## Update — 2026-09-15, session resumed after interruption
 
