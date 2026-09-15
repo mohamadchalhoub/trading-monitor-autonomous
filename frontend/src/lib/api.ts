@@ -472,12 +472,16 @@ export interface GoldExecutionStatus {
     mt5Ticket: number | null;
     filledPrice: number | null;
     executionError: string | null;
+    /** When the underlying M1 touch actually closed — distinct from `evaluatedAt` (logging/replay time). Null if unavailable. */
+    touchEndTIso: string | null;
   }[];
   recentNotifications?: { eventType: string; status: string; createdAt: string; text: string }[];
   collectorHeartbeat?: { lastHeartbeatAt: string | null; ageMs: number | null; stale: boolean; mt5Connected: boolean | null; lastError: string | null };
   liveQuote?: { bid: number | null; ask: number | null; ageMs: number | null; stale: boolean };
   entryWindow?: { timezone: string; startSecondsBeirut: number; endSecondsBeirutExclusive: number; open: boolean };
   dataFreshness?: { accountSnapshotAgeMs: number | null; accountSnapshotStale: boolean; symbolMetadataAgeMs: number | null; symbolMetadataStale: boolean };
+  /** Standalone `scripts/gold-execution-scheduler.ts` process's own on-disk heartbeat — NOT this Nest app's uptime. `stale: true` means no recent cycle has been observed, regardless of whether the backend/dashboard itself is up. */
+  goldScheduler?: { lastCycleAtUtc: string | null; ageMs: number | null; stale: boolean; activeLevelIds: string[] };
   eurusd?: { strategy: string; status: string; note: string };
 }
 

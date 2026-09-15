@@ -1,4 +1,6 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { DashboardTokenGuard } from '../auth/dashboard-token.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { GoldAccountStateService } from './gold-account-state.service';
@@ -13,6 +15,47 @@ import { XAUUSD_H4_CONFIRMED_RETEST_GOLD_LIVE_VERSION } from './gold-strategy-ve
 import { beirutSecondsOfDay } from '../research/confirmed-retest-v2/time';
 import { SPEC } from '../research/confirmed-retest-v2/spec';
 import { GoldRuntimeSettingsService } from './gold-runtime-settings.service';
+
+// Same default as health-check.processor.ts's DEFAULT_STALE_THRESHOLD_SECONDS
+// (HEARTBEAT_STALE_THRESHOLD_SECONDS) — reused rather than inventing a
+// second staleness threshold for the same concept.
+const HEARTBEAT_STALE_THRESHOLD_SECONDS = Number(process.env.HEARTBEAT_STALE_THRESHOLD_SECONDS ?? '300');
+
+/**
+ * Reads `scripts/gold-execution-scheduler.ts`'s own state file directly
+ * (same path convention: `GOLD_RESEARCH_STATE_DIR` env var, else
+ * `<backend>/research-state/gold-live-watch/gold-watch-state.json`) —
+ * that standalone process is NOT part of this Nest app (it's launched
+ * separately, see start-gold-demo.ps1), so this is a live read of its
+ * on-disk state, not a DI-wired service call. Deliberately requires the
+ * cycle timestamp to be RECENT (within HEARTBEAT_STALE_THRESHOLD_SECONDS)
+ * before calling it "live" — a past `lastCycleAtUtc` from a scheduler
+ * process that has since died must never be presented as current health.
+ */
+function readGoldSchedulerHeartbeat(): { lastCycleAtUtc: string | null; ageMs: number | null; stale: boolean; activeLevelIds: string[] } {
+  const stateDir = process.env.GOLD_RESEARCH_STATE_DIR ?? resolve(__dirname, '..', '..', 'research-state', 'gold-live-watch');
+  const statePath = resolve(stateDir, 'gold-watch-state.json');
+  if (!existsSync(statePath)) {
+    return { lastCycleAtUtc: null, ageMs: null, stale: true, activeLevelIds: [] };
+  }
+  try {
+    const state = JSON.parse(readFileSync(statePath, 'utf8')) as {
+      lastCycleAtUtc?: string | null;
+      replay?: { levels?: { activeLevelIds?: string[] } } | null;
+    };
+    const lastCycleAtUtc = state.lastCycleAtUtc ?? null;
+    const ageMs = lastCycleAtUtc ? Date.now() - new Date(lastCycleAtUtc).getTime() : null;
+    return {
+      lastCycleAtUtc,
+      ageMs,
+      stale: ageMs === null || ageMs > HEARTBEAT_STALE_THRESHOLD_SECONDS * 1000,
+      activeLevelIds: state.replay?.levels?.activeLevelIds ?? [],
+    };
+  } catch {
+    // Unreadable/corrupt state file — fail closed to "stale", never assume liveness we can't verify.
+    return { lastCycleAtUtc: null, ageMs: null, stale: true, activeLevelIds: [] };
+  }
+}
 
 /**
  * Dashboard read side for the gold execution strategy (task step 6F) —
@@ -169,13 +212,23 @@ export class GoldDashboardController {
         dealTicket: t.externalTradeId, side: t.side, volume: t.volume.toNumber(),
         price: t.price.toNumber(), realizedPnl: t.profit.toNumber(), executedAt: t.executedAt,
       })),
-      recentDecisions: recentDecisions.map((d) => ({
-        id: d.id, evaluatedAt: d.evaluatedAt, action: d.action, orderStatus: d.orderStatus,
-        riskManagerApproved: d.riskManagerApproved, riskManagerRejectionReason: d.riskManagerRejectionReason,
-        reasoning: d.reasoning, entryPrice: d.entryPrice?.toNumber() ?? null,
-        stopLoss: d.stopLoss?.toNumber() ?? null, takeProfit: d.takeProfit?.toNumber() ?? null,
-        mt5Ticket: d.mt5Ticket ?? null, filledPrice: d.filledPrice?.toNumber() ?? null, executionError: d.executionError ?? null,
-      })),
+      recentDecisions: recentDecisions.map((d) => {
+        const touchEndT = extractTouchEndT(d.inputSnapshot);
+        return {
+          id: d.id, evaluatedAt: d.evaluatedAt, action: d.action, orderStatus: d.orderStatus,
+          riskManagerApproved: d.riskManagerApproved, riskManagerRejectionReason: d.riskManagerRejectionReason,
+          reasoning: d.reasoning, entryPrice: d.entryPrice?.toNumber() ?? null,
+          stopLoss: d.stopLoss?.toNumber() ?? null, takeProfit: d.takeProfit?.toNumber() ?? null,
+          mt5Ticket: d.mt5Ticket ?? null, filledPrice: d.filledPrice?.toNumber() ?? null, executionError: d.executionError ?? null,
+          // The M1 touch's own close time (when the historical/live touch
+          // actually happened) — distinct from `evaluatedAt` (when this row
+          // was logged/replayed). Null when the decision row predates
+          // `signal.touchEndT` being recorded, or was never a touch-driven
+          // decision at all.
+          touchEndTIso: touchEndT !== null ? new Date(touchEndT).toISOString() : null,
+        };
+      }),
+      goldScheduler: readGoldSchedulerHeartbeat(),
       dataFreshness: {
         accountSnapshotAgeMs: snapshotAgeMs,
         accountSnapshotStale: snapshotAgeMs === null || snapshotAgeMs > 5 * 60_000,
@@ -185,4 +238,19 @@ export class GoldDashboardController {
       eurusd: eurusdBanner,
     };
   }
+}
+
+/**
+ * Same extraction as `gold-execution.controller.ts`'s own (private) helper
+ * of the same name — kept as a duplicate rather than exported/shared to
+ * avoid coupling the collector-facing controller's module boundary to this
+ * read-only dashboard one; both read the identical `inputSnapshot` shape
+ * (`{ signal: { touchEndT }, ... }`) that `GoldExecutionCoordinatorService.evaluate()` writes.
+ */
+function extractTouchEndT(inputSnapshot: unknown): number | null {
+  if (typeof inputSnapshot !== 'object' || inputSnapshot === null) return null;
+  const signal = (inputSnapshot as Record<string, unknown>).signal;
+  if (typeof signal !== 'object' || signal === null) return null;
+  const touchEndT = (signal as Record<string, unknown>).touchEndT;
+  return typeof touchEndT === 'number' && Number.isFinite(touchEndT) ? touchEndT : null;
 }

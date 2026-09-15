@@ -126,14 +126,18 @@ export class GoldNewsService {
     const grouped = await this.prisma.marketEvent.groupBy({
       by: ['source'],
       _count: { _all: true },
-      _max: { scheduledAt: true },
+      // Both maxima are fetched: `scheduledAt` and `updatedAt` mean very
+      // different things depending on category (see `sourceTimestampFor`
+      // below), so neither alone is safe to treat as "how recent is our
+      // data" for every source.
+      _max: { scheduledAt: true, updatedAt: true },
     });
     const sourceDataStaleAfterMs = 24 * 60 * 60_000; // 24h — same order of magnitude as SymbolMetadata's own staleness posture elsewhere in this codebase
     const now = Date.now();
 
     return Promise.all(
       grouped.map(async (g) => {
-        const mostRecentSourceDataAt = g._max.scheduledAt;
+        const mostRecentSourceDataAt = this.sourceTimestampFor(g.source, g._max.scheduledAt, g._max.updatedAt);
         const ingestion = await this.readIngestionHealth(g.source);
         return {
           source: g.source,
@@ -145,6 +149,29 @@ export class GoldNewsService {
         };
       }),
     );
+  }
+
+  /**
+   * Bug fix (found while auditing the gold dashboard's provenance labels):
+   * this used to report `MAX(scheduledAt)` as "source data freshness" for
+   * EVERY source. That's correct for NEWS rows, where `scheduledAt` really
+   * is `published_at` (see schema.prisma) — a real past timestamp. But for
+   * ECONOMIC_EVENT rows (FRED/FOMC/ECB), `scheduledAt` is the *forward-
+   * looking* release/meeting date pulled from each provider's own upcoming-
+   * calendar API (`market-event-ingestion.service.ts`'s
+   * `etDateAndTimeToUtc(release.date, ...)`, `config.lookaheadDays` ahead)
+   * — i.e. a FUTURE scheduled release time, not evidence of when we last
+   * actually fetched/published anything. Using it for staleness silently
+   * conflated "there's an upcoming release far in the future" with "our
+   * data is fresh", which could report DEGRADED-worthy staleness as fresh
+   * (or vice versa) depending on how far out the next release sits.
+   * For economic-calendar sources this now uses `MAX(updatedAt)` instead —
+   * the actual last-ingested/last-touched time for that source's rows —
+   * which is the correct proxy for "how recently did we pull data".
+   */
+  private sourceTimestampFor(source: string, maxScheduledAt: Date | null, maxUpdatedAt: Date | null): Date | null {
+    const isForwardLookingCalendar = source === 'FRED' || source === 'FOMC' || source === 'ECB';
+    return isForwardLookingCalendar ? maxUpdatedAt : maxScheduledAt;
   }
 
   private async readIngestionHealth(source: string): Promise<Pick<GoldProviderCoverage, 'ingestionHealth' | 'lastIngestionRunAtIso' | 'lastIngestionRunOutcome'>> {

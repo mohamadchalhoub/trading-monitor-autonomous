@@ -28,3 +28,22 @@ process.env.AUTONOMOUS_KILL_SWITCH_PATH = join(mkdtempSync(join(tmpdir(), 'test-
 // `.env`) means ConfigModule's later, non-destructive load leaves it alone — tests get a
 // deterministic default regardless of this repo's own current operational `.env` state.
 process.env.GOLD_EXECUTION_MODE = 'OFF';
+
+// Same reasoning as AUTONOMOUS_KILL_SWITCH_PATH above, extended to every
+// gold file-based runtime path (`gold-execution-runtime/{ai-summaries,settings}.json`
+// and `GOLD_KILL_SWITCH`) — all three default to a path under `process.cwd()`
+// when their env var is unset (see gold-ai-summary.service.ts,
+// gold-runtime-settings.service.ts, gold-kill-switch.ts), which from `backend/`
+// IS the real operator-facing gold-execution-runtime directory. Without this,
+// any test that exercises the fill/protection-monitor/execution pipeline (even
+// indirectly, via a real HTTP request through AppModule) silently appends
+// synthetic FILL_CONFIRMED/MISSING_PROTECTION narration into the SAME
+// ai-summaries.json a live demo dashboard reads — this happened for real on
+// 2026-09-15 (ticket=999/2650.3 fixture fills from gold-execution-e2e.spec.ts,
+// plus 771xxx/888xxx MISSING_PROTECTION entries from manual verification, both
+// landing in the real runtime file because this isolation didn't exist yet).
+// Point every test worker at its own throwaway temp directory by default.
+const isolatedGoldRuntimeDir = mkdtempSync(join(tmpdir(), 'test-gold-runtime-'));
+process.env.GOLD_AI_SUMMARIES_PATH = join(isolatedGoldRuntimeDir, 'ai-summaries.json');
+process.env.GOLD_RUNTIME_SETTINGS_PATH = join(isolatedGoldRuntimeDir, 'settings.json');
+process.env.GOLD_KILL_SWITCH_PATH = join(isolatedGoldRuntimeDir, 'GOLD_KILL_SWITCH');

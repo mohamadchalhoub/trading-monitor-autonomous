@@ -29,7 +29,9 @@ export default async function GoldDemoPage() {
           <a href="/research/xauusd-confirmed-retest" className="text-accent hover:underline">
             Gold Retest Research
           </a>{" "}
-          (backtest-only, no account). Everything below reflects real account/broker state.
+          (backtest-only, no account). Data below is mixed-provenance — each section is labeled with where its
+          numbers come from (real broker state, historical audit records, or AI/deterministic narration); no
+          single claim covers the whole page.
         </p>
         {status.eurusd && <p className="text-text-muted mt-1">{status.eurusd.note}</p>}
       </section>
@@ -57,11 +59,42 @@ export default async function GoldDemoPage() {
             tone={status.collectorHeartbeat?.stale ? "down" : "ok"}
           />
           <Tile label="MT5 connected" value={status.collectorHeartbeat?.mt5Connected ? "yes" : "no"} tone={status.collectorHeartbeat?.mt5Connected ? "ok" : "down"} />
-          <Tile label="Live quote" value={status.liveQuote?.bid ? `${formatNumber(status.liveQuote.bid, 2)} / ${formatNumber(status.liveQuote?.ask ?? 0, 2)}` : "—"} tone={status.liveQuote?.stale ? "down" : "ok"} />
+          <Tile
+            label="Live quote"
+            value={status.liveQuote?.bid ? `${formatNumber(status.liveQuote.bid, 2)} / ${formatNumber(status.liveQuote?.ask ?? 0, 2)}` : "—"}
+            tone={status.liveQuote?.stale ? "down" : "ok"}
+          />
+          <Tile
+            label="Live quote age"
+            value={status.liveQuote?.ageMs != null ? formatRelative(new Date(Date.now() - status.liveQuote.ageMs).toISOString()) : "unknown"}
+            tone={status.liveQuote?.stale ? "down" : "ok"}
+          />
           <Tile label="Account snapshot" value={status.dataFreshness?.accountSnapshotStale ? "stale" : "fresh"} tone={status.dataFreshness?.accountSnapshotStale ? "down" : "ok"} />
           <Tile label="Symbol metadata (broker limits)" value={status.dataFreshness?.symbolMetadataStale ? "stale" : "fresh"} tone={status.dataFreshness?.symbolMetadataStale ? "down" : "ok"} />
         </div>
         {status.collectorHeartbeat?.lastError && <p className="text-xs text-down mt-2">Last collector error: {status.collectorHeartbeat.lastError}</p>}
+      </section>
+
+      <section>
+        <h2 className="text-sm font-medium text-text-muted mb-3">Gold scheduler (standalone process — separate from this backend&apos;s own uptime)</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <Tile
+            label="Scheduler heartbeat"
+            value={status.goldScheduler?.lastCycleAtUtc ? formatRelative(status.goldScheduler.lastCycleAtUtc) : "never observed"}
+            tone={status.goldScheduler?.stale ? "down" : "ok"}
+          />
+          <Tile
+            label="Active levels"
+            value={status.goldScheduler?.activeLevelIds && status.goldScheduler.activeLevelIds.length > 0 ? String(status.goldScheduler.activeLevelIds.length) : "none"}
+          />
+        </div>
+        {status.goldScheduler?.stale && (
+          <p className="text-xs text-down mt-2">
+            No recent scheduler cycle observed — this reads the standalone scheduler process&apos;s own on-disk
+            heartbeat, not this backend&apos;s uptime. The backend being up does NOT mean the gold watch cycle is
+            currently running.
+          </p>
+        )}
       </section>
 
       <section>
@@ -164,7 +197,12 @@ export default async function GoldDemoPage() {
       </section>
 
       <section>
-        <h2 className="text-sm font-medium text-text-muted mb-3">Recent decisions / skip reasons</h2>
+        <h2 className="text-sm font-medium text-text-muted mb-3">Recent decisions / skip reasons — Historical touch — audit only</h2>
+        <p className="text-xs text-text-muted mb-2">
+          Each row is a historical M1 touch record kept for audit purposes. &quot;Intended direction&quot; is what the
+          strategy would have done at that touch; it is NOT proof of execution — check &quot;Execution status&quot;
+          separately for whether an order actually reached the broker.
+        </p>
         {!status.recentDecisions || status.recentDecisions.length === 0 ? (
           <EmptyState>No decisions evaluated yet.</EmptyState>
         ) : (
@@ -173,9 +211,12 @@ export default async function GoldDemoPage() {
               <li key={d.id} className="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">
-                    {d.action} — {d.orderStatus}
+                    Intended direction: {d.action} — Execution status: {d.orderStatus}
                   </span>
-                  <span className="text-xs text-text-muted">{formatDateTime(d.evaluatedAt)}</span>
+                </div>
+                <div className="text-xs text-text-muted mt-1 flex flex-wrap gap-x-4">
+                  <span>Touch closed: {d.touchEndTIso ? formatDateTime(d.touchEndTIso) : "unknown"}</span>
+                  <span>Logged/evaluated: {formatDateTime(d.evaluatedAt)}</span>
                 </div>
                 <p className="text-xs text-text-muted mt-1">{d.reasoning}</p>
                 {d.riskManagerRejectionReason && <p className="text-xs text-down mt-1">Skip reason: {d.riskManagerRejectionReason}</p>}
@@ -243,16 +284,29 @@ export default async function GoldDemoPage() {
           <EmptyState>No AI summaries generated yet.</EmptyState>
         ) : (
           <ul className="flex flex-col gap-1 text-xs">
-            {aiSummaries.summaries.map((s) => (
-              <li key={s.id} className="rounded border border-border bg-surface px-3 py-2">
-                <span className="font-medium">{s.eventType}</span>{" "}
-                <span className="text-text-muted">
-                  {s.provider}
-                  {s.model ? ` (${s.model})` : ""} — {formatDateTime(s.generatedAtIso)}
-                </span>
-                <p className="text-text-muted mt-1">{s.summary}</p>
-              </li>
-            ))}
+            {aiSummaries.summaries.map((s) => {
+              const isFallback = s.provider === "fallback";
+              return (
+                <li key={s.id} className="rounded border border-border bg-surface px-3 py-2">
+                  <span className="font-medium">{s.eventType}</span>{" "}
+                  {isFallback ? (
+                    <span className="rounded-full border border-warn px-1.5 py-0.5 text-warn font-medium">
+                      FALLBACK — deterministic, not AI-generated
+                    </span>
+                  ) : (
+                    <span className="text-text-muted">
+                      AI-generated ({s.provider}
+                      {s.model ? `/${s.model}` : ""})
+                    </span>
+                  )}
+                  <div className="text-text-muted mt-1 flex flex-wrap gap-x-4">
+                    <span>Source event: {formatDateTime(s.sourceDataTimestampIso)}</span>
+                    <span>Summary generated: {formatDateTime(s.generatedAtIso)}</span>
+                  </div>
+                  <p className="text-text-muted mt-1">{s.summary}</p>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
