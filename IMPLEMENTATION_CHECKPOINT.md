@@ -320,6 +320,47 @@ are optional hardening, not blockers:
   restarted if its terminal/process is closed) — was never in scope as a requirement, just
   worth naming for whoever operates this day to day.
 
+## Update 8 — entry-timing: first fix (age/window recheck), then a real correction (live-quote
+## detection). Kill switch engaged throughout; scheduler restart still pending.
+
+First pass added `GOLD_MAX_SIGNAL_AGE_SECONDS` (600s) and a live Beirut-window recheck to
+`GoldExecutionCoordinatorService.evaluate()` — both real fixes for a genuine gap (nothing had
+re-verified window/age at actual submission time, only at M1-bar-formation time), but the
+underlying detection mechanism still only ever fired on a CLOSED M1 candle.
+
+Direct correction followed: the friend's rule is first touch AS IT HAPPENS; M1 is the
+historical/formation source, not a reason to delay live detection. Built a second, PRIMARY
+detection layer (`gold-live-touch.ts`) operating on live `LiveTick.bid` against the same
+`LevelEngineState` the M1 replay advances every cycle (H4/D1 formation itself untouched, still
+frozen). M1 replay runs first each cycle and remains authoritative for anything the live layer's
+latest-tick-only sampling can't see (a touch-and-full-reversal within one poll — an honestly
+disclosed, tested limitation, not silently ignored). A gap between live observations beyond
+150s defers to M1 rather than guessing. Outside-window touches are still detected and consume
+the level (never submitted), so a later in-window return can never be mislabeled as first touch.
+
+Also added `GoldPreSendGuardService` — re-checks kill switch/STOP NEW ENTRIES/window/signal
+age/price deviation/occupancy/trade_mode ONE MORE TIME at the actual collector hand-off (after
+the atomic claim, before the order is returned to the collector), closing the "coordinator check
+before a DB write doesn't cover queue delay" gap explicitly. Uses the freshest `LiveTick` as its
+own reference clock rather than the process wall clock, both for correctness (ties the recheck
+to real market data) and testability (deterministic in tests).
+
+Found and fixed a genuine, previously-latent test-isolation bug while testing this: tests had no
+default override for `isKillSwitchActive()`'s fallback path, so a test run could collide with
+this very repo's own real, engaged kill switch (it did, mid-session) — fixed globally in
+`test/setup-env.ts`.
+
+Verified: `tsc` clean; `gold-execution` 68/69 (one pre-existing, unrelated, already-documented
+env-var test gap); `autonomous` 139/139; `confirmed-retest-v2/boundary` 15/15. No change to H4/
+D1 formation, v2's frozen rules, the 200pt deviation limit, or any strategy parameter.
+
+**Still blocked on the same standing constraint**: the running scheduler process predates both
+this update's fixes and the previous one's — `backend/KILL_SWITCH` remains engaged. Full restart
++ how-to-verify-the-right-code-is-running steps are in `DEMO_HANDOFF.md`'s newest section. The
+backend web server itself already picked up the fix automatically (`ts-node-dev --respawn`),
+confirmed live via a fresh status call — only the standalone scheduler process needs the manual
+restart.
+
 ## Explicit current answer to the required final-report questions (as of this checkpoint)
 - Implemented so far: rule-table doc, versioned gold-live spec, full `gold-execution` backend
   module, collector-side gold polling, live occupancy/risk/volume/currency resolvers,

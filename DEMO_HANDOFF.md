@@ -1,13 +1,109 @@
 # DEMO_HANDOFF — gold (XAUUSD) execution
 
-**Status: PAUSED (kill switch), fix committed, awaiting a scheduler restart.** DEMO activation
-(2026-09-15T12:06:34Z) is still valid, but an entry-timing verification pass found and fixed a
-real gap (see "Update — 2026-09-15, entry-timing verification" below). `backend/KILL_SWITCH`
-is currently in place because the fix is committed to source but the already-running scheduler
-process predates it and has not picked it up — restart the scheduler to resume. No genuine
-order has occurred yet.
+**Status: PAUSED (kill switch), a second, deeper fix committed, awaiting a scheduler restart.**
+DEMO activation (2026-09-15T12:06:34Z) is still valid. The first entry-timing verification pass
+added a signal-age cap and a live window recheck, but a direct correction afterward established
+those were not sufficient — the friend's actual rule is first-touch-as-it-happens, not "wait for
+an M1 candle to close." See "Update — 2026-09-15, entry-timing correction (live-quote
+detection)" below for the real fix. `backend/KILL_SWITCH` remains in place, unchanged, because
+the already-running scheduler process predates BOTH fixes and has not picked up either — restart
+it (exact commands below) to resume. No genuine order has occurred yet.
 
-## Update — 2026-09-15, entry-timing verification
+## Update — 2026-09-15, entry-timing correction (live-quote detection)
+
+Direct correction received after the first entry-timing fix: M1 is the primary HISTORICAL
+analysis/formation source, but live execution must not wait for an M1 candle to close — the
+first fix's `GOLD_MAX_SIGNAL_AGE_SECONDS` cap only bounded how stale a backlog touch could be
+before being rejected; it never made detection itself live, and was not an approved substitute
+for real first-touch detection.
+
+**What changed** — a full second detection layer, `backend/src/gold-execution/gold-live-touch.ts`:
+- Operates on the exact SAME `LevelEngineState` object `confirmed-retest-v2`'s own M1 replay
+  advances every cycle (unchanged, frozen — H4/D1 level FORMATION is untouched), calling that
+  module's own public `consumeLevel()` — the identical function the M1 path itself calls — so a
+  level retires the same way regardless of which layer detects its first return first.
+- Detects a touch from the live `LiveTick.bid` (the same price basis MT5's own M1 OHLC uses),
+  comparing the current tick to the last tick THIS layer itself observed. M1 replay always runs
+  FIRST in every cycle, so the live layer only ever sees levels the M1 layer's already-closed
+  data left active — the two layers never race for the same level.
+- Detects and consumes a touch OUTSIDE the entry window too (spec's own
+  `outsideWindowFirstReturnConsumesLevel` rule, unchanged) — it is never submitted, matching the
+  M1 path's existing OUTSIDE_WINDOW handling, but the level is correctly retired either way so a
+  later in-window return of the SAME level can never be mislabeled as the first touch.
+- Persists its own baseline (`GoldWatchState.liveTouch`, one bid+timestamp per still-active
+  level) across restarts. A restart with a stale baseline naturally falls into the "large
+  observation gap" path below rather than manufacturing a touch from a comparison that spans an
+  unknown outage.
+
+**Honestly disclosed limitations (documented in the module's own header, not glossed over)**:
+- `LiveTick` stores only the single latest bid/ask per symbol — there is no tick history to
+  scan. Detection resolution is therefore bounded by how often the scheduler polls (currently
+  60s by default), not true tick-by-tick granularity.
+- A touch-and-full-reversal completing entirely BETWEEN two polls is invisible to this layer —
+  both observations show price on the original side. This is a real, disclosed blind spot of
+  latest-tick sampling, not a bug: the level stays fully active and visible to the M1 replay
+  layer, whose real wick-based high/low detection still catches it, at its own slower cadence.
+  Tested explicitly (`gold-live-touch.spec.ts`).
+- A gap between two observations of the same level larger than
+  `GOLD_LIVE_OBSERVATION_MAX_GAP_SECONDS` (150s — a restart, a stall, a missed cycle) is never
+  compared directly to infer a crossing; the layer re-baselines and explicitly defers to M1
+  replay's own historical record rather than guess. Tested explicitly (reconnect-backlog case).
+
+**Broker-send-boundary recheck** — `backend/src/gold-execution/gold-pre-send-guard.service.ts`,
+called by `GoldExecutionController.getPendingOrder` right after the atomic PENDING→SENT claim
+but before the order is handed to the collector (the actual boundary this backend can reach
+without modifying the Python executor). Re-verifies, all over again, using the freshest
+`LiveTick` as its own reference "now" (not the process wall clock — see the service's own header
+for why this also makes it deterministically testable): kill switch, STOP NEW ENTRIES, the
+Beirut window, signal age, price deviation, occupancy (excluding the decision's own now-SENT
+row), and `trade_mode == DEMO`. A failure explicitly cancels the decision (`orderStatus:
+FAILED` with the reason) instead of letting an already-claimed-but-now-stale order reach the
+collector. This directly closes the gap named in the correction: "a coordinator check before a
+DB write does not cover subsequent queue delay" — tested explicitly with the exact "queued
+before noon Beirut, freshest quote already after it closed" scenario
+(`gold-pre-send-guard.spec.ts`).
+
+**Verified**: `tsc --noEmit` clean; `test/gold-execution` 68/69 (the one failure is the same
+pre-existing, already-documented, unrelated `gold-dashboard.spec.ts` env-var gap — not touched
+by this correction); `test/autonomous` 139/139; `confirmed-retest-v2/boundary` 15/15. Also fixed
+a genuine, previously-latent test-isolation bug found while writing these tests:
+`test/setup-env.ts` was letting every test process fall back to `isKillSwitchActive()`'s default
+path (`<cwd>/KILL_SWITCH`), which collided with THIS repo's own real, currently-engaged
+operational kill switch and was silently failing unrelated tests
+(`autonomous-execution-coordinator.service.spec.ts` included) whenever a test run happened while
+the switch was engaged — now isolated to a throwaway path per test worker by default.
+
+**No change to**: H4/D1 level formation, `confirmed-retest-v2`'s frozen rules, the 200pt price-
+deviation limit, or any strategy parameter (0.01 lots, $10 TP/SL, magic 262610181).
+
+**Exact scheduler restart + verification, then clear the kill switch:**
+```powershell
+# 1. Find and stop the currently-running scheduler (it predates this fix and every prior one):
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*gold-execution-scheduler*' } | Select-Object ProcessId, CommandLine
+Stop-Process -Id <that-pid> -Force
+
+# 2. Restart it from backend/ so it loads the corrected code:
+cd C:\Users\user\Desktop\trading-monitor-autonomous\backend
+npm run gold-execution:scheduler
+```
+3. **Verify the running version before clearing the kill switch**: watch its own console output
+   for at least one `cycle complete` line and confirm it includes `liveTouchEvents=` in the
+   message (e.g. `cycle complete at ..., actionableEvents=0, liveTouchEvents=0, liveTouchQueued=0`)
+   — that field only exists in the corrected code, so its presence in the live log is direct
+   proof the new process is actually running the fix, not just that a process started.
+4. Only once step 3 is confirmed, clear the kill switch:
+   ```powershell
+   Remove-Item C:\Users\user\Desktop\trading-monitor-autonomous\backend\KILL_SWITCH
+   ```
+5. Re-check `GET /research/gold-execution-status` — `killSwitchActive` should read `false`.
+
+The backend web server itself (`ts-node-dev`) already auto-restarted on these file changes
+(`--respawn` watches source files) — confirmed live via a fresh
+`GET /research/gold-execution-status` call after this correction (`accountMode: DEMO`,
+`killSwitchActive: true`, matching the still-engaged switch). Only the standalone scheduler
+process (started once via `tsx`, no file-watching) needs the manual restart above.
+
+## Update — 2026-09-15, entry-timing verification (superseded in part — see correction above)
 
 Traced the exact mechanism, per a direct request, without reopening a broad audit or touching
 any frozen level/formation rule:
