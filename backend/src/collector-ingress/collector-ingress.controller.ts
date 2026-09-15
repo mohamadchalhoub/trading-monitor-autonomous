@@ -73,8 +73,9 @@ export class CollectorIngressController {
 
     await this.tradingData.upsertSnapshot(dto.accountId, dto);
     await this.tradingData.replaceOpenPositions(dto.accountId, account.platform, dto.positions);
-    if (dto.liveTick) {
-      await this.tradingData.upsertLiveTick(dto.liveTick);
+    const quotes = [...(dto.liveTick ? [dto.liveTick] : []), ...(dto.liveTicks ?? [])];
+    for (const quote of new Map(quotes.map((q) => [q.symbol, q] as const)).values()) {
+      await this.tradingData.upsertLiveTick(quote);
     }
     await this.tradingData.upsertHeartbeat(
       dto.accountId,

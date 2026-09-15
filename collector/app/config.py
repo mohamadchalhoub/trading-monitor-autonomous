@@ -124,6 +124,16 @@ class Config:
     # executes it via executor.py — see runner.py's own comment on this.
     autonomous_execution_enabled: bool
 
+    # Gold collection alongside EURUSD: optional per-symbol override of
+    # CANDLE_TIMEFRAMES via CANDLE_TIMEFRAMES_<SYMBOL> (e.g.
+    # CANDLE_TIMEFRAMES_XAUUSD=M1,M5,M15,M30,H1,H4,D1). A symbol with no
+    # override keeps the global list, so an existing EURUSD deployment's
+    # collection is unchanged.
+    candle_timeframes_by_symbol: dict[str, tuple[str, ...]] | None = None
+
+    def timeframes_for(self, symbol: str) -> tuple[str, ...]:
+        return (self.candle_timeframes_by_symbol or {}).get(symbol, self.candle_timeframes)
+
     @staticmethod
     def from_env(env: dict[str, str] | None = None) -> "Config":
         e = os.environ if env is None else env
@@ -209,6 +219,19 @@ class Config:
                 f"CANDLE_TIMEFRAMES contains unsupported value(s) {invalid_timeframes}; "
                 f"must be one of {sorted(_VALID_CANDLE_TIMEFRAMES)}"
             )
+        candle_timeframes_by_symbol: dict[str, tuple[str, ...]] = {}
+        for symbol in candle_symbols:
+            override_raw = e.get(f"CANDLE_TIMEFRAMES_{symbol}", "").strip()
+            if not override_raw:
+                continue
+            override = tuple(t.strip().upper() for t in override_raw.split(",") if t.strip())
+            invalid_override = [t for t in override if t not in _VALID_CANDLE_TIMEFRAMES]
+            if invalid_override or not override:
+                raise ConfigError(
+                    f"CANDLE_TIMEFRAMES_{symbol} contains unsupported value(s) {invalid_override or override_raw!r}; "
+                    f"must be one of {sorted(_VALID_CANDLE_TIMEFRAMES)}"
+                )
+            candle_timeframes_by_symbol[symbol] = override
         candle_sync_interval = _read_positive_int(e, "CANDLE_SYNC_INTERVAL_SECONDS", default=300)
         candle_initial_sync_days = _read_positive_int(e, "CANDLE_INITIAL_SYNC_DAYS", default=730)
 
@@ -238,6 +261,7 @@ class Config:
             candle_sync_interval_seconds=candle_sync_interval,
             candle_initial_sync_days=candle_initial_sync_days,
             autonomous_execution_enabled=autonomous_execution_enabled,
+            candle_timeframes_by_symbol=candle_timeframes_by_symbol,
         )
 
     @property

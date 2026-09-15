@@ -71,6 +71,10 @@ _MIN_INITIAL_SYNC_DAYS_BY_TIMEFRAME: dict[str, int] = {
     "W1": 1825,   # ~5 years / ~260 weekly candles — well past the 78 minimum
     "MN1": 5475,  # ~15 years / ~180 monthly candles — same reasoning
 }
+# M1 is ~1,440 bars per day: a first-ever M1 sync (no stored rows) is capped
+# so a newly configured symbol cannot trigger a multi-year M1 download from
+# the live loop. Deep M1 history belongs to backfill_gold_history.py.
+_MAX_INITIAL_SYNC_DAYS_BY_TIMEFRAME: dict[str, int] = {"M1": 30}
 # Gold historical-data-collection project — get_instrument_verification()
 # reads broker-reported specs (volume/point/contract size/swap/expiration)
 # that essentially never change intraday; once at startup (see
@@ -274,11 +278,11 @@ class CollectorApp:
         # a transient MT5 error) is a safe no-op — the backend/technical-
         # analysis layer falls back to the candle-based price exactly as
         # before this existed.
-        live_tick = (
-            self._client.get_live_tick(self._config.candle_symbols[0])
-            if self._config.candle_symbols
-            else None
-        )
+        # One quote per configured candle symbol (gold collection alongside
+        # EURUSD). The first symbol is still sent as `liveTick`, exactly as
+        # before, for existing consumers; all are also sent as `liveTicks`.
+        live_ticks = [t for t in (self._client.get_live_tick(s) for s in self._config.candle_symbols) if t is not None]
+        live_tick = live_ticks[0] if live_ticks and live_ticks[0]["symbol"] == self._config.candle_symbols[0] else None
 
         payload = build_snapshot_payload(
             account_id=self._config.collector_account_id,
@@ -288,6 +292,7 @@ class CollectorApp:
             last_error=last_error,
             collector_version=COLLECTOR_VERSION,
             live_tick=live_tick,
+            live_ticks=live_ticks,
         )
         try:
             self._api.post_snapshot(payload)
@@ -443,7 +448,7 @@ class CollectorApp:
         from being attempted this tick.
         """
         for symbol in self._config.candle_symbols:
-            for timeframe in self._config.candle_timeframes:
+            for timeframe in _timeframes_for(self._config, symbol):
                 try:
                     self._sync_one_candle_series(symbol, timeframe)
                 except ApiClientError as exc:
@@ -466,6 +471,7 @@ class CollectorApp:
                 self._config.candle_initial_sync_days,
                 _MIN_INITIAL_SYNC_DAYS_BY_TIMEFRAME.get(timeframe, 0),
             )
+            initial_sync_days = min(initial_sync_days, _MAX_INITIAL_SYNC_DAYS_BY_TIMEFRAME.get(timeframe, initial_sync_days))
             date_from = now - timedelta(days=initial_sync_days)
             logger.info("candle sync (initial backfill — this may take a while)", extra={
                 "symbol": symbol, "timeframe": timeframe, "date_from": date_from.isoformat(),
@@ -671,6 +677,12 @@ class CollectorApp:
             all_candles.extend(self._client.get_candles(symbol, timeframe, chunk_start, chunk_end))
             chunk_start = chunk_end
         return all_candles
+
+
+def _timeframes_for(config: Config, symbol: str) -> tuple[str, ...]:
+    """Per-symbol CANDLE_TIMEFRAMES_<SYMBOL> override, else the global list."""
+    overrides = getattr(config, "candle_timeframes_by_symbol", None) or {}
+    return overrides.get(symbol, config.candle_timeframes)
 
 
 def _parse_iso(value: str) -> datetime:

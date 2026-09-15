@@ -100,6 +100,8 @@ export class WatchStore {
   readonly journalPath: string;
   readonly lockPath: string;
   readonly summaryPath: string;
+  readonly processLockPath: string;
+  private journalKeys: Set<string> | null = null;
 
   constructor(readonly dir: string) {
     mkdirSync(dir, { recursive: true });
@@ -107,6 +109,33 @@ export class WatchStore {
     this.journalPath = join(dir, 'journal.jsonl');
     this.lockPath = join(dir, 'watch.lock');
     this.summaryPath = join(dir, 'latest-watch.json');
+    this.processLockPath = join(dir, 'watcher.process.lock');
+  }
+
+  /**
+   * Appends an entry only if no entry with the same key was ever written, so
+   * a crash between saving state and journaling can be repaired by simply
+   * reconciling again on the next cycle — no duplicates, nothing lost.
+   */
+  journalOnce(key: string, entry: Record<string, unknown>): boolean {
+    if (!this.journalKeys) {
+      this.journalKeys = new Set();
+      if (existsSync(this.journalPath)) {
+        for (const line of readFileSync(this.journalPath, 'utf8').split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line) as { key?: string };
+            if (parsed.key) this.journalKeys.add(parsed.key);
+          } catch {
+            // a torn final line from a crash is ignored; its key is re-journaled
+          }
+        }
+      }
+    }
+    if (this.journalKeys.has(key)) return false;
+    this.journal({ key, ...entry });
+    this.journalKeys.add(key);
+    return true;
   }
 
   load(nowT: number): WatchState {
@@ -145,6 +174,67 @@ export class WatchStore {
 
   releaseLock(): void {
     if (existsSync(this.lockPath)) unlinkSync(this.lockPath);
+  }
+}
+
+export interface ProcessLockInfo {
+  pid: number;
+  startedAtT: number;
+  heartbeatT: number;
+}
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Single-instance lock held for the watcher PROCESS lifetime (not per cycle),
+ * so two watchers can never interleave cycles. A lock is only taken over when
+ * its owner process is gone or its heartbeat is older than `staleAfterMs`.
+ */
+export class ProcessLock {
+  private owned = false;
+
+  constructor(
+    readonly path: string,
+    readonly staleAfterMs = 15 * 60_000,
+    private readonly isAlive: (pid: number) => boolean = pidAlive,
+  ) {}
+
+  read(): ProcessLockInfo | null {
+    if (!existsSync(this.path)) return null;
+    try {
+      return JSON.parse(readFileSync(this.path, 'utf8')) as ProcessLockInfo;
+    } catch {
+      return null;
+    }
+  }
+
+  acquire(nowT: number, pid = process.pid): { tookOverFrom: ProcessLockInfo | null } {
+    const existing = this.read();
+    if (existing && existing.pid !== pid && this.isAlive(existing.pid) && nowT - existing.heartbeatT < this.staleAfterMs) {
+      throw new Error(`another research watcher is running (pid ${existing.pid}, last heartbeat ${iso(existing.heartbeatT)}); refusing to start a second instance`);
+    }
+    writeFileSync(this.path, JSON.stringify({ pid, startedAtT: nowT, heartbeatT: nowT } satisfies ProcessLockInfo));
+    this.owned = true;
+    return { tookOverFrom: existing && existing.pid !== pid ? existing : null };
+  }
+
+  heartbeat(nowT: number, pid = process.pid): void {
+    const current = this.read();
+    if (!current || current.pid !== pid) throw new Error('watcher process lock was lost to another process; stopping');
+    writeFileSync(this.path, JSON.stringify({ ...current, heartbeatT: nowT }));
+  }
+
+  release(pid = process.pid): void {
+    const current = this.read();
+    if (this.owned && current?.pid === pid && existsSync(this.path)) unlinkSync(this.path);
+    this.owned = false;
   }
 }
 

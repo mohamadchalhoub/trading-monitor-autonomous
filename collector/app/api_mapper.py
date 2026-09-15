@@ -31,6 +31,7 @@ def build_snapshot_payload(
     last_error: str | None,
     collector_version: str,
     live_tick: dict[str, Any] | None = None,
+    live_ticks: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     account = account or {}
     payload = {
@@ -55,13 +56,15 @@ def build_snapshot_payload(
     # the backend stores it keyed by symbol alone, same pattern
     # historical_candles already uses for shared market data.
     if live_tick is not None and live_tick.get("bid") is not None and live_tick.get("ask") is not None:
-        payload["liveTick"] = {
-            "symbol": live_tick["symbol"],
-            "bid": live_tick["bid"],
-            "ask": live_tick["ask"],
-            "tickAt": live_tick["time"],
-        }
+        payload["liveTick"] = _live_tick_payload(live_tick)
+    complete = [t for t in (live_ticks or []) if t.get("bid") is not None and t.get("ask") is not None and t.get("time")]
+    if complete:
+        payload["liveTicks"] = [_live_tick_payload(t) for t in complete]
     return payload
+
+
+def _live_tick_payload(tick: dict[str, Any]) -> dict[str, Any]:
+    return {"symbol": tick["symbol"], "bid": tick["bid"], "ask": tick["ask"], "tickAt": tick["time"]}
 
 
 def _position_payload(p: dict[str, Any]) -> dict[str, Any]:

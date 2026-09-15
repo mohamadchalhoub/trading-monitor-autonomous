@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
   IsDefined,
@@ -68,6 +69,10 @@ export class SnapshotDto {
 
   @IsOptional() @ValidateNested() @Type(() => LiveTickDto)
   liveTick?: LiveTickDto;
+
+  /** One quote per collected symbol (e.g. EURUSD and XAUUSD). `liveTick` above is kept unchanged for existing consumers. */
+  @IsOptional() @IsArray() @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => LiveTickDto)
+  liveTicks?: LiveTickDto[];
 
   @IsArray()
   @ValidateNested({ each: true })
