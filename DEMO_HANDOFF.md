@@ -1,13 +1,54 @@
 # DEMO_HANDOFF — gold (XAUUSD) execution
 
-**Status: PAUSED (kill switch), a real defect found and fixed, all six focused checks complete,
-awaiting a scheduler restart.** DEMO activation (2026-09-15T12:06:34Z) is still valid. Three
-rounds so far: (1) age-cap + window recheck, (2) live-quote detection + pre-send guard, (3) this
-round — six focused checks on rounds 1-2, one of which found a genuine remaining defect (fixed)
-and one of which found a genuine test-environment bug (fixed, not dismissed). See "Update —
-2026-09-15, six focused checks" below. `backend/KILL_SWITCH` remains in place, unchanged, since
-the already-running scheduler process predates every fix so far — restart it (exact commands at
-the end of the newest section) to resume. No genuine order has occurred yet.
+**Status: LIVE, fully verified against the corrected code, kill switch cleared.** The user
+restarted the scheduler at 2026-09-15T13:36:38Z; it has completed multiple clean cycles. See
+"Update — 2026-09-15, post-fix restart verified live" below for the full, independently-checked
+evidence. No genuine order has occurred yet — the system is correctly idle, waiting for a new H4
+level to form (zero levels are currently active) and then for its first touch.
+
+## Update — 2026-09-15, post-fix restart verified live
+
+The user restarted the scheduler and removed `backend/KILL_SWITCH`. Verified independently
+rather than trusting the report, covering every dimension asked:
+
+- **Kill switch**: confirmed removed from disk; live status call confirms `killSwitchActive:
+  false`.
+- **Scheduler process**: exactly ONE process tree (`cmd.exe` → `node` (ts-node-dev wrapper) →
+  `node` (tsx-run script), PIDs 15552/13152/19204), started 2026-09-15T13:36:35 local — no
+  duplicate top-level scheduler invocation found.
+- **Confirmed the restarted process is running the corrected code**, two independent ways (not
+  just trusting that a process started): (1) its start time is AFTER the on-disk mtime of every
+  file changed by this session's fixes (last changed 16:14:25 local; process started 16:36:36
+  local); (2) its own persisted `gold-watch-state.json` now contains the `liveTouch` field,
+  which only exists in the corrected `gold-signal-source.ts`/`gold-live-touch.ts` — proof the
+  new code actually ran and wrote this state, not just that a process is up.
+- **Collector**: single process tree unchanged (PID 16084 + its expected MT5-IPC child 5568),
+  still the same instance from earlier in this session.
+- **`GET /research/gold-execution-status`, fresh call**: `accountMode: "DEMO"`,
+  `accountTradeMode: "DEMO"`, `stopNewEntriesActive: false`, `killSwitchActive: false`,
+  `occupancy.hasExistingXauusdExposure: false`, settings unchanged from spec (0.01 lots, magic
+  262610181, $10 TP/SL, 200pt deviation), `accountSnapshotStale: false` (6.7s old),
+  `recentDecisions`/`closedTrades`/`openPositions` all empty.
+- **Data freshness, checked independently of the status endpoint**: XAUUSD M1 true-UTC
+  staleness ~5.8 minutes (correct EET conversion); live tick age ~6.7s (10s refresh cadence,
+  consistent with the independently-measured collector interval from the previous update).
+- **Why zero events have fired since restart, checked directly rather than assumed benign**:
+  `gold-watch-state.json`'s `replay.levels.activeLevelIds` is currently EMPTY — there is no
+  currently-active H4 support/resistance level at all (whatever last existed has already been
+  consumed or expired). This is why every post-restart cycle correctly shows
+  `actionableEvents=0` and the live-quote tracker has no baseline yet — there is nothing to
+  detect a touch ON right now, not a detection failure. The system is correctly waiting for
+  `confirmed-retest-v2`'s own H4/D1 formation logic (unchanged) to activate a new level before
+  either detection layer has anything to watch.
+
+**The corrected system is now genuinely live**: collector polls MT5 every ~10s (ticks/snapshot)
+and gold-order-pending every ~10s (same main loop), the backend evaluates real occupancy/risk
+each time a signal fires, and the scheduler runs continuously, single-instance-locked, on the
+corrected code, currently idle by genuine market state (no active level), not by any remaining
+defect. It will act the next time a new H4 level forms and is genuinely first-touched inside
+04:00–12:00 Asia/Beirut, with every check from this session's rounds (live-quote detection,
+M1 audit-only backstop, pre-send guard, signal-age/window/deviation/occupancy/kill-switch
+rechecks) in effect. No code or config changes are pending.
 
 ## Update — 2026-09-15, six focused checks (one real defect fixed, one real test-env bug fixed)
 
