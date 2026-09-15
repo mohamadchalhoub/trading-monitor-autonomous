@@ -32,12 +32,19 @@ cd C:\Users\user\Desktop\trading-monitor-autonomous\backend
 npm run gold-execution:watch
 ```
 
-There is currently no automatic scheduler invoking `gold-execution:watch` on an interval —
-this is a deliberate, documented decision (matching the existing EURUSD
-`AutonomousExecutionCoordinatorService`'s own "built and tested ahead of its own orchestration
-layer" posture). To run it continuously, wrap it in a loop (e.g. a scheduled task or a small
-wrapper script calling it every N minutes) only once you have decided that is the intended
-operating mode — this document does not create that wrapper for you.
+A real scheduler now exists — `npm run gold-execution:scheduler` (from `backend/`) runs the
+watch cycle every `GOLD_SCHEDULER_INTERVAL_SECONDS` (default 60), restart-safe, single-instance
+locked. It is not started automatically by anything else; run it explicitly once you intend
+continuous operation. Ctrl+C / SIGTERM stops it cleanly.
+
+**Before relying on it live, verify XAUUSD M1 freshness properly** (the raw stored timestamp
+is broker-mislabeled, NOT true UTC):
+```powershell
+cd C:\Users\user\Desktop\trading-monitor-autonomous\backend
+npx tsx -e "import {wallClockToUtc} from './src/research/confirmed-retest-v2/time'; import {PrismaClient} from '@prisma/client'; (async()=>{const p=new PrismaClient(); const b=await p.historicalCandle.findFirst({where:{symbol:'XAUUSD',timeframe:'M1'},orderBy:{openTime:'desc'}}); const trueUtc=wallClockToUtc('EET', b!.openTime.getTime()); console.log('true UTC open:', new Date(trueUtc).toISOString(), 'staleness min:', (Date.now()-trueUtc)/60000); await p.$disconnect();})()"
+```
+A staleness of more than a few minutes means the collector needs more time to resync before
+trusting entry-window/signal decisions — do not activate DEMO mode while this is stale.
 
 ## Verifying health
 - `GET /research/gold-execution-status` (dashboard token required) — mode, account trade_mode,
@@ -50,12 +57,17 @@ operating mode — this document does not create that wrapper for you.
 
 ## Duplicate-process check (do this every time before trusting "no order will double-fire")
 ```powershell
-Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like '*main.py*' } | Select-Object ProcessId, CreationDate, CommandLine
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -like '*main.py*' } | Select-Object ProcessId, ParentProcessId, CreationDate, CommandLine
 ```
-Exactly one row should reference `collector/.venv/Scripts/python.exe main.py`. If more than
-one appears, stop all but one (`Stop-Process -Id <pid> -Force`) before proceeding — verified
-live during this task that a second, unexplained `main.py` process (launched via the system
-Python interpreter rather than the venv one) was running alongside the real one.
+**Corrected understanding (per direct user correction)**: it is normal to see TWO rows here —
+one `collector/.venv/Scripts/python.exe main.py` (the real one) and one
+`...Python311\python.exe main.py` whose `ParentProcessId` matches the first one's `ProcessId`
+(the MetaTrader5 IPC bridge's own helper subprocess) — that pair is a single process TREE, not
+two independent duplicate collectors, and should NOT be treated as a problem. What to actually
+check for is more than one process tree with the SAME `main.py` and DIFFERENT
+`ParentProcessId=0`-or-unrelated roots (i.e., two separately-launched top-level `main.py`
+invocations) — that genuinely would be a duplicate and both instances would independently poll
+for and could both claim/execute pending orders.
 
 ## Stopping
 ```powershell

@@ -215,6 +215,39 @@ Remaining smaller items, not blockers to the above:
 - No scheduler yet invokes `gold-execution:watch` on an interval — deliberate, needs an
   explicit decision once trade_mode is confirmed.
 
+## Update 5 — DEMO positively confirmed; scheduler + EUR conversion built; still not activated
+
+Commits: `3f7be97` (EUR/USD conversion), `19aa7ca` (scheduler), plus `DEMO_HANDOFF.md`/
+`GOLD_STARTUP_SHUTDOWN_RECOVERY.md` rewritten with the full corrected picture (not yet
+committed as of this checkpoint edit — commit immediately after this).
+
+- **DEMO trade_mode is now POSITIVELY CONFIRMED**, independently, from fresh (10:57:30 UTC),
+  cross-corroborated (matching `live_ticks` timestamps) real DB data, with the trade_mode
+  mapping re-verified end-to-end against the installed MetaTrader5 package's real enum. This
+  clears the PRIOR blocker.
+- **New blockers found this round, all real, none worked around**:
+  1. No collector process is currently running at all (checked twice) — whatever produced the
+     10:57:30 data has since stopped. Starting one was attempted and denied by the same
+     classifier that denied killing one last round.
+  2. XAUUSD M1 data is ~83 minutes stale by the correct EET/EEST conversion (not the raw
+     label) — too stale for live entry-window decisions, and only gets fresher once the
+     collector runs continuously again.
+  3. Effective `GOLD_EXECUTION_ENABLED` cannot be read from a live process (none running);
+     `main.py`'s `load_dotenv()` does not override an existing process env var, so a shell
+     override can silently win over `.env` — must be re-checked from the actual startup log
+     line at next launch, never assumed.
+- **Correction**: the "duplicate collector process" finding from the previous round was WRONG
+  per direct user correction — the second process was a child (MT5 IPC helper), not an
+  independent duplicate. Retracted in `DEMO_HANDOFF.md`/`GOLD_STARTUP_SHUTDOWN_RECOVERY.md`.
+- Scheduler built (`GoldExecutionScheduler` + `gold-execution-scheduler.ts` script, 6 tests) —
+  coordinator item 5 done.
+- EUR/USD live currency conversion added to the risk gate (coordinator item 6 done, 6 new
+  tests, including one proving real-conversion vs. naive-1:1 diverge in actual verdict).
+- Did NOT flip `GOLD_EXECUTION_MODE`/`GOLD_EXECUTION_ENABLED` to DEMO/true in any persisted
+  config — deliberate, given the three items above; flipping them while nothing is running and
+  data is stale would silently arm the system for whenever it's next started, without whoever
+  starts it necessarily re-checking freshness/mode first.
+
 ## Exact resume point
 DONE: versioned spec, `gold-execution` module (constants/risk-manager/mode/coordinator/
 controller/module), collector-side polling, `GoldAccountStateService`. All committed

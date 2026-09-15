@@ -1,123 +1,175 @@
 # DEMO_HANDOFF — gold (XAUUSD) execution
 
-**Status: NOT ACTIVATED. Demo order submission has NOT been turned on.** This is the honest,
-current state — read this before assuming anything below is live.
+**Status: NOT ACTIVATED. Demo order submission has NOT been turned on.** Substantial progress
+since the previous version of this doc — DEMO is now positively, independently confirmed — but
+activation still correctly has not happened, for reasons stated plainly below.
 
-## The exact blocker to activation, stated plainly
+## 1. Account identity — DEMO is now POSITIVELY CONFIRMED, with evidence
 
-The account's own `trade_mode` cannot currently be trusted, for a documented, fixed-but-not-
-yet-re-verified reason:
+Corrected timeline:
+- The original `api_mapper.py` trade_mode-label bug (see §2) meant the account's `tradeMode`
+  read `"REAL"` in earlier data — that reading was never trustworthy, and was correctly never
+  treated as a real confirmation.
+- The bug was fixed (commit `07a154c`) and the collector was restarted (by the user) after the
+  fix.
+- **Independently re-queried directly against the real Postgres DB** (not the API, not a log
+  claim): the freshest `account_snapshots` rows for account `753b3a50-205b-45a3-b770-885357539d54`
+  (MT5 `5055783885`, broker `MetaQuotes-Demo`) — three consecutive rows at `10:57:09`,
+  `10:57:20`, `10:57:30` UTC — all show `trade_mode = 'DEMO'`, `balance = equity = 50000`.
+- **Cross-corroborated independently a second way**: `live_ticks` rows for both `XAUUSD`
+  (bid 4281.39 / ask 4281.66) and `EURUSD` (bid/ask 1.15354) carry the identical timestamp
+  `2026-09-15T10:57:30Z` — proof this was a live, actively-connected collector cycle at that
+  moment, not a stale or synthetic row.
+- **End-to-end mapping re-verified from source**: the installed `MetaTrader5` package's own
+  `__init__.py` defines `ACCOUNT_TRADE_MODE_DEMO=0, CONTEST=1, REAL=2`; the corrected
+  `api_mapper.py._TRADE_MODE_LABELS = {0: "DEMO", 1: "CONTEST", 2: "REAL"}` now matches this
+  exactly (checked directly, not from memory). `executor.py`'s own live order-placement gate
+  (`verify_demo_account`) was never affected by the old bug either way — it compares against
+  the real `MetaTrader5` module's own constant directly.
 
-1. While building this task's live-verification pass, a bounded gold-execution shadow run
-   (`npm run gold-execution:watch` with `GOLD_EXECUTION_MODE=SHADOW`) against the real dev
-   database showed the live MT5 account's latest `AccountSnapshot.tradeMode` as `"REAL"`.
-2. Investigating that finding surfaced a real, pre-existing bug:
-   `collector/app/api_mapper.py`'s `_TRADE_MODE_LABELS` was `{0: "REAL", 1: "DEMO", 2:
-   "CONTEST"}` — a complete permutation error against the actually-installed `MetaTrader5`
-   package's real enum, verified directly from
-   `collector/.venv/Lib/site-packages/MetaTrader5/__init__.py`:
-   `ACCOUNT_TRADE_MODE_DEMO=0, CONTEST=1, REAL=2`. An existing unit test had been asserting the
-   wrong mapping as correct, self-confirming the bug instead of catching it.
-3. **This is now fixed** (commit `07a154c`): `_TRADE_MODE_LABELS = {0: "DEMO", 1: "CONTEST", 2:
-   "REAL"}`, with the self-confirming test corrected too. Full collector suite 194/194 passing
-   after the fix.
-4. **But the running collector process was never restarted**, so it is still executing the
-   old, buggy code in memory (Python does not hot-reload). A restart is required to push a
-   corrected snapshot. **Restarting the collector process was attempted and explicitly denied
-   by this environment's own automated safety classifier** ("Interfere With Workloads") — not
-   worked around, per the operating rules for this task.
+**Conclusion: DEMO is positively confirmed as of ~10:57:30 UTC on 2026-09-15**, from real,
+freshly-pushed, cross-corroborated data, using the corrected mapping, checked end-to-end.
 
-**Net effect:** the account's true `trade_mode` is genuinely unconfirmed right now. The
-pre-fix `"REAL"` reading must NOT be trusted (it came from known-buggy code — it is very
-plausibly actually DEMO, given the account's display name is `MT5 5055783885
-(MetaQuotes-Demo)`, but "plausibly" is not the same as "positively confirmed," and this task's
-own rule is explicit: never activate without positive confirmation). A corrected reading has
-not yet been observed. **This is the single concrete remaining blocker to activation** — not a
-missing feature, a data-confirmation gap.
+## 2. But the collector is NOT currently running — this is the actual remaining blocker
 
-Also found and fixed: a second `python main.py` process was running alongside the documented
-one (`collector/.venv/Scripts/python.exe main.py` at PID 4664 vs a system-Python invocation at
-PID 12532, both started the same second). Terminating it was also denied by the same
-classifier. Both must be resolved by the user directly — see `GOLD_STARTUP_SHUTDOWN_RECOVERY.md`
-for the exact commands.
+Checked directly, twice, a few minutes apart: `Get-CimInstance Win32_Process -Filter
+"Name='python.exe'"` shows **zero** processes with `main.py` on their command line right now.
+Whatever process produced the 10:57:30 UTC data has since stopped (cleanly or not — unknown).
+Starting a fresh collector process was attempted by this agent and **explicitly denied by this
+environment's own "Interfere With Workloads" safety classifier** — the same restriction that
+blocked killing a process in the previous round. This is a genuine external tooling
+constraint, not something bypassed, and not something this agent can resolve without a human
+starting the process.
 
-## What IS implemented (code, tested, committed locally — not pushed)
+**Correction to the previous version of this doc, per direct user correction**: the two
+`python.exe main.py`-looking processes seen earlier (PID 4664 venv-python, PID 12532
+system-python) were **not two independent duplicate collectors** — 12532 was a child process
+of 4664 (the MetaTrader5 IPC bridge spawning a helper), a normal, expected process shape, not
+a duplicate-instance problem. The "kill the duplicate" framing in the prior version of this
+doc was wrong and is retracted. The duplicate-process check in
+`GOLD_STARTUP_SHUTDOWN_RECOVERY.md` is updated accordingly (check for more than one *process
+tree*, not more than one *process*).
 
-- `backend/src/gold-execution/` — full module: gold-specific magic number (262610181, distinct
-  from EURUSD's 262610180), fixed volume (0.01 lots)/point-size/TP-SL/risk-cap constants,
-  `evaluateGoldRiskManager` (fails closed on non-DEMO, kill switch, occupancy, entry-deviation,
-  broker step/min/max, SL/TP distance/side, equity-based 0.5/1/2/5% caps), OFF/SHADOW/DEMO mode
-  switch (env `GOLD_EXECUTION_MODE`, fails closed to OFF) with a separately-rechecked
-  `GOLD_STOP_NEW_ENTRIES`, `GoldExecutionCoordinatorService` (logs SHADOW decisions or queues
-  DEMO orders), `GoldAccountStateService` (live occupancy from real broker-synced `Position`
-  rows + in-flight decisions, live equity/trade_mode from the latest snapshot fails closed to
-  REAL/0 when absent, live broker volume constraints from `SymbolMetadata` fails closed to an
-  impossible constraint when missing/stale), collector-facing poll/report routes
-  (`GoldExecutionController`, symbol-scoped — verified NOT to collide with EURUSD's own route),
-  and a dashboard endpoint (`GoldDashboardController` at `GET /research/gold-execution-status`).
-- `backend/src/gold-execution/gold-signal-source.ts` — bridges confirmed-retest-v2's pure
-  research engine (formation, first-return consumption, entry-window, D1-descriptive-only) to
-  the coordinator, without modifying v2 itself (its own boundary test, forbidding execution
-  imports inside `src/research/confirmed-retest-v2/`, still passes unaffected — verified,
-  34/34 v1+v2 boundary tests). `isActionableLiveEvent`/`toGoldSignal` are pure, heavily tested
-  functions; `runGoldWatchCycle`/`GoldWatchStore` are the thin, restart-safe orchestration.
-- Collector-side (`collector/app/api_client.py`, `config.py`, `runner.py`): an independent
-  `GOLD_EXECUTION_ENABLED` flag (never coupled to EURUSD's own), gold poll/report calls, and
-  `executor.py` reuse via its existing `symbol`/`point_size` parameters (no executor.py change
-  needed).
-- `backend/scripts/gold-execution-watch.ts` (`npm run gold-execution:watch`) — a manually-
-  invoked, not-yet-scheduled single watch cycle, used to produce the evidence above.
-- Docs: `FRIEND_RULES_AND_IMPLEMENTATION.md`, `backend/src/research/XAUUSD_H4_CONFIRMED_RETEST_GOLD_LIVE_V1_SPEC.md`,
+## 3. Data freshness — XAUUSD M1 is NOT currently acceptable for live decisions
+
+Checked directly with the same conversion layer `confirmed-retest-v2/data-source.ts` uses
+(`wallClockToUtc('EET', ...)`, not the raw broker-mislabeled timestamp): the latest stored
+XAUUSD M1 bar's raw label is `2026-09-15T12:44:00Z`; its TRUE UTC open time is
+`2026-09-15T09:44:00Z`. At the time of this check (`2026-09-15T11:06:57Z` true UTC), that is
+**~83 minutes stale**, and rising, since the collector is not running to sync further. This is
+far outside an acceptable bound for trusting entry-window/signal decisions live — do NOT rely
+on current M1 data for a live signal until the collector has run continuously long enough to
+resync (the live tick pipe, separately, was healthy — only ~6-9 minutes stale at 10:57:30 —
+suggesting the M1 candle-sync specifically had a backlog to work through when it stopped, not
+a renewed version of the original candle-sync-lag bug from `MORNING_HANDOFF.md`, which that
+fix already addressed for the tick-adjacent path).
+
+## 4. Effective `GOLD_EXECUTION_ENABLED` value — cannot be read from a live process right now
+
+`collector/.env` has no `GOLD_EXECUTION_ENABLED` line at all (defaults to `false` per
+`config.py`). The user separately reported setting `$env:GOLD_EXECUTION_ENABLED = "false"` in
+the PowerShell session used to relaunch the collector — and `main.py`'s own `load_dotenv()`
+call is confirmed, by its own comment, to **never override an existing process env var**
+(python-dotenv's default `override=False`), so a process-level override like that would win
+over `.env` regardless of the file's contents. Since no collector process is currently
+running, there is no live process to read an effective value from at all right now — this
+must be re-checked from the actual startup log line (`"gold_execution_enabled": ...`,
+`runner.py`'s own startup log) the next time the collector is started, not assumed from either
+the `.env` file or a shell variable alone.
+
+## 5. Scheduler — built this round (was missing before)
+
+`backend/src/gold-execution/gold-execution-scheduler.ts` + `backend/scripts/gold-execution-scheduler.ts`
+(`npm run gold-execution:scheduler`): a real, restart-safe, single-instance-locked (reuses
+v1's own `ProcessLock`), periodic (default 60s, `GOLD_SCHEDULER_INTERVAL_SECONDS`) invocation
+of the gold watch cycle. Never overlaps cycles, never crashes the loop on one cycle's error,
+handles SIGINT/SIGTERM cleanly. 6 new tests (fake timers), all passing. It is NOT currently
+running (nothing is, per §2) and has never been run continuously in production — only
+unit-tested in isolation.
+
+## 6. EUR/USD currency conversion — added this round
+
+`evaluateGoldRiskManager` now requires `accountCurrency`/`profitCurrency`/a live
+`profitCurrencyToAccountCurrencyRate` and fails closed (rejects) rather than assume 1:1 when a
+conversion is actually needed (confirmed live: this account's currency is EUR, gold's real
+`SymbolMetadata.profitCurrency` is USD) but no live rate is available.
+`GoldAccountStateService.resolveConversionRate` derives the rate from the same live
+`LiveTick('EURUSD')` row gold's own price comes from. 6 new tests, including one that proves
+the real conversion and a naive 1:1 assumption produce genuinely different pass/reject
+verdicts on the same input (not just different numbers).
+
+## 7. What IS implemented (code, tested, committed locally — not pushed)
+
+- `backend/src/gold-execution/` — constants, risk manager (now currency-aware), OFF/SHADOW/DEMO
+  mode switch, coordinator, account-state resolver (occupancy/equity/trade_mode/volume
+  constraints/currency, all live-queried, all fail closed), collector poll/report routes,
+  dashboard endpoint, signal source bridging confirmed-retest-v2 (without modifying it), and
+  the scheduler (§5).
+- Collector-side: independent `GOLD_EXECUTION_ENABLED` flag, gold poll/report calls, reuse of
+  `executor.py`'s existing symbol/point-size parameters (no executor.py change needed), and the
+  `api_mapper.py` trade_mode fix (§1/§2 of the prior finding).
+- Docs: `FRIEND_RULES_AND_IMPLEMENTATION.md`,
+  `backend/src/research/XAUUSD_H4_CONFIRMED_RETEST_GOLD_LIVE_V1_SPEC.md`,
   `backend/src/gold-execution/GOLD_LIVE_HISTORICAL_EVALUATION.md`,
   `GOLD_STARTUP_SHUTDOWN_RECOVERY.md`, this file.
 
-## What was tested, and how (evidence)
+## 8. Tested, and how (evidence) — scoped, not the full 1200+ suite re-run every time
 
-- `backend`: `npx tsc --noEmit` clean throughout. `test/gold-execution/` — 39 tests (risk
-  manager unit tests, e2e collector-route symbol-scoping against the real test Postgres DB,
-  occupancy/equity/volume-constraint resolution, signal-mapping unit tests, dashboard e2e).
-  `test/autonomous/` — 139 tests, unaffected (no EURUSD regression from the
-  `claimOldestPendingOrder` symbol-scoping fix). `test/research/confirmed-retest{,-v2}/boundary.spec.ts`
-  — 34 tests, unaffected (proves v2's no-order-path invariant still holds after adding
-  `gold-signal-source.ts` outside its directory).
-- `collector`: full pytest suite 194/194 (was 189 at task start; +5 gold-polling tests this
-  task added, all passing) — including after the `trade_mode` mapping fix.
-- Bounded SHADOW run: `GOLD_EXECUTION_MODE=SHADOW npx tsx scripts/gold-execution-watch.ts`
-  against the real dev database. Genuine result: it found real, already-formed
-  confirmed-retest-v2 levels from the historical study, correctly computed BUY/SELL signals
-  from their SUPPORT/RESISTANCE role, and correctly REFUSED every one at the risk gate with
-  the reason `"Refusing to trade gold: account trade_mode is \"REAL\", not DEMO."` — proving
-  the fail-closed mechanism works end-to-end, even though the specific `"REAL"` value itself
-  was later found to be unreliable (see blocker above). No order was queued or sent; this is
-  exactly the intended SHADOW behavior.
+`tsc --noEmit` clean throughout. `test/gold-execution/` — 51 tests across risk-manager
+(including currency conversion), e2e collector-route symbol-scoping + occupancy + volume +
+currency resolution (against the real test Postgres DB), signal-mapping, dashboard, and
+scheduler (fake-timer) suites — all passing. `test/autonomous/` 139 tests unaffected. v1/v2
+research-boundary suites 34 tests unaffected. Collector pytest suite 194/194 (includes the
+trade_mode-mapping fix and its corrected test). A full 1229-test backend run was done once
+earlier this task and found 3 pre-existing, already-documented flaky failures unrelated to
+gold — it was **not** re-run again for this round's smaller, scoped changes, per instruction;
+scoped-suite passing is good evidence, not absolute proof against a regression somewhere
+entirely untouched by this work.
 
-## Whether genuine orders have occurred
+## 9. Whether genuine orders have occurred
 
-**No.** `AutonomousDecision` rows with `symbol='XAUUSD'` and `orderStatus` other than `NONE`
-do not exist. Verify at any time via `GET /research/gold-execution-status`'s
-`recentDecisions`/`closedTrades` (both empty) or a direct query.
+**No.** `AutonomousDecision` rows with `symbol='XAUUSD'` and `orderStatus` other than `NONE` do
+not exist. Verify via `GET /research/gold-execution-status`'s `recentDecisions`/`closedTrades`
+(both empty) or a direct query.
 
-## Whether demo automation is active
+## 10. Whether demo automation is active right now
 
-**No.** `GOLD_EXECUTION_MODE` defaults to `OFF`; `GOLD_EXECUTION_ENABLED` (collector-side) was
-never set to `true` in any running process; no scheduler invokes `gold-execution:watch`
-automatically. Nothing was activated.
+**No, on every axis**: `GOLD_EXECUTION_MODE` was left at its default `OFF` (not flipped to
+DEMO by this agent — see §11 for why), `GOLD_EXECUTION_ENABLED` was not set, the scheduler was
+not started, and — separately, factually — no collector process is running at all right now
+regardless of any flag.
 
-## What remains, in order
+## 11. Why activation was NOT completed even though DEMO is confirmed
 
-1. Restart the collector (user action — blocked for this agent by the platform's process-
-   management restriction) and confirm exactly one instance is running.
-2. Re-query the MT5 account's fresh `AccountSnapshot.tradeMode`. If (and only if) it now reads
-   `"DEMO"`, this specific blocker is cleared.
-3. Re-run the bounded SHADOW cycle and confirm the risk gate no longer rejects purely on
-   trade_mode (other rejections — occupancy, deviation, risk caps — may still legitimately
-   fire; that is correct behavior, not a bug).
-4. Only then set `GOLD_EXECUTION_MODE=DEMO` and `GOLD_EXECUTION_ENABLED=true`, and decide on a
-   scheduling mechanism for `gold-execution:watch` (none exists yet — see
-   `GOLD_STARTUP_SHUTDOWN_RECOVERY.md`).
-5. Build the still-missing explicit "close gold strategy positions" control (task step 6E) —
+Positive DEMO confirmation (§1) was the PRIMARY blocker from the previous round, and it is now
+cleared. But three things still make activation premature right now, and this agent
+deliberately did not flip `GOLD_EXECUTION_MODE`/`GOLD_EXECUTION_ENABLED` to true in any
+persisted config given all three:
+1. **No collector process is running** (§2) — flipping the switches now would do nothing
+   except silently arm a system that will start acting the moment someone next launches the
+   collector, possibly without them re-checking the two items below first.
+2. **XAUUSD M1 data is ~83 minutes stale** (§3) — entry-window and signal correctness depend
+   on this data; it must be fresh (which requires the collector running continuously for a
+   period to resync) before any live signal decision can be trusted.
+3. **The full live operational checklist** (occupancy under real contention, protection
+   placement, restart recovery, kill switch against a live process, no-duplicate-process check
+   — corrected per §2) has not been re-run against an actually-running system this round,
+   since none is running to test against.
+
+## 12. Exact next steps for a human with process-management access
+
+1. Start the collector (`GOLD_STARTUP_SHUTDOWN_RECOVERY.md` has the command) and let it run
+   long enough for XAUUSD M1 to resync to a small staleness (re-check with the same
+   `wallClockToUtc('EET', ...)` method used in §3 — do not trust the raw label).
+2. Confirm the collector's own startup log line's `gold_execution_enabled` value directly
+   (§4) — do not assume from `.env` alone.
+3. Re-confirm `trade_mode == 'DEMO'` one more time from a snapshot captured after that fresh
+   start (cheap, and removes any doubt from the process having restarted again).
+4. Only then set `GOLD_EXECUTION_MODE=DEMO` and `GOLD_EXECUTION_ENABLED=true` and start
+   `npm run gold-execution:scheduler`.
+5. Historical evaluation (Outputs A/B) is already done and reported honestly as a loss under
+   tested assumptions — see `GOLD_LIVE_HISTORICAL_EVALUATION.md`. This does not block
+   activation by itself.
+6. Still not built: an explicit "close gold strategy positions" HTTP route (task step 6E) —
    `executor.py`'s existing `close_position` can be called with `GOLD_MAGIC_NUMBER`, but no
-   HTTP route/test exists for it yet.
-6. Historical evaluation (task step 7, Outputs A/B) is already done and reported honestly as a
-   loss under tested assumptions — see `backend/src/gold-execution/GOLD_LIVE_HISTORICAL_EVALUATION.md`.
-   This does not by itself block activation; the trade_mode confirmation above does.
+   route/test exists yet.
