@@ -187,6 +187,34 @@ Still NOT done — this is the real remaining scope, not yet started or only stu
    verification requirement for gold activation — task step 8 requires this to be checked
    again, explicitly, before gold activation specifically.
 
+## Update 4 — signal wiring, volume constraints, dashboard, evaluation, shadow run done;
+## critical trade_mode bug found+fixed; activation blocked by a genuine external constraint
+
+Commits this round: 7359ffb (signal source), a3640a7 (live volume constraints), 13b5c93
+(dashboard), 27a700a (3-output evaluation doc), 07a154c (trade_mode mapping bug fix +
+gold-execution-watch.ts), 638f9db (wrong-account bug fix).
+
+Done: items 1-6 of the coordinator's ordered list (signal wiring, live volume constraints,
+dashboard, 3-output evaluation, focused tests, bounded shadow run) are all complete, tested,
+and committed. Item 7 (live re-verification) surfaced a real, serious, now-fixed bug — see
+`DEMO_HANDOFF.md` for the full account. Item 8 (activation) is correctly NOT done: it requires
+positive DEMO confirmation, which requires a collector restart that this environment's own
+process-management safety classifier denied to this agent ("Interfere With Workloads") — the
+same classifier that denied background-subagent delegation earlier. Item 9 (DEMO_HANDOFF.md +
+startup/shutdown/recovery doc) is done (`DEMO_HANDOFF.md`, `GOLD_STARTUP_SHUTDOWN_RECOVERY.md`).
+
+**This is now genuinely blocked on a human/user action, not on more agent work**: someone with
+permission to restart OS processes needs to (a) stop the duplicate `main.py` process, (b)
+restart the real one so it picks up the `api_mapper.py` fix, and (c) confirm the resulting
+`AccountSnapshot.tradeMode` reads `DEMO` before anyone sets `GOLD_EXECUTION_MODE=DEMO`. Full
+exact commands are in `GOLD_STARTUP_SHUTDOWN_RECOVERY.md`.
+
+Remaining smaller items, not blockers to the above:
+- Explicit "close gold strategy positions" HTTP route (task step 6E) — not built; `executor.py`
+  already has the underlying `close_position` capability.
+- No scheduler yet invokes `gold-execution:watch` on an interval — deliberate, needs an
+  explicit decision once trade_mode is confirmed.
+
 ## Exact resume point
 DONE: versioned spec, `gold-execution` module (constants/risk-manager/mode/coordinator/
 controller/module), collector-side polling, `GoldAccountStateService`. All committed
