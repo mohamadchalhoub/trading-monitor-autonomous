@@ -1,5 +1,29 @@
 # Morning Handoff — 2026-09-15
 
+## 2026-09-15 addendum: candle-sync lag fixed (follow-up task, after the first handoff)
+
+The "unresolved issue #1" below (live candle-sync lag, documented but not fixed) **is now
+fixed** — narrowly, collector-side only. Full detail, live before/after evidence, and exact
+scope in `backend/research-output/xauusd-h4-confirmed-retest-v1/verification/candle-sync-fix/FIX_REPORT.md`.
+One-paragraph summary: `collector/app/mt5_client.py`'s `get_candles()` was comparing a true-UTC
+query bound against each bar's broker-mislabeled raw epoch, silently excluding roughly the
+broker's own UTC-offset (~3h right now) worth of the most recent bars while looking fresh.
+Fixed by converting the query bound the same way `get_deals_since()` already did — **the stored
+`open_time` value itself is deliberately left unchanged** (still the raw mislabeled epoch,
+matching the millions of already-stored rows and what `data-source.ts`'s `wallClockToUtc`
+already expects); only the sync's own latency was broken, not the data's correctness once
+synced. Live proof: the newest XAUUSD M1 bar went from ~3h1m genuinely stale (while displaying
+as 50s old) to ~1m50s genuinely stale. 2 new regression tests; collector suite 189/189 (was
+187/187). The two running collector processes (one an unexplained stray duplicate) were stopped
+and one fresh one started on the fixed code — confirmed live it now syncs within ~2 minutes of
+true UTC. Winter (EET, UTC+2) offset remains unverified by a live measurement, exactly as the
+prior verification report already documented — not newly resolved by this fix. No strategy code,
+no signal rule, and no execution path was touched; `h4-trend-h1-breakout-v1`'s own separate,
+already-documented window-shift issue is unaffected (this fix changes sync latency, not what
+`open_time` stores). The confirmed-retest zero-level conclusion is unaffected and not marked
+provisional — it read only already-synced historical data at run time.
+
+
 Branch `research/xauusd-h4-confirmed-retest-v1`. Everything below is local commits — nothing
 pushed, nothing deployed, no order placed or capable of being placed. **v1's frozen rules and
 its zero-sample conclusion are unchanged.** No parameter was tuned, no new strategy version was
@@ -69,15 +93,10 @@ with no functional change from before the incident.
 
 ## Unresolved issues and their exact impact
 
-1. **Live candle-sync lag bug (§1.3 of the verification report), not fixed.** Impact: the
-   *live, ongoing* incremental sync for every configured symbol (both EURUSD and XAUUSD) is
-   missing roughly the broker's own UTC-offset worth of the most recent bars at any moment,
-   though it does catch up correctly once bars fall outside that window (each cycle's overlap
-   plus the next cycle's incremental fetch eventually pick them up as `now` advances past
-   them — verified: this session's second study run picked up all 3 intervening days cleanly).
-   It does not affect the historical backfill script or the frozen study's zero-level
-   conclusion. A real fix belongs to a future session (apply `_utc_to_mt5_epoch`-style
-   correction to `runner.py`'s candle-sync bounds, mirroring the existing deal-sync fix).
+1. ~~Live candle-sync lag bug (§1.3 of the verification report), not fixed.~~ **FIXED in the
+   2026-09-15 follow-up** — see the addendum at the top of this file and
+   `verification/candle-sync-fix/FIX_REPORT.md`. Collector-only change (`mt5_client.py`'s
+   `get_candles()` query bound), live-proven, stored `open_time` format unchanged.
 2. **Winter broker offset (+2h) is confirmed only by historical arithmetic, not a live
    measurement** (today is deep in EU summer DST). Left explicitly unresolved rather than
    assumed — see the verification report §1.5.
@@ -131,8 +150,11 @@ npm run confirmed-retest:study
   mid-session (see the disclosed incident above) and once more automatically by `ts-node-dev`'s
   own file-watch on the two files this task edited. Currently up.
 - Frontend (`npm run dev`, Next.js, port 3000) — running, unchanged since it was started.
-- Collector (`python main.py`) — running, restarted once to pick up
-  `CANDLE_SYMBOLS=EURUSD,XAUUSD`; currently syncing both symbols, execution disabled.
+- Collector (`python main.py`) — running, restarted twice total: once (prior handoff) to pick up
+  `CANDLE_SYMBOLS=EURUSD,XAUUSD`, once more (this addendum) to deploy the candle-sync fix; also
+  killed an unexplained stray duplicate `python main.py` process found running alongside it
+  (PID 10524) — both were stopped and one fresh process started. Currently syncing both symbols,
+  execution disabled, log at `collector/logs/collector_post_fix.log`.
 - **The watch-only watcher is NOT currently running** — per instruction, it was verified with
   bounded runs and then stopped, not left as a background service. No OS scheduled task or
   service was installed for it, or for anything else.

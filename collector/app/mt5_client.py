@@ -316,9 +316,12 @@ class Mt5Client:
         # tz-aware and naive) covering deals that demonstrably exist, while
         # the exact same window as epoch-second integers returns them
         # correctly. copy_rates_range() (get_candles() below) does NOT share
-        # this bug and keeps taking datetime objects — this is specific to
-        # history_deals_get()'s own argument handling under Wine, not a
-        # blanket "MT5 + Wine can't take datetimes" issue.
+        # THIS particular bug and keeps taking datetime objects — that part
+        # is specific to history_deals_get()'s own argument handling under
+        # Wine, not a blanket "MT5 + Wine can't take datetimes" issue.
+        # copy_rates_range() DOES share the separate mislabeled-epoch bug
+        # described just below, though (fixed 2026-09-15 — see
+        # get_candles()'s own docstring).
         #
         # On top of that, history_deals_get() filters against each deal's
         # RAW epoch — broker-local wall-clock digits mislabeled as UTC, same
@@ -386,13 +389,41 @@ class Mt5Client:
         (its high/low/close will keep changing until it closes), so a caller
         never has to know MT5's own semantics to avoid storing a bar that
         isn't done yet.
+
+        `date_from`/`date_to` are true-UTC datetimes on the way in; MT5's own
+        `copy_rates_range` matches them against each bar's RAW epoch — broker
+        wall-clock digits mislabeled as UTC (same as `history_deals_get`, see
+        `get_deals_since()` above and the 2026-09-15 verification report's
+        §1.3/§4, confirmed live this session in
+        `verification/candle-sync-fix/`) — so query bounds are converted with
+        `_utc_to_mt5_epoch()` the same way, not passed straight through as
+        datetimes. Without this, "now" as a true-UTC upper bound silently
+        excluded any bar from roughly the last broker-UTC-offset hours, while
+        the stored data still looked fresh (the excluded window kept
+        shrinking back in, one cycle late, as true time advanced past it).
+
+        `r["time"]` on the way OUT is deliberately left as the same raw
+        mislabeled epoch it always was (`open_time` below is still a naive
+        UTC-labeled decode, not `_mt5_time_to_utc()`-corrected) — this file's
+        stored `open_time` convention, and every consumer of it (the
+        confirmed-retest research `data-source.ts`'s `wallClockToUtc`, the
+        breakout strategy, existing `historical_candles` rows), already
+        expects and re-corrects that same mislabeled value at read time.
+        Correcting it here too would double-convert every new bar against
+        the millions of old ones already stored the old way — only the query
+        *bound* was ever actually broken; the stored representation was not.
         """
         timeframe_by_name = self._timeframe_constants()
         mt5_timeframe = timeframe_by_name.get(timeframe)
         if mt5_timeframe is None:
             raise ValueError(f"Unsupported timeframe {timeframe!r} — must be one of {sorted(timeframe_by_name)}")
 
-        rates = self._mt5.copy_rates_range(symbol, mt5_timeframe, date_from, date_to)
+        rates = self._mt5.copy_rates_range(
+            symbol,
+            mt5_timeframe,
+            _utc_to_mt5_epoch(date_from, self._config.mt5_broker_timezone),
+            _utc_to_mt5_epoch(date_to, self._config.mt5_broker_timezone),
+        )
         if rates is None:
             code, message = self._mt5.last_error()
             if code != 1:
@@ -401,13 +432,20 @@ class Mt5Client:
                 })
             return []
 
+        # "Still forming" must compare like with like: r["time"] stays the
+        # raw mislabeled epoch (see above), so "now" is converted into that
+        # same mislabeled epoch too, rather than comparing a true-UTC `now`
+        # against a mislabeled `open_time` (which would falsely call every
+        # recent bar "still forming", since the mislabeled time reads ahead
+        # of true UTC by the broker's own offset).
         now = datetime.now(tz=timezone.utc)
+        now_mislabeled_epoch = _utc_to_mt5_epoch(now, self._config.mt5_broker_timezone)
         bar_duration = CANDLE_DURATION_BY_TIMEFRAME[timeframe]
         result = []
         for r in rates:
-            open_time = datetime.fromtimestamp(int(r["time"]), tz=timezone.utc)
-            if open_time + bar_duration > now:
+            if int(r["time"]) + bar_duration.total_seconds() > now_mislabeled_epoch:
                 continue  # still forming — hasn't reached its own close time yet
+            open_time = datetime.fromtimestamp(int(r["time"]), tz=timezone.utc)
             result.append({
                 "open_time": open_time.isoformat(),
                 "open": float(r["open"]),
@@ -719,15 +757,20 @@ def _mt5_time_to_utc(epoch_seconds: int | None, broker_timezone: str) -> str | N
     """Converts a position/deal `time` field to a true UTC ISO timestamp.
 
     MT5 reports these fields as an epoch integer computed from the broker/
-    trade-server's own wall-clock components, not true UTC (unlike candle
-    OHLC bar times, which genuinely are UTC — this function is deliberately
-    only used for position/deal timestamps, never candles). Naively decoding
-    the epoch as UTC (`datetime.fromtimestamp(epoch, tz=utc)`) reproduces
-    those broker-local wall-clock digits, mislabeled as UTC. The fix:
-    decode the epoch the same naive way to recover those wall-clock digits,
-    then RE-interpret them as being in `broker_timezone` (resolving whichever
-    of that zone's UTC offsets — e.g. EET's EET/EEST — actually applies on
-    that date) and convert properly to true UTC.
+    trade-server's own wall-clock components, not true UTC. Candle OHLC bar
+    times share this same mislabeling (verified 2026-09-15, see
+    `get_candles()`'s docstring and the verification report's §1.3/§4) —
+    but this function is still deliberately NOT called on candle bar times:
+    the collector stores their raw mislabeled epoch as-is (unlike positions/
+    deals, corrected here on the way in), and the confirmed-retest research
+    layer (`data-source.ts`'s `wallClockToUtc`) re-corrects it at read time
+    instead, matching millions of already-stored rows. Naively decoding the
+    epoch as UTC (`datetime.fromtimestamp(epoch, tz=utc)`) reproduces those
+    broker-local wall-clock digits, mislabeled as UTC. The fix: decode the
+    epoch the same naive way to recover those wall-clock digits, then
+    RE-interpret them as being in `broker_timezone` (resolving whichever of
+    that zone's UTC offsets — e.g. EET's EET/EEST — actually applies on that
+    date) and convert properly to true UTC.
     """
     if epoch_seconds is None:
         return None
