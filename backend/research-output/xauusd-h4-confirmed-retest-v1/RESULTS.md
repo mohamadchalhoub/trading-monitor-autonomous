@@ -1,4 +1,15 @@
-# xauusd-h4-confirmed-retest-v1 — Results and Status (2026-09-14)
+# xauusd-h4-confirmed-retest-v1 — Results and Status (2026-09-14, updated 2026-09-15)
+
+**2026-09-15 update:** gold collection alongside EURUSD was completed and turned on this session
+(see `MORNING_HANDOFF.md`). The study was re-run against the extended data through the new frozen
+endpoint **2026-09-14T20:00:00Z** (data hash `fcc24632…70cd`, commit `f10c9c9`,
+`runs/end-20260914T200000Z__spec-bc43a393385f/`) — **the conclusion is unchanged: still zero
+levels, still INSUFFICIENT EVIDENCE.** The section below describes the original 2026-09-11 run;
+its reasoning and every number in it still hold on the newer run (re-verify with
+`runs/end-20260914T200000Z__spec-bc43a393385f/formation.json` if wanted — pivot/rejection counts
+shift by only the ~3 additional days of H4 bars, and no new exact-price pair appeared).
+A separate verification pass (`verification/VERIFICATION_REPORT.md`, 2026-09-15) independently
+re-derived this same zero-level result and resolved the timestamp-basis question referenced there.
 
 ## Conclusion in plain language
 
