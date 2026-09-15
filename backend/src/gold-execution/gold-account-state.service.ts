@@ -24,7 +24,14 @@ const SYMBOL_METADATA_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export class GoldAccountStateService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async resolveOccupancy(accountId: string): Promise<GoldOccupancyState> {
+  /**
+   * `excludeDecisionId` — used by the pre-send guard (`gold-pre-send-guard.service.ts`),
+   * which re-checks occupancy AFTER a decision has already been atomically
+   * claimed (flipped PENDING -> SENT). Without excluding it, that decision
+   * would always find ITSELF as "existing exposure" and every claim would
+   * spuriously look occupied.
+   */
+  async resolveOccupancy(accountId: string, excludeDecisionId?: string): Promise<GoldOccupancyState> {
     const openPosition = await this.prisma.position.findFirst({
       where: { accountId, symbol: GOLD_SYMBOL, status: 'OPEN' },
     });
@@ -41,7 +48,10 @@ export class GoldAccountStateService {
     // the slot — an ambiguous/in-flight submission counts, per the task's
     // explicit "include ... UNKNOWN submissions" requirement.
     const inFlight = await this.prisma.autonomousDecision.findFirst({
-      where: { accountId, symbol: GOLD_SYMBOL, orderStatus: { in: ['PENDING', 'SENT'] } },
+      where: {
+        accountId, symbol: GOLD_SYMBOL, orderStatus: { in: ['PENDING', 'SENT'] },
+        ...(excludeDecisionId ? { id: { not: excludeDecisionId } } : {}),
+      },
       orderBy: { evaluatedAt: 'desc' },
     });
     if (inFlight) {

@@ -62,9 +62,41 @@ export const GOLD_MAX_ENTRY_DEVIATION_POINTS = 200;
  * conservative multiple of the normal pipeline latency (candle-sync interval
  * up to 300s + one scheduler cycle up to 60s ~= 360s worst case in healthy
  * operation) — enough headroom for jitter, not enough to let a genuinely
- * stale touch pass as if it just happened.
+ * stale touch pass as if it just happened. NOTE: since live-quote detection
+ * (`gold-live-touch.ts`) is now the PRIMARY detection path — per the
+ * friend's actual rule (first touch as it happens, not "wait for an M1
+ * candle to close") — a live-detected signal's age at evaluation is
+ * normally near-zero; this constant now mainly backstops the SLOWER,
+ * secondary M1-replay path (still needed for anything the live layer's
+ * latest-tick-only sampling misses, and for level FORMATION, which is
+ * untouched and stays M1/H4/D1-based).
  */
 export const GOLD_MAX_SIGNAL_AGE_SECONDS = 600;
+
+/**
+ * A `LiveTick` row older than this (vs. the moment it is read) is treated as
+ * unavailable for live first-touch detection — never used to declare a
+ * touch just happened when the quote itself might not be current. The
+ * collector pushes a fresh tick roughly every `POLL_INTERVAL_SECONDS`
+ * (10s in this deployment's `collector/.env`); 30s gives headroom for
+ * normal jitter without allowing a genuinely stale quote through.
+ */
+export const GOLD_LIVE_TICK_MAX_STALENESS_SECONDS = 30;
+
+/**
+ * The largest gap, in seconds, between two consecutive live-quote
+ * observations of the SAME level that this module will still compare
+ * directly to detect a crossing. A larger gap (a missed cycle, a stall, a
+ * restart) means this module cannot honestly claim to know what happened
+ * to price during that gap, so it re-baselines instead of guessing,
+ * deferring to the M1 replay layer (which has the actual historical bars
+ * for that period) to determine whether — and when — a touch really
+ * happened. Set well above the scheduler's own default cycle interval
+ * (60s) so one merely-slow cycle doesn't trip it, but well below
+ * `GOLD_MAX_SIGNAL_AGE_SECONDS` so a genuine multi-minute stall is caught
+ * here rather than silently producing a slightly-stale live signal.
+ */
+export const GOLD_LIVE_OBSERVATION_MAX_GAP_SECONDS = 150;
 
 /** Risk caps carried over unweakened from confirmed-retest-v2's paper-simulation assumptions. */
 export const GOLD_STOP_RISK_CAP_PCT = 0.5;

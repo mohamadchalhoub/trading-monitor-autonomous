@@ -23,7 +23,14 @@ import type { ReplayState } from '../research/confirmed-retest-v2/replay';
 import { SPEC_HASH } from '../research/confirmed-retest-v2/spec';
 import type { FirstReturnEvent } from '../research/confirmed-retest-v2/types';
 import { GoldCoordinatorContext, GoldExecutionCoordinatorService, GoldSignal } from './gold-execution-coordinator.service';
-import { GOLD_POINT_SIZE } from './gold-safety-constants';
+import {
+  createLiveTouchTrackerState,
+  detectLiveTouches,
+  LiveQuoteObservation,
+  LiveTouchEvent,
+  LiveTouchTrackerState,
+} from './gold-live-touch';
+import { GOLD_LIVE_OBSERVATION_MAX_GAP_SECONDS, GOLD_LIVE_TICK_MAX_STALENESS_SECONDS, GOLD_POINT_SIZE } from './gold-safety-constants';
 
 /**
  * A signal is only ever derived from an event that:
@@ -67,15 +74,33 @@ export function toGoldSignal(event: FirstReturnEvent, currentExecutablePrice: nu
   };
 }
 
+/** Pure mapping for a live-quote-detected touch — the primary detection path (see gold-live-touch.ts); analogous to `toGoldSignal` but for a `LiveTouchEvent` rather than an M1-derived `FirstReturnEvent`. */
+export function toGoldSignalFromLiveTouch(event: LiveTouchEvent, currentExecutablePrice: number): GoldSignal {
+  const expectedDirection = event.role === 'SUPPORT' ? 'BUY' : 'SELL';
+  if (event.direction !== expectedDirection) {
+    throw new Error(`live touch ${event.id}: role=${event.role} but direction=${event.direction} — refusing, this should never happen.`);
+  }
+  return {
+    action: event.direction === 'BUY' ? 'OPEN_BUY' : 'OPEN_SELL',
+    signalEntryPrice: event.levelPrice / 100,
+    currentExecutablePrice,
+    levelId: event.levelId,
+    reasoning: `live-quote first-touch of level ${event.levelId} (${event.role}), generation ${event.generation}, detected at ${new Date(event.touchAtT).toISOString()} (observation gap ${(event.observationGapMs / 1000).toFixed(1)}s)`,
+    touchEndT: event.touchAtT,
+  };
+}
+
 export interface GoldWatchState {
   specHash: string;
   replay: ReplayState | null;
   actedEventIds: string[];
+  /** Live-quote detection's own persisted baseline per level — see gold-live-touch.ts. Optional/defaulted for backward compatibility with a state file written before this layer existed. */
+  liveTouch: LiveTouchTrackerState;
   lastCycleAtUtc: string | null;
 }
 
 function newGoldWatchState(): GoldWatchState {
-  return { specHash: SPEC_HASH, replay: null, actedEventIds: [], lastCycleAtUtc: null };
+  return { specHash: SPEC_HASH, replay: null, actedEventIds: [], liveTouch: createLiveTouchTrackerState(), lastCycleAtUtc: null };
 }
 
 /**
@@ -101,6 +126,8 @@ export class GoldWatchStore {
     if (state.specHash !== SPEC_HASH) {
       throw new Error(`gold watch state belongs to spec ${state.specHash}; current v2 spec is ${SPEC_HASH}. Refusing to mix rule versions — archive ${this.dir} first.`);
     }
+    // Backward-compatible with a state file written before the live-quote layer existed.
+    if (!state.liveTouch) state.liveTouch = createLiveTouchTrackerState();
     return state;
   }
 
@@ -125,17 +152,36 @@ export class GoldWatchStore {
 }
 
 export interface GoldWatchCycleResult {
+  /** M1-replay-derived events acted on this cycle (secondary/backstop path — see gold-live-touch.ts's header for why). */
   actionableEvents: FirstReturnEvent[];
   results: Array<{ event: FirstReturnEvent; signal: GoldSignal; coordinatorResult: Awaited<ReturnType<GoldExecutionCoordinatorService['evaluate']>> }>;
   skippedNoExecutablePrice: FirstReturnEvent[];
+  /** Live-quote-detected touches acted on this cycle (primary path). */
+  liveTouchEvents: LiveTouchEvent[];
+  liveTouchResults: Array<{ event: LiveTouchEvent; signal: GoldSignal; coordinatorResult: Awaited<ReturnType<GoldExecutionCoordinatorService['evaluate']>> }>;
+  /** Live touches outside the entry window — the level is still consumed (spec's outsideWindowFirstReturnConsumesLevel rule), but never submitted. */
+  liveTouchOutsideWindow: LiveTouchEvent[];
+  liveTouchSkippedNoExecutablePrice: LiveTouchEvent[];
+  liveDetectionNotes: string[];
 }
 
 /**
- * One watch cycle: load current data, advance v2's replay state from where
- * it last left off, find newly-actionable events, and (only for those with
- * a live executable price available) call the coordinator. Never invoked on
- * a timer by this file itself — same deliberate "built and tested ahead of
- * its own scheduler" posture as every other coordinator in this codebase.
+ * One watch cycle. Two detection layers run in a fixed order every cycle:
+ *  1. The M1-replay layer (`confirmed-retest-v2`, unchanged/frozen) —
+ *     authoritative for level FORMATION (H4/D1-driven) and for anything the
+ *     live-quote layer's latest-tick-only sampling cannot see (see
+ *     gold-live-touch.ts's header for the disclosed blind spot). Runs
+ *     first specifically so it gets first claim on any level whose touch
+ *     is already visible in closed M1 data — the live layer below only
+ *     ever sees levels the M1 layer left active.
+ *  2. The live-quote layer (`gold-live-touch.ts`) — the PRIMARY path per
+ *     the friend's actual rule (first touch as it happens, not "wait for
+ *     an M1 candle to close"), operating on the SAME `ReplayState.levels`
+ *     the M1 layer just advanced, so a level is retired identically
+ *     regardless of which layer detects it.
+ * Never invoked on a timer by this file itself — same deliberate "built and
+ * tested ahead of its own scheduler" posture as every other coordinator in
+ * this codebase.
  */
 export async function runGoldWatchCycle(params: {
   prisma: PrismaClient;
@@ -145,8 +191,10 @@ export async function runGoldWatchCycle(params: {
   accountId: string;
   buildContext: () => Promise<Omit<GoldCoordinatorContext, 'accountId' | 'nowT'>>;
   getExecutablePrice: (direction: 'BUY' | 'SELL') => Promise<number | null>;
+  /** The current XAUUSD bid + its own timestamp — the touch-detection basis (see gold-live-touch.ts). Never the ask; execution pricing still comes from `getExecutablePrice`. */
+  getLiveQuote: () => Promise<LiveQuoteObservation | null>;
 }): Promise<GoldWatchCycleResult> {
-  const { prisma, coordinator, store, nowT, accountId, buildContext, getExecutablePrice } = params;
+  const { prisma, coordinator, store, nowT, accountId, buildContext, getExecutablePrice, getLiveQuote } = params;
 
   store.acquireLock(nowT);
   try {
@@ -174,8 +222,57 @@ export async function runGoldWatchCycle(params: {
       actedIds.add(event.id); // marked acted-on regardless of approval — an event is a one-shot opportunity, per the friend's "first return consumes it" rule
     }
 
-    store.save({ specHash: SPEC_HASH, replay: run.state, actedEventIds: [...actedIds], lastCycleAtUtc: new Date(nowT).toISOString() });
-    return { actionableEvents, results, skippedNoExecutablePrice };
+    // Live-quote layer — runs against run.state.levels AFTER the M1 layer above has already
+    // consumed anything its own closed-candle data could see, so the two layers never race for
+    // the same level.
+    const currentTick = await getLiveQuote();
+    const liveDetection = detectLiveTouches({
+      levels: run.state.levels,
+      tracker: state.liveTouch,
+      currentTick,
+      nowT,
+      maxTickStalenessMs: GOLD_LIVE_TICK_MAX_STALENESS_SECONDS * 1000,
+      maxObservationGapMs: GOLD_LIVE_OBSERVATION_MAX_GAP_SECONDS * 1000,
+    });
+
+    const liveTouchResults: GoldWatchCycleResult['liveTouchResults'] = [];
+    const liveTouchOutsideWindow: LiveTouchEvent[] = [];
+    const liveTouchSkippedNoExecutablePrice: LiveTouchEvent[] = [];
+
+    for (const event of liveDetection.events) {
+      if (!event.inWindow) {
+        // Already consumed (level retired) inside detectLiveTouches — never submitted, matching the M1 path's OUTSIDE_WINDOW handling.
+        liveTouchOutsideWindow.push(event);
+        continue;
+      }
+      const price = await getExecutablePrice(event.direction);
+      if (price === null) {
+        liveTouchSkippedNoExecutablePrice.push(event);
+        continue;
+      }
+      const signal = toGoldSignalFromLiveTouch(event, price);
+      const context = await buildContext();
+      const coordinatorResult = await coordinator.evaluate(signal, { ...context, accountId, nowT });
+      liveTouchResults.push({ event, signal, coordinatorResult });
+    }
+
+    store.save({
+      specHash: SPEC_HASH,
+      replay: run.state,
+      actedEventIds: [...actedIds],
+      liveTouch: liveDetection.tracker,
+      lastCycleAtUtc: new Date(nowT).toISOString(),
+    });
+    return {
+      actionableEvents,
+      results,
+      skippedNoExecutablePrice,
+      liveTouchEvents: liveDetection.events,
+      liveTouchResults,
+      liveTouchOutsideWindow,
+      liveTouchSkippedNoExecutablePrice,
+      liveDetectionNotes: liveDetection.notes,
+    };
   } finally {
     store.releaseLock();
   }

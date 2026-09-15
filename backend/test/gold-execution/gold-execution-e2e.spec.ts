@@ -23,12 +23,33 @@ describe('Gold execution — collector poll/report route is symbol-scoped', () =
     await resetDatabase(prisma);
   });
 
+  // 2026-09-15T06:00:00Z = 09:00 Asia/Beirut (UTC+3 in September) — inside the 04:00-12:00 entry window.
+  // The pre-send guard derives its own "now" from the freshest LiveTick.tickAt (see
+  // gold-pre-send-guard.service.ts's own header comment for why), so seeding a tick at this fixed
+  // in-window instant makes the guard's window/freshness checks deterministic regardless of the
+  // real wall-clock time the test suite happens to run at.
+  const PRE_SEND_NOW_T = Date.parse('2026-09-15T06:00:00.000Z');
+
+  async function seedPreSendPrereqs(accountId: string) {
+    await prisma.liveTick.upsert({
+      where: { symbol: 'XAUUSD' },
+      create: { symbol: 'XAUUSD', bid: 2650, ask: 2650.2, tickAt: new Date(PRE_SEND_NOW_T) },
+      update: { bid: 2650, ask: 2650.2, tickAt: new Date(PRE_SEND_NOW_T) },
+    });
+    await prisma.accountSnapshot.create({
+      data: {
+        accountId, tradeMode: 'DEMO', balance: 50000, equity: 50000, margin: 0, freeMargin: 50000,
+        profit: 0, capturedAt: new Date(),
+      },
+    });
+  }
+
   async function createDecision(accountId: string, symbol: string, overrides: Record<string, unknown> = {}) {
     return prisma.autonomousDecision.create({
       data: {
         accountId, symbol, action: 'OPEN_BUY', source: 'RULES_ONLY',
         entryPrice: 2650, stopLoss: 2640, takeProfit: 2660,
-        reasoning: 'test setup', inputSnapshot: {},
+        reasoning: 'test setup', inputSnapshot: { signal: { touchEndT: PRE_SEND_NOW_T - 60_000 } },
         riskManagerApproved: true, orderStatus: 'PENDING',
         ...overrides,
       },
@@ -65,6 +86,7 @@ describe('Gold execution — collector poll/report route is symbol-scoped', () =
 
   it('gold route claims an XAUUSD pending row with gold-specific magic/volume/pointSize', async () => {
     const { account, token } = await setupAccountWithToken(prisma);
+    await seedPreSendPrereqs(account.id);
     await createDecision(account.id, 'XAUUSD');
 
     const res = await request(app, {
@@ -86,6 +108,7 @@ describe('Gold execution — collector poll/report route is symbol-scoped', () =
 
   it('a second poll after claiming sees nothing pending (atomic claim, gold route)', async () => {
     const { account, token } = await setupAccountWithToken(prisma);
+    await seedPreSendPrereqs(account.id);
     await createDecision(account.id, 'XAUUSD');
 
     const first = await request(app, {

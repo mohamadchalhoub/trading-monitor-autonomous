@@ -52,11 +52,20 @@ async function main() {
           if (!tick) return null;
           return direction === 'BUY' ? tick.ask.toNumber() : tick.bid.toNumber();
         },
+        getLiveQuote: async () => {
+          const tick = await prisma.liveTick.findUnique({ where: { symbol: GOLD_SYMBOL } });
+          if (!tick) return null;
+          return { bid: tick.bid.toNumber(), atT: tick.tickAt.getTime() };
+        },
       });
-      return { actionableEventCount: result.actionableEvents.length };
+      return {
+        actionableEventCount: result.actionableEvents.length,
+        liveTouchEventCount: result.liveTouchEvents.length,
+        liveTouchQueuedCount: result.liveTouchResults.filter((r) => r.coordinatorResult.queuedDecisionId !== null).length,
+      };
     },
     onCycleResult: (result) => {
-      console.log(`gold-execution-scheduler: cycle complete at ${new Date().toISOString()}, actionableEvents=${result.actionableEventCount}`);
+      console.log(`gold-execution-scheduler: cycle complete at ${new Date().toISOString()}, actionableEvents=${result.actionableEventCount}, liveTouchEvents=${result.liveTouchEventCount}, liveTouchQueued=${result.liveTouchQueuedCount}`);
     },
     onCycleError: (err) => {
       console.error(`gold-execution-scheduler: cycle failed (will retry next interval): ${err instanceof Error ? err.message : String(err)}`);

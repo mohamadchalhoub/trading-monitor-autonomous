@@ -56,6 +56,11 @@ async function main() {
         // Buying pays the ask, selling receives the bid — same convention executor.py's own _build_bracket_request uses.
         return direction === 'BUY' ? tick.ask.toNumber() : tick.bid.toNumber();
       },
+      getLiveQuote: async () => {
+        const tick = await prisma.liveTick.findUnique({ where: { symbol: GOLD_SYMBOL } });
+        if (!tick) return null;
+        return { bid: tick.bid.toNumber(), atT: tick.tickAt.getTime() };
+      },
     });
 
     console.log(JSON.stringify({
@@ -71,6 +76,18 @@ async function main() {
         verdictRejectionReason: r.coordinatorResult.verdict?.rejectionReason ?? null,
         queuedDecisionId: r.coordinatorResult.queuedDecisionId,
       })),
+      liveTouchEventCount: result.liveTouchEvents.length,
+      liveTouchOutsideWindowCount: result.liveTouchOutsideWindow.length,
+      liveTouchSkippedNoExecutablePriceCount: result.liveTouchSkippedNoExecutablePrice.length,
+      liveTouchResults: result.liveTouchResults.map((r) => ({
+        eventId: r.event.id,
+        signal: r.signal,
+        coordinatorMode: r.coordinatorResult.mode,
+        verdictApproved: r.coordinatorResult.verdict?.approved ?? null,
+        verdictRejectionReason: r.coordinatorResult.verdict?.rejectionReason ?? null,
+        queuedDecisionId: r.coordinatorResult.queuedDecisionId,
+      })),
+      liveDetectionNotes: result.liveDetectionNotes,
     }, null, 2));
   } finally {
     await prisma.$disconnect();

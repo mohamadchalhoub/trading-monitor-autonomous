@@ -21,12 +21,19 @@
  */
 import { ProcessLock } from '../research/confirmed-retest/watch';
 
+export interface GoldSchedulerCycleResult {
+  actionableEventCount: number;
+  /** Live-quote-detected touches this cycle — the primary detection path (see gold-live-touch.ts). Optional so a caller not yet passing it (e.g. a simplified test double) still type-checks. */
+  liveTouchEventCount?: number;
+  liveTouchQueuedCount?: number;
+}
+
 export interface GoldSchedulerDeps {
-  runCycle: () => Promise<{ actionableEventCount: number }>;
+  runCycle: () => Promise<GoldSchedulerCycleResult>;
   intervalMs: number;
   lock: ProcessLock;
   onCycleError?: (err: unknown) => void;
-  onCycleResult?: (result: { actionableEventCount: number }) => void;
+  onCycleResult?: (result: GoldSchedulerCycleResult) => void;
 }
 
 export class GoldExecutionScheduler {

@@ -6,6 +6,7 @@ import { GoldExecutionController } from './gold-execution.controller';
 import { GoldExecutionCoordinatorService } from './gold-execution-coordinator.service';
 import { GoldAccountStateService } from './gold-account-state.service';
 import { GoldDashboardController } from './gold-dashboard.controller';
+import { GoldPreSendGuardService } from './gold-pre-send-guard.service';
 
 /**
  * Gold (XAUUSD) execution — fully separate module from AutonomousModule
@@ -24,7 +25,7 @@ import { GoldDashboardController } from './gold-dashboard.controller';
 @Module({
   imports: [AccountsModule, AuthModule],
   controllers: [GoldExecutionController, GoldDashboardController],
-  providers: [AutonomousDecisionLoggerService, GoldExecutionCoordinatorService, GoldAccountStateService],
+  providers: [AutonomousDecisionLoggerService, GoldExecutionCoordinatorService, GoldAccountStateService, GoldPreSendGuardService],
   exports: [GoldExecutionCoordinatorService, GoldAccountStateService],
 })
 export class GoldExecutionModule {}
