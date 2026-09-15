@@ -63,6 +63,7 @@ export function toGoldSignal(event: FirstReturnEvent, currentExecutablePrice: nu
     currentExecutablePrice,
     levelId: event.levelId,
     reasoning: `confirmed-retest-v2 first-return event ${event.id}, level ${event.levelId} (${event.role}), generation ${event.generation}, touch kind ${event.kind}, D1 agreement=${event.d1Agreement}`,
+    touchEndT: event.touchEndT,
   };
 }
 
@@ -142,7 +143,7 @@ export async function runGoldWatchCycle(params: {
   store: GoldWatchStore;
   nowT: number;
   accountId: string;
-  buildContext: () => Promise<Omit<GoldCoordinatorContext, 'accountId'>>;
+  buildContext: () => Promise<Omit<GoldCoordinatorContext, 'accountId' | 'nowT'>>;
   getExecutablePrice: (direction: 'BUY' | 'SELL') => Promise<number | null>;
 }): Promise<GoldWatchCycleResult> {
   const { prisma, coordinator, store, nowT, accountId, buildContext, getExecutablePrice } = params;
@@ -168,7 +169,7 @@ export async function runGoldWatchCycle(params: {
       }
       const signal = toGoldSignal(event, price);
       const context = await buildContext();
-      const coordinatorResult = await coordinator.evaluate(signal, { ...context, accountId });
+      const coordinatorResult = await coordinator.evaluate(signal, { ...context, accountId, nowT });
       results.push({ event, signal, coordinatorResult });
       actedIds.add(event.id); // marked acted-on regardless of approval — an event is a one-shot opportunity, per the friend's "first return consumes it" rule
     }

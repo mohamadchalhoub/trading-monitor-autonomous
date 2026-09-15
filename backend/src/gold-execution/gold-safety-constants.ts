@@ -50,6 +50,22 @@ export const GOLD_SL_TP_TOLERANCE_POINTS = 1;
  */
 export const GOLD_MAX_ENTRY_DEVIATION_POINTS = 200;
 
+/**
+ * Max age, in seconds, between when a first-touch M1 candle CLOSED
+ * (`FirstReturnEvent.touchEndT`, i.e. the earliest instant the touch was
+ * even knowable) and when the coordinator actually evaluates the signal for
+ * submission. Distinct from `GOLD_MAX_ENTRY_DEVIATION_POINTS` (a price-drift
+ * proxy): a ranging market can leave price within the deviation tolerance
+ * for much longer than a touch should be allowed to sit unacted-on, e.g.
+ * after the collector or candle-sync was stalled and resumes with a backlog
+ * of same-day, in-window, never-acted-on events. 600s (10 minutes) is a
+ * conservative multiple of the normal pipeline latency (candle-sync interval
+ * up to 300s + one scheduler cycle up to 60s ~= 360s worst case in healthy
+ * operation) — enough headroom for jitter, not enough to let a genuinely
+ * stale touch pass as if it just happened.
+ */
+export const GOLD_MAX_SIGNAL_AGE_SECONDS = 600;
+
 /** Risk caps carried over unweakened from confirmed-retest-v2's paper-simulation assumptions. */
 export const GOLD_STOP_RISK_CAP_PCT = 0.5;
 export const GOLD_COMBINED_RISK_CAP_PCT = 1;
