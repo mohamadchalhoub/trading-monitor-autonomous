@@ -50,7 +50,7 @@ describe('a second wick that overshoots L and rejects without a body violation',
     // rejection wick, not a body violation (body filter only checks open/close, per spec §formation).
     const bars = h4Series(START, 20, { 3: { h: 2100 }, 8: { h: 2110 } });
     feed(state, bars);
-    expect(state.diagnostics.bodyViolationDuringWatch.RESISTANCE).toBe(0);
+    expect(state.diagnostics.bodyViolationBeforeRetest.RESISTANCE).toBe(0);
     expect(state.diagnostics.retestFound.RESISTANCE).toBe(1);
     const level = Object.values(state.levels)[0];
     expect(level.retestIndex).toBe(8);
@@ -142,7 +142,7 @@ describe('body filter between pivot and confirmation', () => {
     });
     feed(state, bars);
     expect(Object.keys(state.levels)).toHaveLength(0);
-    expect(state.diagnostics.bodyViolationDuringWatch.RESISTANCE).toBe(1);
+    expect(state.diagnostics.bodyViolationBeforeRetest.RESISTANCE).toBe(1);
     expect(state.diagnostics.retestFound.RESISTANCE).toBe(0);
   });
 
@@ -154,8 +154,23 @@ describe('body filter between pivot and confirmation', () => {
       8: { h: 2100 },
     });
     feed(state, bars);
-    expect(state.diagnostics.bodyViolationDuringWatch.RESISTANCE).toBe(0);
+    expect(state.diagnostics.bodyViolationBeforeRetest.RESISTANCE).toBe(0);
     expect(Object.keys(state.levels)).toHaveLength(1);
+  });
+
+  it('a body violation during the R+1/R+2 confirmation window also invalidates — counted separately from a pre-retest violation', () => {
+    const state = createLevelEngineState();
+    const bars = h4Series(START, 20, {
+      3: { h: 2100 },
+      8: { h: 2100, c: 2095 }, // R: touches, doesn't confirm yet
+      9: { o: 2105, c: 2110 }, // R+1: body beyond L — invalidates before ever reaching R+2
+    });
+    feed(state, bars.slice(0, 10));
+    expect(Object.keys(state.levels)).toHaveLength(0);
+    expect(state.diagnostics.retestFound.RESISTANCE).toBe(1); // the retest itself was still found
+    expect(state.diagnostics.bodyViolationDuringConfirmation.RESISTANCE).toBe(1);
+    expect(state.diagnostics.bodyViolationBeforeRetest.RESISTANCE).toBe(0); // distinct counter — not conflated
+    expect(state.diagnostics.confirmationFailedAfterRetest.RESISTANCE).toBe(0); // this is a body violation, not a plain confirmation timeout
   });
 });
 

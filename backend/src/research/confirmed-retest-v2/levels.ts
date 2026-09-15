@@ -38,8 +38,10 @@ export interface FormationDiagnostics {
   pivotCandidates: Record<Role, number>;
   qualifiedPivots: Record<Role, number>;
   rejectedNoRejectionClose: Record<Role, number>;
-  /** A watch entry's body filter was violated before or during the retest/confirmation window. */
-  bodyViolationDuringWatch: Record<Role, number>;
+  /** Body filter violated before any retest was found for this pivot (retired, never counted in retestFound). */
+  bodyViolationBeforeRetest: Record<Role, number>;
+  /** Body filter violated after a retest was found, during its R+1/R+2 confirmation window (already counted in retestFound). */
+  bodyViolationDuringConfirmation: Record<Role, number>;
   /** 120-bar retest window elapsed with no bar satisfying the retest OHLC condition. */
   noRetestWithinWindow: Record<Role, number>;
   /** A qualifying retest bar R was found (may or may not go on to confirm). */
@@ -106,7 +108,8 @@ export function createLevelEngineState(): LevelEngineState {
       pivotCandidates: zeroRoles(),
       qualifiedPivots: zeroRoles(),
       rejectedNoRejectionClose: zeroRoles(),
-      bodyViolationDuringWatch: zeroRoles(),
+      bodyViolationBeforeRetest: zeroRoles(),
+      bodyViolationDuringConfirmation: zeroRoles(),
       noRetestWithinWindow: zeroRoles(),
       retestFound: zeroRoles(),
       confirmationFailedAfterRetest: zeroRoles(),
@@ -260,7 +263,10 @@ function processWatchEntry(state: LevelEngineState, entry: WatchEntry, n: number
   const bodyOk = role === 'RESISTANCE' ? Math.max(bar.o, bar.c) <= L : Math.min(bar.o, bar.c) >= L;
   if (!bodyOk) {
     entry.done = true;
-    bump(d.bodyViolationDuringWatch, role);
+    // Two mutually exclusive sub-cases, so the funnel in the report sums correctly: a violation
+    // strictly before any retest was found vs. one during the R+1/R+2 confirmation window (where
+    // the entry had already been counted once under retestFound).
+    bump(entry.retestIndex === null ? d.bodyViolationBeforeRetest : d.bodyViolationDuringConfirmation, role);
     return;
   }
 
