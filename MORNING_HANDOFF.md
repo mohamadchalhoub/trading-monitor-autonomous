@@ -23,6 +23,31 @@ already-documented window-shift issue is unaffected (this fix changes sync laten
 `open_time` stores). The confirmed-retest zero-level conclusion is unaffected and not marked
 provisional — it read only already-synced historical data at run time.
 
+## 2026-09-15 second addendum: h4-trend-h1-breakout-v1 entry-window shift — still affected, not fixed
+
+Follow-up question: does "unaffected by the collection fix" mean the entry-window shift is
+resolved? No — checked directly, separately. **Still affected, not fixed, not previously
+misdiagnosed.** Full detail:
+`backend/research-output/xauusd-h4-confirmed-retest-v1/verification/candle-sync-fix/ENTRY_WINDOW_SHIFT_STATUS.md`.
+
+Summary: `backend/src/trend-breakout/backtest.ts:133` and `:375` call
+`isWithinEntryWindow(candle.openTime)` with `candle.openTime` read straight from
+`historical_candles.open_time` — still the raw broker-mislabeled value (deliberately unchanged
+by the collection fix, see the first addendum above) — with no correction applied anywhere in
+`src/trend-breakout/` or `src/market-data/` (confirmed by grep: no `wallClockToUtc`/`EET`
+reference exists there, unlike the confirmed-retest module's `data-source.ts`). Proved live
+against the real `schedule.ts` functions (`entry_window_shift_evidence.ts` /
+`.out.txt`): a concrete stored bar time evaluates as "within window" via the code path the
+backtest actually uses, while the true UTC instant it corresponds to is actually outside the
+window — a genuine boundary-crossing mismatch, not a hypothetical one. Any
+`h4-trend-h1-breakout-v1` backtest result reporting session/time-of-day-dependent statistics
+should be treated as **provisional**. The live coordinator (`trend-breakout-coordinator.service.ts`)
+carries the same latent defect but is confirmed unreachable — no scheduler, controller, or script
+anywhere calls `evaluateAll()` (matches `TREND_BREAKOUT_SPEC.md`'s own documented item 5) — so it
+is dormant, not actively wrong in production. No winter offset inferred, no strategy parameter
+changed, no broad suite rerun, execution untouched. The confirmed-retest zero-level finding is
+unrelated and unaffected — that module has its own, already-correct EET conversion layer.
+
 
 Branch `research/xauusd-h4-confirmed-retest-v1`. Everything below is local commits — nothing
 pushed, nothing deployed, no order placed or capable of being placed. **v1's frozen rules and
