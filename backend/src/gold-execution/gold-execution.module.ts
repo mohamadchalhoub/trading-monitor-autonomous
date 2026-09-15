@@ -5,6 +5,7 @@ import { AutonomousDecisionLoggerService } from '../autonomous/autonomous-decisi
 import { GoldExecutionController } from './gold-execution.controller';
 import { GoldExecutionCoordinatorService } from './gold-execution-coordinator.service';
 import { GoldAccountStateService } from './gold-account-state.service';
+import { GoldDashboardController } from './gold-dashboard.controller';
 
 /**
  * Gold (XAUUSD) execution — fully separate module from AutonomousModule
@@ -22,7 +23,7 @@ import { GoldAccountStateService } from './gold-account-state.service';
  */
 @Module({
   imports: [AccountsModule, AuthModule],
-  controllers: [GoldExecutionController],
+  controllers: [GoldExecutionController, GoldDashboardController],
   providers: [AutonomousDecisionLoggerService, GoldExecutionCoordinatorService, GoldAccountStateService],
   exports: [GoldExecutionCoordinatorService, GoldAccountStateService],
 })
