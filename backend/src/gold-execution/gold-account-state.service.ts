@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { GoldAccountRiskInfo, GoldAccountTradeMode, GoldOccupancyState } from './gold-risk-manager';
+import { GoldAccountRiskInfo, GoldAccountTradeMode, GoldBrokerVolumeConstraints, GoldOccupancyState } from './gold-risk-manager';
 import { GOLD_SYMBOL } from './gold-safety-constants';
+
+/** How old SymbolMetadata may be before it's treated as stale (fails closed, blocks — never assumes a stale row is still accurate). */
+const SYMBOL_METADATA_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Resolves live account/occupancy state from what the collector has
@@ -95,5 +98,21 @@ export class GoldAccountStateService {
     const currentDrawdownPct = peakEquity > 0 ? Math.max(0, ((peakEquity - equity) / peakEquity) * 100) : 0;
 
     return { tradeMode, equity, existingCombinedRiskAmount, todaysLossAmount, currentDrawdownPct };
+  }
+
+  /**
+   * Live broker volume/step/min/max — NEVER hardcoded. Fails closed (a
+   * deliberately impossible-to-satisfy constraint, so `evaluateGoldRiskManager`
+   * always rejects) when the row is missing or older than
+   * `SYMBOL_METADATA_MAX_AGE_MS`, same fail-closed posture this table's own
+   * schema comment documents ("blocks the entry... rather than assuming
+   * permissive min/max/step values").
+   */
+  async resolveVolumeConstraints(now: Date = new Date()): Promise<GoldBrokerVolumeConstraints> {
+    const row = await this.prisma.symbolMetadata.findUnique({ where: { symbol: GOLD_SYMBOL } });
+    const impossible: GoldBrokerVolumeConstraints = { minLots: Number.POSITIVE_INFINITY, maxLots: 0, stepLots: 1 };
+    if (!row) return impossible;
+    if (now.getTime() - row.updatedAt.getTime() > SYMBOL_METADATA_MAX_AGE_MS) return impossible;
+    return { minLots: row.volumeMin.toNumber(), maxLots: row.volumeMax.toNumber(), stepLots: row.volumeStep.toNumber() };
   }
 }

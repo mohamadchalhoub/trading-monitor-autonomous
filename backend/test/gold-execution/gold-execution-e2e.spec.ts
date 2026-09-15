@@ -210,4 +210,36 @@ describe('GoldAccountStateService — occupancy resolution', () => {
     expect(info.tradeMode).toBe('DEMO');
     expect(info.equity).toBe(9800);
   });
+
+  it('fails closed to an impossible-to-satisfy volume constraint when no SymbolMetadata row exists', async () => {
+    await prisma.symbolMetadata.deleteMany({ where: { symbol: 'XAUUSD' } });
+    const constraints = await service.resolveVolumeConstraints();
+    expect(constraints.maxLots).toBe(0); // no fixed volume can ever be <= 0 max, so this always rejects
+  });
+
+  it('fails closed when the SymbolMetadata row is stale (older than 24h)', async () => {
+    await prisma.symbolMetadata.deleteMany({ where: { symbol: 'XAUUSD' } });
+    await prisma.symbolMetadata.create({
+      data: {
+        symbol: 'XAUUSD', volumeMin: 0.01, volumeMax: 100, volumeStep: 0.01,
+        digits: 2, point: 0.01, contractSize: 100, profitCurrency: 'USD',
+      },
+    });
+    // Force updatedAt into the past via a raw update — Prisma's @updatedAt auto-sets it on create/update.
+    await prisma.$executeRawUnsafe(`UPDATE symbol_metadata SET updated_at = NOW() - INTERVAL '48 hours' WHERE symbol = 'XAUUSD'`);
+    const constraints = await service.resolveVolumeConstraints();
+    expect(constraints.maxLots).toBe(0);
+  });
+
+  it('reports real broker volume constraints from a fresh SymbolMetadata row', async () => {
+    await prisma.symbolMetadata.deleteMany({ where: { symbol: 'XAUUSD' } });
+    await prisma.symbolMetadata.create({
+      data: {
+        symbol: 'XAUUSD', volumeMin: 0.01, volumeMax: 50, volumeStep: 0.01,
+        digits: 2, point: 0.01, contractSize: 100, profitCurrency: 'USD',
+      },
+    });
+    const constraints = await service.resolveVolumeConstraints();
+    expect(constraints).toEqual({ minLots: 0.01, maxLots: 50, stepLots: 0.01 });
+  });
 });
