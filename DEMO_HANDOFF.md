@@ -1,8 +1,68 @@
 # DEMO_HANDOFF — gold (XAUUSD) execution
 
-**Status: NOT ACTIVATED. Demo order submission has NOT been turned on.** Substantial progress
-since the previous version of this doc — DEMO is now positively, independently confirmed — but
-activation still correctly has not happened, for reasons stated plainly below.
+**Status: BLOCKED ONE STEP FROM ACTIVATION.** All three prior blockers (collector not running,
+stale XAUUSD data, unconfirmed effective flags) are now cleared this session. The only
+remaining step is restarting the backend dev process so it picks up `GOLD_EXECUTION_MODE=DEMO`
+from `.env` — see "Update — 2026-09-15 11:5x UTC" below for the exact command and why an agent
+cannot run it itself in this environment.
+
+## Update — 2026-09-15, session resumed after interruption
+
+Picked up from the prior interruption (VS Code Python extension restart, not a real blocker).
+Verified fresh, did not assume anything from the old checkpoint text:
+
+1. **Collector restarted successfully** — the environment's process classifier did NOT deny
+   this (only killing processes is denied, starting is fine). Confirmed via the fresh startup
+   log line: `"autonomous_execution_enabled": false, "gold_execution_enabled": true`. Single
+   process tree confirmed (`collector/.venv/.../main.py` PID 16084 with its expected MT5-IPC
+   child PID 5568 — no duplicate top-level instance).
+2. **XAUUSD M1 freshness re-verified with the correct EET-true-UTC conversion**: staleness is
+   now ~3 minutes (was ~83 minutes before this restart). Acceptable for live entry-window
+   decisions.
+3. **`trade_mode` re-confirmed fresh, post-restart**: latest `AccountSnapshot` (captured
+   2026-09-15T11:53:52Z, 441ms old at check time) reads `tradeMode: DEMO`, `balance = equity =
+   50000`. This is a NEW confirmation from a snapshot captured after this session's own
+   restart, not a reuse of the prior session's 10:57:30 evidence.
+4. **Found the config was already further along than the checkpoint doc said**: `collector/.env`
+   already had `GOLD_EXECUTION_ENABLED=true` and `backend/.env` already had
+   `GOLD_EXECUTION_MODE=DEMO` persisted (uncommitted, gitignored — set in the interrupted prior
+   session but never reflected in the docs). These were NOT changed this session; they were
+   found already set and verified correct against the frozen spec (0.01 lots, magic 262610181,
+   $10 TP/SL, 200pt max deviation — confirmed via a live `GET /research/gold-execution-status`
+   call).
+5. **New blocker found (config/runtime mismatch, not a code bug)**: the *backend* dev process
+   (`ts-node-dev`, started before `.env` was last edited) still has the OLD env in memory —
+   `GET /research/gold-execution-status` returns `"accountMode": "OFF"` even though `.env` on
+   disk says `DEMO`, because `dotenv` only loads into `process.env` once at process start and
+   nothing hot-reloads it. Restarting the collector process independently fixed the collector
+   (it was fully restarted, not just left running with a stale env). The backend needs the same
+   treatment.
+6. **Attempted to restart the backend to fix this myself; was denied.** Stopping the existing
+   `ts-node-dev` process (PIDs 5884/7276) was blocked by this environment's own process
+   classifier ("Interfere With Workloads") — the same restriction noted in earlier rounds for
+   killing processes (starting new ones is allowed; stopping existing ones is not). The backend
+   was NOT harmed by the attempt — confirmed still running and healthy afterward (still
+   answering on :8420, still `accountMode: OFF` as expected pre-restart).
+
+**Exact remaining manual step for a human with process-stop permission:**
+```powershell
+# Stop the current backend dev server (find/confirm PID first if unsure):
+Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*ts-node-dev*src\main.ts*' } | Select-Object ProcessId, CommandLine
+Stop-Process -Id <that-pid-and-its-npm-parent> -Force
+
+# Restart it (from backend/) so it re-reads .env, including GOLD_EXECUTION_MODE=DEMO:
+cd C:\Users\user\Desktop\trading-monitor-autonomous\backend
+npm run dev
+```
+Then re-check `GET /research/gold-execution-status` and confirm `"accountMode": "DEMO"` before
+starting the scheduler (`npm run gold-execution:scheduler`, from `backend/`, in its own
+terminal so it keeps running). Once both read correctly, the system is live and will place a
+genuine demo order the next time a first-return event confirms inside the 04:00–12:00
+Asia/Beirut entry window with no existing XAUUSD exposure. No genuine order has occurred yet —
+`recentDecisions`/`closedTrades` were confirmed empty in the same live status call above.
+
+Everything below this point is the prior session's account and is retained for context; the
+"remaining blockers" it describes (§2/§3/§4) are the ones cleared in the update above.
 
 ## 1. Account identity — DEMO is now POSITIVELY CONFIRMED, with evidence
 

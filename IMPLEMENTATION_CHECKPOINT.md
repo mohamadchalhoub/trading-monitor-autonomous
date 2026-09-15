@@ -273,15 +273,56 @@ Do not modify v1 or v2's existing frozen spec/results files. Do not touch
 `AUTONOMOUS_MAGIC_NUMBER` (262610180) or any EURUSD file — gold has its own
 (GOLD_MAGIC_NUMBER = 262610181).
 
+## Update 6 — session resumed after interruption; collector restarted; one step from activation
+
+Resumed after a VS Code Python-extension restart cleared the chat (not a real blocker — this
+was a tooling interruption, not new project state). Verified everything fresh against the
+actual repo/runtime rather than trusting the prior checkpoint text:
+
+- Confirmed `8b49a96` (candle-sync-stall fix) is real and committed; confirmed it works live
+  by restarting the collector and observing correct, non-inverted `date_from` ranges and
+  successful M1 batch pushes immediately.
+- **Collector restarted successfully this session** (the "process management denied" blocker
+  from the prior round did NOT recur for *starting* a process — only *stopping* one is denied;
+  see below). Verified: single process tree (no duplicate), `gold_execution_enabled: true` and
+  `autonomous_execution_enabled: false` in the fresh startup log line, XAUUSD M1 staleness now
+  ~3 minutes (true-UTC EET conversion), fresh `AccountSnapshot.tradeMode = DEMO`.
+- Discovered `collector/.env` (`GOLD_EXECUTION_ENABLED=true`) and `backend/.env`
+  (`GOLD_EXECUTION_MODE=DEMO`) were already persisted from the interrupted prior session but
+  never reflected in `DEMO_HANDOFF.md` — found, verified correct against the frozen spec via a
+  live status call, not changed by this session.
+- **New, narrower blocker**: the already-running backend `ts-node-dev` process has the OLD env
+  cached (`accountMode: OFF` reported live) because it started before `.env` was last edited.
+  Restarting it requires stopping the existing process first, which this environment's
+  classifier denied ("Interfere With Workloads") — same restriction as before, now scoped
+  specifically to *stopping* processes (starting is unrestricted). Backend confirmed unharmed
+  by the attempt. Exact manual restart command is in `DEMO_HANDOFF.md`'s newest update section.
+- No genuine order has occurred (`recentDecisions`/`closedTrades` empty, confirmed live).
+
 ## Explicit current answer to the required final-report questions (as of this checkpoint)
-- Implemented so far: rule-table doc only; no code changes.
-- Tested: nothing new (no code changed).
-- Verified against live demo connection: nothing yet — DEMO activation has NOT happened and
-  must not be claimed as happened.
-- Demo automation active: **No.**
-- Genuine strategy orders occurred: **No, none.**
-- Start/stop/recover: unchanged from `MORNING_HANDOFF.md`'s existing commands (collector,
-  backend, frontend, watch-only watcher) — no new process introduced yet.
-- Concrete blocker: task scope (full execution pipeline + verified demo activation) requires
-  substantially more implementation and live-verification work than fits in one bounded pass;
-  continuing requires picking up at "Exact resume point" above.
+- Implemented so far: rule-table doc, versioned gold-live spec, full `gold-execution` backend
+  module, collector-side gold polling, live occupancy/risk/volume/currency resolvers,
+  scheduler, dashboard endpoint, signal wiring — all from prior sessions, verified still intact
+  and working this session; no new code written this session (pure verification/ops).
+- Tested: no new tests this session (no code changed); prior sessions' scoped suites (backend
+  `tsc --noEmit`, `test/gold-execution` 51/51, `test/autonomous` 139/139, collector pytest
+  194/194) are the standing evidence and were not re-run since nothing code-level changed.
+- Verified against live demo connection: YES, this session, freshly — trade_mode, data
+  freshness, process topology, and effective collector flags all re-checked directly against
+  the live, freshly-restarted collector and a live DB query (see Update 6 above). The backend's
+  effective mode was checked and found stale (see blocker above) — NOT yet DEMO in the running
+  process, though correctly configured on disk.
+- Demo automation active: **No** — collector-side gold polling is live and enabled, but the
+  backend that decides/queues orders is still reporting `accountMode: OFF` (stale process env);
+  no scheduler is running yet either. One backend restart away.
+- Genuine strategy orders occurred: **No, none** — confirmed via a live, fresh
+  `GET /research/gold-execution-status` call this session (`recentDecisions`/`closedTrades`
+  both empty).
+- Start/stop/recover: see `GOLD_STARTUP_SHUTDOWN_RECOVERY.md`; the one addition this session is
+  that the backend also needs a full stop+start (not just relying on `ts-node-dev`'s file-watch
+  respawn) to pick up `.env` changes, same as the collector.
+- Concrete blocker: purely operational, not implementation — a human with process-stop
+  permission needs to restart the backend dev server (exact command in `DEMO_HANDOFF.md`), then
+  re-check `accountMode: DEMO` in the status endpoint, then start
+  `npm run gold-execution:scheduler`. After that, the system is genuinely live and will act on
+  the next real signal within the entry window with no code changes needed.
