@@ -94,18 +94,123 @@ This work must continue via direct, interactive tool calls in a live session (no
 which limits how much can be completed per turn/session. This is a scope/tooling constraint,
 not a technical blocker in the codebase.
 
+## Update 2 — gold-execution module built, tested, committed (d916a89)
+
+Built `backend/src/gold-execution/` (constants, risk manager, mode switch, coordinator,
+collector controller, module) reusing `collector/app/executor.py`'s existing order mechanics
+via the same poll/report HTTP pattern EURUSD uses, but on its OWN route
+(`collector/:accountId/gold-execution`) and OWN magic number (262610181, distinct from
+EURUSD's 262610180). Found and fixed a real cross-symbol bug before any gold row existed:
+`claimOldestPendingOrder` didn't filter by symbol, which would have let a gold PENDING row be
+claimed by the EURUSD poll route. Added a required `symbol` param; EURUSD call site passes
+`'EURUSD'` explicitly. Evidence: `npx tsc --noEmit` clean; new gold-risk-manager suite 12/12
+passing; full existing `test/autonomous` suite 139/139 passing after the change (no EURUSD
+regression). Committed as `d916a89`.
+
+Still NOT done from this coordinator's checklist:
+- Collector-side (Python) polling of the new `/gold-execution/pending-order` route — `runner.py`
+  only polls the EURUSD route today. Needs a `_poll_and_execute_pending_gold_order` analogous
+  to `_poll_and_execute_pending_order`, calling `executor.send_bracket_order(..., symbol='XAUUSD',
+  point_size=0.01, magic=GOLD_MAGIC_NUMBER)` — executor.py already supports this via its
+  existing `symbol`/`point_size` parameters, no executor.py change needed, only a new runner.py
+  method + api_client.py route + config wiring.
+- Real occupancy/equity data sources: `GoldCoordinatorContext.accountInfo`/`occupancy` are
+  currently caller-supplied inputs (the risk-manager function itself is fully tested), but no
+  code yet queries live positions/equity from the DB (`AccountSnapshot`, position tables) to
+  build them. This is the next concrete piece.
+- No signal source wired: nothing yet calls `GoldExecutionCoordinatorService.evaluate()` from
+  a real confirmed-retest-v2 watch/event.
+- 3-output historical evaluation, dashboard extensions, controls' explicit close-position
+  action, focused integration test (end-to-end poll/report for gold, analogous to
+  `autonomous-execution-e2e.spec.ts`), bounded shadow run, live DEMO verification, activation,
+  DEMO_HANDOFF.md — all still pending.
+
+## Update 3 — collector polling + live occupancy/equity resolver (a87656a, 60977d6)
+
+- Wired collector-side gold polling: `GOLD_EXECUTION_ENABLED` (own flag, independent of
+  EURUSD's), `api_client.py` gold routes, `runner.py._poll_and_execute_pending_gold_order`
+  passing symbol/point_size through to the existing `executor.py` (no executor.py change
+  needed). 5 new collector tests, full suite 194/194 passing.
+- Built `GoldAccountStateService` (`backend/src/gold-execution/gold-account-state.service.ts`):
+  resolves occupancy (any OPEN XAUUSD `Position` row from real collector-synced broker state,
+  or any in-flight PENDING/SENT `AutonomousDecision` row) and account risk info (trade_mode +
+  equity from the latest `AccountSnapshot`, fails closed to REAL/0 when none exists; daily-loss
+  and 30-day-drawdown from `Trade`/`AccountSnapshot` history). 12 new tests against the real
+  test Postgres DB, all passing — including proof that the gold and EURUSD collector routes
+  are mutually symbol-scoped end-to-end over real HTTP.
+- Full regression check after every increment: backend `tsc --noEmit` clean; `test/autonomous`
+  139/139; `test/gold-execution` 24/24; collector pytest 194/194.
+- Total new backend tests so far: 36 (12 risk-manager + 12 e2e/occupancy + 12 already counted
+  risk-manager... — see git log for exact counts per commit). All passing, none skipped.
+
+Still NOT done — this is the real remaining scope, not yet started or only stubbed:
+1. **No live signal source wired.** Nothing calls `GoldExecutionCoordinatorService.evaluate()`
+   from a real confirmed-retest-v2 watch cycle yet. This needs: (a) extending
+   `confirmed-retest-v2`'s watch/replay output (or a new thin adapter) to emit a `GoldSignal`
+   (action, signalEntryPrice, currentExecutablePrice, levelId, reasoning) at the moment a
+   first-return event is confirmed inside the entry window, and (b) a caller (script or
+   scheduler) that runs a watch cycle, builds `GoldCoordinatorContext` from
+   `GoldAccountStateService` + live broker volume constraints (need to source broker
+   min/max/step — check `capture_contract_metadata.py`'s stored symbol metadata table), and
+   calls `coordinator.evaluate()`. This is the single biggest remaining piece of new code.
+2. **Broker volume constraints (min/max/step) source not yet wired** into the coordinator call
+   — `capture_contract_metadata.py` output needs to be read from wherever it's stored (check
+   collector-ingress's symbol-metadata table) and passed as `GoldBrokerVolumeConstraints`.
+3. **Max entry deviation**: `GOLD_MAX_ENTRY_DEVIATION_POINTS` is a documented default (200pt);
+   not yet cross-checked against a live price feed in the actual coordinator call path (the
+   function accepts it as a parameter and is tested, but nothing yet supplies real live
+   "currentExecutablePrice" at call time).
+4. **Kill switch / explicit strategy-position close control**: kill switch reused as-is
+   (`isKillSwitchActive()`); an explicit "close gold strategy positions" action (distinct from
+   the EURUSD kill-switch close-all) does not exist yet — would call
+   `collector/app/executor.py`'s existing `close_position` with `GOLD_MAGIC_NUMBER`/symbol,
+   needs its own controller route + test.
+5. **3-output historical evaluation** (task step 7) not started — needs the versioned
+   gold-live spec's execution assumptions (now drafted) applied on top of v2's existing
+   pipeline/paper/report modules, or a confirmation that v2's existing output already
+   satisfies outputs (a) and (b) as-is (output (c), forward demo trades, is trivially empty
+   until real fills occur).
+6. **Dashboard extensions** (task step 6F) — mode/settings/levels/positions/closed-trades/
+   EURUSD-inactive banner — none built yet; `confirmed-retest-dashboard` controller is
+   unmodified.
+7. **Focused end-to-end test analogous to `autonomous-execution-e2e.spec.ts` but exercising
+   the FULL gold coordinator path** (signal → risk gate → DB write → collector claim) doesn't
+   exist yet — current tests cover the risk function and the DB/route layer separately, not
+   yet chained through `GoldExecutionCoordinatorService.evaluate()` itself with a DB
+   assertion.
+8. **Bounded shadow run** — `GOLD_EXECUTION_MODE=SHADOW` code path exists and is exercised
+   only by unit reasoning, not yet run live against the actual collector/backend for a real
+   bounded period.
+9. **Live DEMO verification + activation + DEMO_HANDOFF.md** — none of these have started.
+   `trade_mode` has NOT been freshly re-queried and confirmed this session; do not assume the
+   morning handoff's EURUSD-context DEMO confirmation extends automatically to a fresh
+   verification requirement for gold activation — task step 8 requires this to be checked
+   again, explicitly, before gold activation specifically.
+
 ## Exact resume point
-Versioned spec doc is now written (item 1 done). Next: build a new
-`backend/src/research/gold-live/` (or similarly named) module — a mechanical coordinator
-analogous to `autonomous-execution-coordinator.service.ts` but driven by confirmed-retest-v2
-event/replay output instead of an AI decision, a new dedicated magic number, and a risk-gate
-function analogous to `evaluateRiskManager` but using gold's own numeric rules (0.5%/1%/2%/5%
-caps, one-position occupancy counting ALL XAUUSD exposure not just this strategy's own magic).
-Call `collector/app/executor.py`'s existing `place_order`-family functions for actual
-submission rather than writing new MT5 client code — confirm its function signatures first.
-Do not modify v1 or v2's existing frozen spec/results files — create new files for the
-gold-live version per task's own versioning instruction. Do not touch
-`AUTONOMOUS_MAGIC_NUMBER` or any EURUSD file.
+DONE: versioned spec, `gold-execution` module (constants/risk-manager/mode/coordinator/
+controller/module), collector-side polling, `GoldAccountStateService`. All committed
+(971cc9f, 7d092c9, d916a89, a87656a, 60977d6), all tests passing, no regressions.
+
+NEXT (start here): item 1 in the "Still NOT done" list above — wire a real signal source.
+Concretely:
+1. Look at `confirmed-retest-v2/pipeline.ts`/`replay.ts`'s watch-cycle output shape (reuse
+   whatever `npm run confirmed-retest:watch` already produces per-cycle) and write a thin
+   adapter that turns a freshly-confirmed first-return event into a `GoldSignal`
+   (`backend/src/gold-execution/gold-execution-coordinator.service.ts`'s own exported type).
+2. Find where broker symbol metadata (min/max/step lot) is actually stored (grep
+   `capture_contract_metadata.py`'s target table/endpoint) and write a small resolver
+   (`GoldBrokerVolumeConstraints`) alongside `GoldAccountStateService`.
+3. Wire a manually-invoked script (NOT an automatic scheduler yet — same deliberate,
+   documented posture as the EURUSD coordinator) that: runs one watch cycle, resolves
+   occupancy/risk/volume-constraints, calls `coordinator.evaluate()`, and prints the result —
+   this becomes the basis for the bounded shadow run (item 8).
+4. Only after 1-3 work and are tested: dashboard extensions, 3-output evaluation, then the
+   live-verification/activation sequence (items 9 in the list above), in that order.
+
+Do not modify v1 or v2's existing frozen spec/results files. Do not touch
+`AUTONOMOUS_MAGIC_NUMBER` (262610180) or any EURUSD file — gold has its own
+(GOLD_MAGIC_NUMBER = 262610181).
 
 ## Explicit current answer to the required final-report questions (as of this checkpoint)
 - Implemented so far: rule-table doc only; no code changes.
