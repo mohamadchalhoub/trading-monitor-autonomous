@@ -103,9 +103,17 @@ export class AutonomousDecisionLoggerService {
    * flips) a row that is STILL pending at the moment this runs, so two
    * concurrent callers can never both win.
    */
-  async claimOldestPendingOrder(accountId: string) {
+  /**
+   * `symbol` is REQUIRED (not optional) since the gold strategy's decisions
+   * live in this same table (symbol='XAUUSD') — without this filter, this
+   * EURUSD-facing claim would also match and claim a gold PENDING row,
+   * sending it to the collector as if it were a EURUSD order (wrong magic
+   * number, wrong volume, wrong point size). Found and fixed while wiring
+   * gold execution, before any gold PENDING row was ever created.
+   */
+  async claimOldestPendingOrder(accountId: string, symbol: string) {
     const candidate = await this.prisma.autonomousDecision.findFirst({
-      where: { accountId, orderStatus: 'PENDING' },
+      where: { accountId, orderStatus: 'PENDING', symbol },
       orderBy: { evaluatedAt: 'asc' },
     });
     if (!candidate) return null;

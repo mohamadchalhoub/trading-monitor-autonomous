@@ -26,7 +26,7 @@ export class AutonomousExecutionController {
   @Get('pending-order')
   async getPendingOrder(@Param('accountId', ParseUUIDPipe) accountId: string) {
     await this.accounts.getOrThrow(accountId);
-    const decision = await this.logger.claimOldestPendingOrder(accountId);
+    const decision = await this.logger.claimOldestPendingOrder(accountId, 'EURUSD');
     if (!decision || decision.entryPrice === null || decision.stopLoss === null || decision.takeProfit === null) {
       return { order: null };
     }

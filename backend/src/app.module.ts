@@ -18,6 +18,7 @@ import { XtbImportModule } from './xtb-import/xtb-import.module';
 import { AutonomousModule } from './autonomous/autonomous.module';
 import { TrendBreakoutModule } from './trend-breakout/trend-breakout.module';
 import { ConfirmedRetestDashboardModule } from './research/confirmed-retest-dashboard/confirmed-retest.controller';
+import { GoldExecutionModule } from './gold-execution/gold-execution.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -41,6 +42,7 @@ import { AppController } from './app.controller';
     AutonomousModule,
     TrendBreakoutModule,
     ConfirmedRetestDashboardModule,
+    GoldExecutionModule,
   ],
   controllers: [AppController],
 })
