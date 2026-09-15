@@ -1003,3 +1003,55 @@ npm run dev
 GOLD_KILL_SWITCH remains engaged. This script does not clear it, does not start a duplicate of
 anything already running (see the preflight fixes above), and does not place or close any
 broker order.
+
+## CHECKPOINT — 2026-09-15, end of session
+
+**Latest commit: `9cff514`** (startup script defect fixes — collector/backend process detection
+scoped to this repo, preflight-before-build ordering, backend readiness gate before launching
+dependents, PID identity validation).
+
+Full commit history this session, in order:
+1. `54a04f3` — Phase 1 gold isolation: Telegram, kill switch, closure reconciliation, protection
+   monitor, dashboard, news, AI, scripts.
+2. `426a378` — restore-then-close protection policy, first version (later corrected).
+3. `353a2ae` — single-attempt restore + reconciliation policy correction, stable build+run
+   commands, backend crash diagnosis.
+4. `9cff514` — this one (startup script defect fixes).
+
+**Current verified state**: the entire stack (backend, collector, scheduler) is confirmed
+STOPPED right now — checked against the real process list and `netstat` immediately before
+writing this checkpoint, nothing listening on 8420, no tracked node/python processes running.
+
+**GOLD_KILL_SWITCH remains ENGAGED** (`backend/GOLD_KILL_SWITCH` file present at its configured
+path, confirmed immediately before writing this checkpoint) — new gold entries are blocked. It
+has not been cleared at any point this session.
+
+**Exact startup commands for the next session**:
+```
+powershell -ExecutionPolicy Bypass -File backend\scripts\start-gold-demo.ps1   # backend + collector + scheduler
+cd frontend
+npm run dev                                                                     # frontend, separate
+```
+Status / stop: `backend\scripts\status-gold-demo.ps1` / `backend\scripts\stop-gold-demo.ps1`.
+
+**Remaining known items for the next session**:
+- Nothing in this session's own code has been runtime/broker-event-verified — every item below
+  is unit- and/or integration-tested (simulated broker responses), never yet observed against an
+  actually-running process with real MT5 data. In particular: the first real fill, first real
+  closure, and first real protection-restore cycle have NOT been observed live.
+- The two-simultaneous-collector-process-trees finding from earlier in this session (PIDs 16084
+  and 21768) should be treated as resolved by the stack now being fully stopped — but double-check
+  on next startup that exactly ONE collector process comes up, not two, since the root cause of
+  how a second one started was never identified.
+- Feed-status (news/calendar ingestion health) branching has no dedicated test coverage yet
+  (implemented, exercised only implicitly via the broader market-events suite).
+- The two-step "re-request SL/TP" distance/entry-price formula is correct and tested, but has
+  never modified a real MT5 position's real SL/TP.
+- `npx prisma generate` should be re-run once the backend/scheduler are stopped (per the earlier
+  Prisma-lock notes) to make sure the runtime client is current before relying on any of the new
+  tables (`GoldCloseRequest`, `GoldProtectionRestoreRequest`, `AutonomousDecision.volumeLots`) in
+  a live run.
+
+**Clearing GOLD_KILL_SWITCH and resuming DEMO trading is the user's decision**, to be made after
+they've done their own startup + readiness check next session — not something any prior session
+has done or should do on their behalf.
