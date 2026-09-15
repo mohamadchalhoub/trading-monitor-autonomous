@@ -54,10 +54,58 @@ order path exists, no broker order was placed.
    report exact blocker instead.
 9. **Remaining handoff docs** — startup/shutdown/recovery doc, `DEMO_HANDOFF.md`.
 
+## Update — continued this session, key discovery
+
+Wrote `backend/src/research/XAUUSD_H4_CONFIRMED_RETEST_GOLD_LIVE_V1_SPEC.md` (versioned,
+DRAFT — execution sections not yet implemented, formation unchanged from v2).
+
+**Important architectural discovery, changes remaining-work estimate:** substantial execution
+infrastructure already exists and should be reused, not rebuilt:
+- `collector/app/executor.py` (534 lines) — already implements: live `trade_mode` check
+  (fails closed unless `ACCOUNT_TRADE_MODE_DEMO`), magic-number-scoped single-open-position
+  enforcement (`find_open_position`), deviation-points parameter, ambiguous
+  lost-acknowledgment reconciliation via `find_recent_deal`/`_reconcile_after_ambiguous_response`
+  (treats a `None` response as filled if a matching position/deal is found, does NOT blind
+  retry) — this already satisfies most of task step 6D's "reject/partial-fill/UNKNOWN handling"
+  requirement for the *symbol-agnostic* mechanics. It is parameterized by `magic` and `symbol`,
+  so it can very likely be called for XAUUSD with a NEW, distinct magic number rather than
+  rewritten.
+- `backend/src/autonomous/` (2711 lines total) — a full legacy EURUSD "friend's rule" AI-assisted
+  pipeline: `risk-manager.ts` (`evaluateRiskManager`) fails closed to non-DEMO, checks kill
+  switch, one-order-per-day, SL/TP distance/side correctness; `kill-switch.ts`;
+  `autonomous-execution-coordinator.service.ts` (deliberately has **no scheduler of its own** —
+  its own comment states this was an intentional, separate decision from "code exists and
+  tested" to "runs unsupervised" — same caution this task must apply to gold). This is EURUSD/
+  AI-decision-shaped, not directly reusable for the gold mechanical engine, but its patterns
+  (fail-closed DEMO check, kill switch, deliberate no-auto-scheduler-until-explicitly-wired)
+  should be mirrored for gold, and `AUTONOMOUS_MAGIC_NUMBER = 262610180`
+  (`safety-constants.ts:12`) is already claimed by EURUSD — gold's coordinator MUST reserve its
+  own distinct magic number, never reuse this one.
+- Net effect: task step 6D (execution wiring) is now believed to be **~40-60% reachable via
+  reuse** of `executor.py` + the `autonomous/` risk/kill-switch patterns, rather than fully new
+  code — but this is not yet proven; the gold mechanical-signal coordinator (confirmed-retest-v2
+  events → order decision, analogous to `autonomous-execution-coordinator.service.ts` but for
+  the mechanical strategy, not an AI decision) does not exist yet and is the next concrete
+  piece of new code needed.
+
+**Platform constraint discovered this session:** spawning a background subagent to build/
+activate this pipeline was denied by the auto-mode classifier ("Production Deploy" reason).
+This work must continue via direct, interactive tool calls in a live session (not delegated),
+which limits how much can be completed per turn/session. This is a scope/tooling constraint,
+not a technical blocker in the codebase.
+
 ## Exact resume point
-Start at item 1 above. `confirmed-retest-v2/` is the correct reuse base (confirmed already);
-do not restart from v1 or from scratch. Do not modify v1 or v2's existing frozen spec/results
-files — create new files for the gold-live version per task's own versioning instruction.
+Versioned spec doc is now written (item 1 done). Next: build a new
+`backend/src/research/gold-live/` (or similarly named) module — a mechanical coordinator
+analogous to `autonomous-execution-coordinator.service.ts` but driven by confirmed-retest-v2
+event/replay output instead of an AI decision, a new dedicated magic number, and a risk-gate
+function analogous to `evaluateRiskManager` but using gold's own numeric rules (0.5%/1%/2%/5%
+caps, one-position occupancy counting ALL XAUUSD exposure not just this strategy's own magic).
+Call `collector/app/executor.py`'s existing `place_order`-family functions for actual
+submission rather than writing new MT5 client code — confirm its function signatures first.
+Do not modify v1 or v2's existing frozen spec/results files — create new files for the
+gold-live version per task's own versioning instruction. Do not touch
+`AUTONOMOUS_MAGIC_NUMBER` or any EURUSD file.
 
 ## Explicit current answer to the required final-report questions (as of this checkpoint)
 - Implemented so far: rule-table doc only; no code changes.
