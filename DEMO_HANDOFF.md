@@ -1,13 +1,147 @@
 # DEMO_HANDOFF — gold (XAUUSD) execution
 
-**Status: PAUSED (kill switch), a second, deeper fix committed, awaiting a scheduler restart.**
-DEMO activation (2026-09-15T12:06:34Z) is still valid. The first entry-timing verification pass
-added a signal-age cap and a live window recheck, but a direct correction afterward established
-those were not sufficient — the friend's actual rule is first-touch-as-it-happens, not "wait for
-an M1 candle to close." See "Update — 2026-09-15, entry-timing correction (live-quote
-detection)" below for the real fix. `backend/KILL_SWITCH` remains in place, unchanged, because
-the already-running scheduler process predates BOTH fixes and has not picked up either — restart
-it (exact commands below) to resume. No genuine order has occurred yet.
+**Status: PAUSED (kill switch), a real defect found and fixed, all six focused checks complete,
+awaiting a scheduler restart.** DEMO activation (2026-09-15T12:06:34Z) is still valid. Three
+rounds so far: (1) age-cap + window recheck, (2) live-quote detection + pre-send guard, (3) this
+round — six focused checks on rounds 1-2, one of which found a genuine remaining defect (fixed)
+and one of which found a genuine test-environment bug (fixed, not dismissed). See "Update —
+2026-09-15, six focused checks" below. `backend/KILL_SWITCH` remains in place, unchanged, since
+the already-running scheduler process predates every fix so far — restart it (exact commands at
+the end of the newest section) to resume. No genuine order has occurred yet.
+
+## Update — 2026-09-15, six focused checks (one real defect fixed, one real test-env bug fixed)
+
+Verification-only pass over the live-quote-detection round, per six specific, numbered checks.
+No formation rule, price-deviation limit, or strategy parameter was touched.
+
+**1. M1-discovered touches — real defect found and fixed.** Verified: an M1-discovered touch
+still reached `GoldExecutionCoordinatorService.evaluate()`, gated only by the 600s age cap — so
+a fresh-enough backlog touch, or a brief touch-and-reversal M1's own wick detection later caught
+after the live-quote layer's latest-tick sampling missed it, COULD still have been submitted as
+a genuine, delayed order. Fixed: `runGoldWatchCycle`'s M1 path no longer calls the coordinator,
+fetches a price, or queues anything — it writes an audit-only `AutonomousDecision`
+(`orderStatus: NONE`) and marks the event acted-on. The level is still consumed either way (via
+v2's own unchanged `consumeLevel()`), so the opportunity can never later be mistaken for a fresh
+touch by either layer. Proven with new tests covering exactly the two named scenarios (startup
+backlog, missed-then-M1-caught reversal) — both now log-and-consume, never submit
+(`gold-watch-cycle.spec.ts`).
+
+**2. Shared consumption state — confirmed correct, demonstrated with a test, not just described.**
+Both layers operate on the literal same in-memory `ReplayState.levels` object every cycle, and
+M1 replay runs first specifically so it gets first claim on anything its own closed-candle data
+can already see. Wrote an integration test with two distinct levels in one cycle: level A is
+M1-discovered and consumed (now provably audit-only, never a stale order per check 1's fix);
+level B is untouched by M1 and remains fully live-detectable in that SAME cycle and the next —
+proving M1 running first neither creates a stale order (check 1) nor suppresses a genuinely
+different, still-open opportunity. A level's first live observation is a baseline only (not a
+touch) by design — that's the same "no prior reference point" rule every level starts under,
+not suppression, and the test confirms the level remains active afterward.
+
+**3. Actual intervals — verified independently, not assumed.** Two genuinely different numbers
+matter and must not be conflated:
+  - **Quote refresh**: `collector/app/runner.py`'s main loop calls `_push_and_print_snapshot()`
+    (which reads a fresh `symbol_info_tick` for every configured symbol, XAUUSD included, and
+    pushes it to `LiveTick`) every `POLL_INTERVAL_SECONDS` — **10s**, confirmed live in
+    `collector/.env`. Verified independently against the actually-running collector (PID 16084,
+    still up from earlier this session), not just read from code: sampled `LiveTick(XAUUSD)`
+    twice, 12 seconds apart — `tickAt` advanced by exactly 10,000ms, and its own age relative to
+    true wall-clock was ~1.6s and ~3.6s at each sample. The quote itself is fresh.
+  - **Detection latency** (the actual number that matters for "how late can a live-detected
+    touch be"): gated by the SCHEDULER's own polling cadence, not the quote's refresh rate — the
+    quote could be refreshed every 10s, but `detectLiveTouches` only ever runs when the
+    scheduler's `runCycle` fires, which is `GOLD_SCHEDULER_INTERVAL_SECONDS` (**default 60s**,
+    not currently overridden in `backend/.env`) apart. **Worst-case live detection latency ≈ one
+    scheduler interval (60s) plus that cycle's own processing time** (M1 replay/paper simulation
+    + DB writes — observed at ~1-2s per cycle in this session's earlier scheduler log), not the
+    10s tick refresh rate.
+  - `GOLD_LIVE_OBSERVATION_MAX_GAP_SECONDS` (150s) is explicitly NOT a freshness guarantee — it
+    only bounds how large a gap between two SCHEDULER-cycle observations is tolerated before
+    deferring to M1; `GOLD_LIVE_TICK_MAX_STALENESS_SECONDS` (30s, checked against the tick's own
+    `tickAt` vs. real "now") is the actual freshness guarantee, and it is a separate check in the
+    code (`gold-live-touch.ts`'s `detectLiveTouches`), not something the 150s value substitutes
+    for. Restated here because the two are easy to conflate; they were not conflated in the code
+    to begin with (verified by reading the two independent checks), but this makes the
+    distinction explicit for anyone reading the constants file cold.
+
+**4. Guard → Python → `order_send` trace — confirmed, with the exact remaining gap named.**
+Traced `GoldPreSendGuardService.check()` (backend, TS) through to the literal
+`order_send()` call (`collector/app/executor.py`):
+  - The collector's own poll for a pending order (`_poll_and_execute_pending_gold_order`) runs
+    on the SAME 10s main-loop cadence as the snapshot push (`runner.py` line ~199-200) —
+    independent of the 60s scheduler interval above, since polling for an already-queued order
+    is much cheaper than the full detection cycle.
+  - The guard runs INSIDE that same HTTP request (`GoldExecutionController.getPendingOrder`),
+    immediately after the atomic PENDING→SENT claim, before the HTTP response is built. If
+    approved, the order is in that same response.
+  - The collector calls `executor.send_bracket_order(...)` synchronously, in the same poll
+    iteration, on receiving that response — no intermediate queue.
+  - `send_bracket_order` (`executor.py:330`) independently re-verifies, a THIRD time, using the
+    literal connected MT5 terminal, not anything the backend told it: `verify_demo_account()`
+    (real `account_info().trade_mode` against MT5's own enum — **the final connected-account
+    identity/type check**), then `find_open_position(magic=GOLD_MAGIC_NUMBER, symbol='XAUUSD')`
+    (a live `positions_get()` query, not cached), then `_build_bracket_request` fetches a FRESH
+    `symbol_info_tick(symbol)` immediately before pricing the SL/TP — **the final quote check**
+    — then calls `order_send`.
+  - **Exact remaining gap**: from the moment the guard approves (inside the HTTP handler) to the
+    moment `order_send` is actually called is the tail of one local HTTP response plus
+    synchronous, same-process Python execution (two near-instant local MT5 API calls) — on the
+    order of low hundreds of milliseconds on localhost, not minutes. This is categorically
+    different from (and much smaller than) the PENDING→claim gap the guard itself exists to
+    bound.
+  - **Self-conflict check, confirmed false**: `find_open_position` is scoped to
+    `GOLD_MAGIC_NUMBER`, and this is always the FIRST attempt for a given decision (claiming a
+    DB row never touches MT5) — there is no MT5 position under this magic number yet at send
+    time, so this check cannot see the order-in-flight as a conflict with itself. Separately,
+    the backend guard's own account-wide occupancy check already excludes the decision's own row
+    by id (`resolveOccupancy(accountId, excludeDecisionId)`, added in the previous round, tested
+    in `gold-pre-send-guard.spec.ts`). Both layers are independently self-conflict-safe.
+
+**5. `gold-dashboard.spec.ts` failure — root-caused and fixed, not dismissed.** The actual cause:
+`AppModule`'s `ConfigModule.forRoot({ isGlobal: true })` loads the real `backend/.env` (not
+`.env.test`) the first time any test file boots the app, using dotenv's default
+`override: false` — so any key `.env.test` doesn't define falls through to whatever this
+deployment's own real `.env` currently has. `GOLD_EXECUTION_MODE=DEMO` (set when gold was
+activated operationally) was leaking into a test asserting the OFF default. Fixed in
+`test/setup-env.ts`, which now sets `process.env.GOLD_EXECUTION_MODE = 'OFF'` explicitly before
+`ConfigModule` ever runs, so its later non-destructive load leaves it alone — deterministic
+regardless of this repo's own current `.env`. Reran the specific test AND the full
+`gold-execution` suite: **72/72 passing, zero known failures.**
+
+**6. Kill switch — confirmed present; test isolation confirmed complete.** `backend/KILL_SWITCH`
+verified still on disk, unchanged, containing this session's original pause note. Grepped every
+test file for `AUTONOMOUS_KILL_SWITCH_PATH`: `test/setup-env.ts` now sets an isolated per-worker
+default before any test runs, and the two files that specifically exercise kill-switch behavior
+(`test/autonomous/kill-switch.spec.ts`, `test/gold-execution/gold-pre-send-guard.spec.ts`) each
+further isolate to their own throwaway tmp path in their own `beforeEach`/`afterEach` — no test
+anywhere reads or writes the real repository path.
+
+**Verified overall**: `tsc --noEmit` clean; `test/gold-execution` **72/72** (was 68/69 — the one
+remaining failure from the previous round is now fixed, not just documented around); `test/autonomous`
+139/139; `confirmed-retest-v2/boundary` 15/15. No formation rule, deviation limit, or strategy
+parameter changed this round.
+
+**Exact scheduler restart + verification, then clear the kill switch** (unchanged procedure from
+the previous round, since the running scheduler still predates every fix to date):
+```powershell
+# 1. Find and stop the currently-running scheduler:
+Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*gold-execution-scheduler*' } | Select-Object ProcessId, CommandLine
+Stop-Process -Id <that-pid> -Force
+
+# 2. Restart it from backend/ so it loads the corrected code:
+cd C:\Users\user\Desktop\trading-monitor-autonomous\backend
+npm run gold-execution:scheduler
+```
+3. **Verify the running version** before clearing the kill switch: watch its console for a
+   `cycle complete` line containing `liveTouchEvents=` (proof of the corrected code, not just a
+   started process).
+4. Only then clear the kill switch:
+   ```powershell
+   Remove-Item C:\Users\user\Desktop\trading-monitor-autonomous\backend\KILL_SWITCH
+   ```
+5. Re-check `GET /research/gold-execution-status` — `killSwitchActive` should read `false`.
+
+The backend web server (`ts-node-dev`) has already auto-restarted on every file change so far
+(confirmed live, `--respawn`) — only the standalone scheduler process needs the manual restart.
 
 ## Update — 2026-09-15, entry-timing correction (live-quote detection)
 

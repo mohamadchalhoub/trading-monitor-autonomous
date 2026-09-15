@@ -361,6 +361,42 @@ backend web server itself already picked up the fix automatically (`ts-node-dev 
 confirmed live via a fresh status call — only the standalone scheduler process needs the manual
 restart.
 
+## Update 9 — six focused checks on the live-quote round: one real defect fixed (M1 could still
+## submit a delayed order), one real test-env bug fixed (not dismissed). All green.
+
+Verification-only pass, six specific numbered checks, no formation/limit/parameter changes:
+1. Found and fixed a real defect: M1-discovered events still reached
+   `coordinator.evaluate()`, gated only by the age cap — a fresh-enough backlog or missed-
+   reversal touch could still have been submitted as a delayed order. Fixed: the M1 path now
+   only logs an audit-only `AutonomousDecision` (`orderStatus: NONE`) and consumes the
+   opportunity; it never calls the coordinator. Proven with new tests
+   (`gold-watch-cycle.spec.ts`) covering the startup-backlog and missed-reversal cases exactly.
+2. Confirmed (with a new integration test, not just description) that the two detection layers
+   share one persistent state correctly: M1 consuming a level same-cycle cannot create a stale
+   order (per fix 1) and cannot suppress a genuinely different, still-open level in that same
+   cycle.
+3. Verified live against the running collector: quote refresh is 10s
+   (`POLL_INTERVAL_SECONDS`), confirmed empirically (tickAt advanced exactly 10,000ms across two
+   real samples). Detection latency is actually gated by the scheduler's own 60s default
+   interval, not the 10s tick refresh — stated precisely, and the 150s observation-gap threshold
+   confirmed NOT to be a freshness guarantee (that's the separate 30s tick-staleness check).
+4. Traced `GoldPreSendGuardService` through to `order_send`: confirmed Python independently
+   re-verifies trade_mode and fetches a fresh tick immediately before sending (a third layer,
+   using the literal MT5 connection, not anything the backend told it), confirmed the
+   magic-scoped duplicate check cannot self-conflict with the order-in-flight, and confirmed the
+   remaining guard→send gap is sub-second (same HTTP response, same poll iteration), not
+   minutes.
+5. Root-caused and fixed `gold-dashboard.spec.ts`'s failure (`ConfigModule`'s `.env` auto-load
+   leaking this deployment's real `GOLD_EXECUTION_MODE=DEMO` into a test asserting OFF) — did
+   NOT settle for re-documenting it as pre-existing. `test/gold-execution` is now 72/72.
+6. Confirmed `backend/KILL_SWITCH` is still present, unchanged, and confirmed every test file
+   now uses an isolated kill-switch path (global default in `test/setup-env.ts`, further
+   isolated in the two files that specifically exercise kill-switch behavior).
+
+Still blocked on the same standing constraint: the running scheduler predates every fix to date.
+Exact restart + verify-before-clearing-kill-switch steps are in `DEMO_HANDOFF.md`'s newest
+section. The backend web server already auto-restarted on every change so far (confirmed live).
+
 ## Explicit current answer to the required final-report questions (as of this checkpoint)
 - Implemented so far: rule-table doc, versioned gold-live spec, full `gold-execution` backend
   module, collector-side gold polling, live occupancy/risk/volume/currency resolvers,
