@@ -9,6 +9,16 @@
 # Usage: cp backend/.env.production.example backend/.env.production (fill
 # in real secrets), same for frontend/, then:
 #   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Explicit project name — same root-cause fix as backend/docker-compose.yml
+# (dev), applied here too. Compose derives project identity from the
+# CURRENT DIRECTORY'S BASENAME by default, not the full path — on a VPS
+# that also hosts v1 (whose own prod compose project is literally named
+# "trading-monitor", derived the same default way from its own directory),
+# an accidental basename collision would make `docker compose up` here
+# silently adopt and "recreate" v1's real, live containers. This makes v2's
+# project identity unambiguous no matter what directory it's deployed from.
+name: autonomous-trading
 
 services:
   postgres:
@@ -79,8 +89,13 @@ services:
     # nothing outside this machine can reach port 3000 directly; the public
     # path through Caddy (443) is unaffected and still the only externally
     # reachable route to this service.
+    #
+    # Host port is ${API_HOST_PORT} (default 3010), NOT 3000 — on a VPS
+    # that also runs v1 (whose own api container already binds host
+    # 127.0.0.1:3000), reusing 3000 here would collide. Set API_HOST_PORT
+    # explicitly in .env.production on any host where 3010 is also taken.
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${API_HOST_PORT:-3010}:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,7 +121,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    networks: [internal]
+    networks: [internal, proxy_shared]
 
   web:
     build:
@@ -135,33 +150,30 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-    networks: [internal]
+    networks: [internal, proxy_shared]
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    environment:
-      API_DOMAIN: ${API_DOMAIN}
-      APP_DOMAIN: ${APP_DOMAIN}
-      DASHBOARD_BASIC_AUTH_USER: ${DASHBOARD_BASIC_AUTH_USER}
-      DASHBOARD_BASIC_AUTH_HASH: ${DASHBOARD_BASIC_AUTH_HASH}
-    depends_on:
-      - api
-      - web
-    networks: [internal]
+  # NOTE (single-VPS-alongside-v1 topology): no `caddy` service is defined
+  # in this file, on purpose. v1 already owns host ports 80/443 with its
+  # own Caddy container — a second container binding the same ports on the
+  # same host would simply fail to start. Instead, `api`/`web` above join
+  # the EXTERNAL `proxy_shared` network (created once, manually, on the
+  # host: `docker network create proxy_shared`; v1's existing Caddy
+  # container is then attached to it with `docker network connect
+  # proxy_shared <v1-caddy-container-name>` — v1's own compose file and
+  # containers are never modified). v1's Caddy gets two new site blocks
+  # added to ITS OWN Caddyfile (reverse_proxy to this project's
+  # `autonomous-trading-api-1:3000` / `autonomous-trading-web-1:3001` by
+  # container name, reachable over `proxy_shared`), so ONE already-running
+  # Caddy instance TLS-terminates both systems' public domains, each
+  # proxying into its own completely separate containers/volumes/DB. See
+  # DEPLOYMENT_SINGLE_VPS.md's "alongside an existing v1" addendum for the
+  # exact commands.
 
 networks:
   internal:
+  proxy_shared:
+    external: true
 
 volumes:
   autonomous_trading_pgdata:
   autonomous_trading_redisdata:
-  caddy_data:
-  caddy_config:
