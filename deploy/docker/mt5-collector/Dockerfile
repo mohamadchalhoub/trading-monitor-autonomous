@@ -32,7 +32,13 @@ RUN dpkg --add-architecture i386 && \
 
 WORKDIR /app
 
-COPY entrypoint.sh /entrypoint.sh
+# Build context is the repo root (see docker-compose.prod.yml) so the real
+# collector/ source is baked in at build time, same immutable-image pattern
+# api/web already use — not a live bind mount, which would drift from
+# whatever happened to be on disk at container start.
+COPY collector/ /app/
+
+COPY deploy/docker/mt5-collector/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

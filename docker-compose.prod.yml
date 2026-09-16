@@ -169,6 +169,28 @@ services:
       - "127.0.0.1:${WEB_HOST_PORT:-3011}:3001"
     networks: [internal, proxy_shared]
 
+  # Isolated MT5 terminal + Wine-hosted Python collector — see
+  # deploy/docker/mt5-collector/Dockerfile's own header for why this needs
+  # its own container at all (a real port conflict with v1's MT5 terminal,
+  # confirmed by direct testing, not a guess). No host ports: reaches `api`
+  # purely over the internal Docker network. `user` must match the uid/gid
+  # that owns the bind-mounted WINEPREFIX on the host (created once via a
+  # one-time interactive VNC install — see DEPLOYMENT_SINGLE_VPS.md's
+  # "alongside an existing v1" addendum) or Wine refuses to touch it.
+  mt5-collector:
+    build:
+      context: .
+      dockerfile: deploy/docker/mt5-collector/Dockerfile
+    restart: unless-stopped
+    user: "${MT5_COLLECTOR_UID:-1000}:${MT5_COLLECTOR_GID:-1000}"
+    env_file: ./collector/.env.production
+    volumes:
+      - ${MT5_V2_WINEPREFIX_PATH:-/home/deploy/.mt5-v2}:/wineprefix
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
   # NOTE (single-VPS-alongside-v1 topology): no `caddy` service is defined
   # in this file, on purpose. v1 already owns host ports 80/443 with its
   # own Caddy container — a second container binding the same ports on the
