@@ -12,6 +12,12 @@ PYTHON_DIR="$WINEPREFIX/drive_c/Program Files/Python312"
 PYTHON_EXE="$PYTHON_DIR/python.exe"
 TERMINAL_EXE="$WINEPREFIX/drive_c/Program Files/MetaTrader 5/terminal64.exe"
 
+# Defensive: `restart: unless-stopped` restarts THIS SAME container (same
+# /tmp) on a crash, not a fresh one — a stale lock from a previous failed
+# attempt would otherwise make every retry fail on "Server already active"
+# rather than the real underlying error.
+rm -f /tmp/.X0-lock
+
 echo "[entrypoint] starting Xvfb on $DISPLAY..."
 Xvfb "$DISPLAY" -screen 0 1280x1024x24 -nolisten tcp &
 XVFB_PID=$!
@@ -20,7 +26,7 @@ sleep 2
 if [ ! -f "$PYTHON_EXE" ]; then
     echo "[entrypoint] Windows Python not found in this prefix — installing (one-time, silent)..."
     if [ ! -f /tmp/python-installer.exe ]; then
-        curl -fsSL https://www.python.org/ftp/python/3.12.14/python-3.12.14-amd64.exe -o /tmp/python-installer.exe
+        curl -fsSL https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe -o /tmp/python-installer.exe
     fi
     wine /tmp/python-installer.exe /quiet InstallAllUsers=1 PrependPath=0 Include_launcher=0 Include_test=0 Include_doc=0
     wineserver -w
