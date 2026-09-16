@@ -96,6 +96,16 @@ services:
     # explicitly in .env.production on any host where 3010 is also taken.
     ports:
       - "127.0.0.1:${API_HOST_PORT:-3010}:3000"
+    # Gold's file-based runtime state (kill switch, stop-new-entries,
+    # runtime settings, AI summaries) defaults to paths under process.cwd()
+    # (/app inside this container, per the *_PATH env vars' own defaults —
+    # see gold-kill-switch.ts etc.) — without a volume, any of that state
+    # (most importantly the kill switch) would silently reset on every
+    # `docker compose up --build`/container recreation. Mounted here so a
+    # redeploy never silently re-arms new entries by discarding an engaged
+    # kill switch.
+    volumes:
+      - gold_runtime_data:/app/gold-execution-runtime
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,6 +160,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    # No domain/Caddy yet — host port lets you reach the dashboard over an
+    # SSH tunnel (`ssh -L 3011:localhost:3011 ...`) in the meantime. Loopback
+    # only, same reasoning as api's WEB_HOST_PORT below; add this service to
+    # v1's shared Caddy later (see the NOTE below) once a domain exists,
+    # dropping this host-port publish at that point if you want it gone.
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-3011}:3001"
     networks: [internal, proxy_shared]
 
   # NOTE (single-VPS-alongside-v1 topology): no `caddy` service is defined
@@ -177,3 +194,4 @@ networks:
 volumes:
   autonomous_trading_pgdata:
   autonomous_trading_redisdata:
+  gold_runtime_data:
