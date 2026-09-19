@@ -18,6 +18,7 @@
  * coordinator's own idempotency handle the rest — no separate touch-event
  * store like gold's `GoldWatchStore` is needed.
  */
+import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
@@ -114,6 +115,10 @@ async function main() {
   );
 
   const stateDir = process.env.TREND_BREAKOUT_SCHEDULER_STATE_DIR ?? resolve(__dirname, '..', 'research-state', 'trend-breakout-execution-scheduler');
+  // Unlike gold's scheduler, nothing else here constructs a store whose own
+  // constructor creates this directory as a side effect — ProcessLock itself
+  // does not create its parent directory, so it must be created explicitly.
+  mkdirSync(stateDir, { recursive: true });
   const lock = new ProcessLock(resolve(stateDir, 'trend-breakout-scheduler.process.lock'));
   const intervalSeconds = Number(process.env.TREND_BREAKOUT_SCHEDULER_INTERVAL_SECONDS ?? '60');
   const intervalMs = Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds * 1000 : 60_000;
