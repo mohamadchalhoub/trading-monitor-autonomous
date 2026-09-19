@@ -26,6 +26,8 @@ import { TrendBreakoutSlotLockService } from './slot-lock.service';
 import { SymbolMetadataService } from './symbol-metadata.service';
 import { TrendBreakoutDecisionLoggerService } from './trend-breakout-decision-logger.service';
 import { TrendBreakoutVolumeSettingsService } from './volume-settings.service';
+import { getTrendBreakoutExecutionMode, isStopNewEntriesActive } from './trend-breakout-execution-mode';
+import { isTrendBreakoutKillSwitchActive } from './trend-breakout-kill-switch';
 
 export interface InstrumentEvaluationOutcome {
   instrument: TrendBreakoutInstrumentId;
@@ -238,7 +240,39 @@ export class TrendBreakoutCoordinatorService {
     }
     await this.riskState.updateEquityHigh(accountId, currentEquity - riskStateSnapshot.dailyNetCashFlow);
 
-    // All gates passed — log the decision and atomically claim the slot in
+    // §-execution-controls — re-checked HERE, immediately before the
+    // transaction that would actually queue a real order, not earlier in
+    // this function (every other gate above can legitimately take a
+    // meaningful amount of wall-clock time — H4/H1 candle fetches, account
+    // snapshot lookups — during which an operator could have engaged the
+    // kill switch or flipped the mode). Deliberately its own gate,
+    // `execution_controls`, distinct from every account-protection gate
+    // above: those answer "should this trade happen at all," this one
+    // answers "is the strategy currently allowed to act on that decision."
+    const mode = getTrendBreakoutExecutionMode();
+    if (mode === 'OFF') {
+      gates.push(failGate('execution_controls', 'Trend-breakout execution mode is OFF — no entries are queued for either instrument.'));
+      return this.logHold(accountId, instrument, signalCloseAt, now, decisionAtBeirut, signal, gates, 'Execution mode is OFF.', tick, sltp, estimatedRisk, metadata.profitCurrency);
+    }
+    if (isTrendBreakoutKillSwitchActive()) {
+      gates.push(failGate('execution_controls', 'Trend-breakout kill switch is active — refusing to queue an entry.'));
+      return this.logHold(accountId, instrument, signalCloseAt, now, decisionAtBeirut, signal, gates, 'Kill switch is active.', tick, sltp, estimatedRisk, metadata.profitCurrency);
+    }
+    if (isStopNewEntriesActive()) {
+      gates.push(failGate('execution_controls', 'Trend-breakout STOP NEW ENTRIES is active — refusing to queue an entry.'));
+      return this.logHold(accountId, instrument, signalCloseAt, now, decisionAtBeirut, signal, gates, 'STOP NEW ENTRIES is active.', tick, sltp, estimatedRisk, metadata.profitCurrency);
+    }
+    gates.push(passGate('execution_controls', `Execution controls pass (mode=${mode}).`));
+
+    if (mode === 'SHADOW') {
+      // §SHADOW — full pipeline ran and every gate above genuinely passed;
+      // log the REAL computed action for observability, but orderStatus
+      // stays NONE (never PENDING) and no slot lock is claimed — SHADOW must
+      // never place, or even reserve room for, a real order.
+      return this.logShadow(accountId, instrument, direction, signalCloseAt, now, decisionAtBeirut, signal, gates, tick, sltp, executablePrice, volumeSetting, riskPolicy, estimatedRisk, metadata.profitCurrency);
+    }
+
+    // mode === 'DEMO' — all gates AND execution controls passed. All gates passed — log the decision and atomically claim the slot in
     // ONE transaction. The earlier `isOccupied` check (§3) is only a
     // fast-path optimization to avoid unnecessary work; the REAL,
     // race-proof protection is this transaction's own slot-lock INSERT,
@@ -378,6 +412,79 @@ export class TrendBreakoutCoordinatorService {
       orderStatus: AutonomousOrderStatus.NONE,
     });
     return { instrument, action: 'HOLD', decisionId: decision.id, rejectionReason: reason };
+  }
+
+  /**
+   * SHADOW mode logging — same idempotency posture as `logHold` (re-using
+   * an existing row for the same signal identity rather than violating the
+   * unique constraint on re-evaluation), but logs the REAL computed
+   * action/entry/SL/TP the pipeline actually approved, with `orderStatus:
+   * NONE` and no `TrendBreakoutSlotLock` row created. This is what makes a
+   * SHADOW-mode decision distinguishable from a HOLD purely by inspecting
+   * `action` + `orderStatus` together: HOLD+NONE means "nothing to do,"
+   * OPEN_BUY/OPEN_SELL+NONE means "would have traded, did not because of
+   * SHADOW mode."
+   */
+  private async logShadow(
+    accountId: string,
+    instrument: TrendBreakoutInstrumentId,
+    direction: 'BUY' | 'SELL',
+    signalCloseAt: Date,
+    now: Date,
+    decisionAtBeirut: string,
+    signal: ReturnType<typeof evaluateTrendBreakoutSignal>,
+    gates: GateResult[],
+    tick: { bid: number; ask: number; tickAt: Date },
+    sltp: { stopLoss: number; takeProfit: number },
+    executablePrice: number,
+    volumeSetting: { volumeLots: number; version: number },
+    riskPolicy: { version: number },
+    estimatedRisk: number,
+    riskCcy: string,
+  ): Promise<InstrumentEvaluationOutcome> {
+    const existing = await this.prisma.trendBreakoutDecision.findUnique({
+      where: { accountId_strategyVersion_instrument_signalCloseAt: { accountId, strategyVersion: TREND_BREAKOUT_STRATEGY_VERSION, instrument, signalCloseAt } },
+    });
+    if (existing) {
+      return { instrument, action: existing.action === 'HOLD' ? 'HOLD' : (existing.action as 'OPEN_BUY' | 'OPEN_SELL'), decisionId: existing.id, rejectionReason: existing.rejectionReason };
+    }
+
+    const action = direction === 'BUY' ? 'OPEN_BUY' : 'OPEN_SELL';
+    const decision = await this.decisionLogger.log({
+      accountId,
+      strategyVersion: TREND_BREAKOUT_STRATEGY_VERSION,
+      instrument,
+      signalCloseAt,
+      decisionAtUtc: now,
+      decisionAtBeirut,
+      action,
+      h4Close: signal.h4?.close ?? null,
+      h4Ema50: signal.h4?.ema50 ?? null,
+      h4Ema200: signal.h4?.ema200 ?? null,
+      h1RangeHigh: signal.h1?.rangeHigh ?? null,
+      h1RangeLow: signal.h1?.rangeLow ?? null,
+      h1SignalClose: signal.h1?.signalClose ?? null,
+      h1SignalHigh: signal.h1?.signalHigh ?? null,
+      h1SignalLow: signal.h1?.signalLow ?? null,
+      atr14: signal.atr,
+      bid: tick.bid,
+      ask: tick.ask,
+      spreadPoints: tick.ask - tick.bid,
+      quoteAt: tick.tickAt,
+      volumeUsed: volumeSetting.volumeLots,
+      volumeConfigVersion: volumeSetting.version,
+      riskPolicyVersion: riskPolicy.version,
+      estimatedStopRiskAmount: estimatedRisk,
+      estimatedStopRiskCcy: riskCcy,
+      intendedEntryPrice: executablePrice,
+      intendedStopLoss: sltp.stopLoss,
+      intendedTakeProfit: sltp.takeProfit,
+      gateResults: gates,
+      rejectionReason: 'SHADOW mode — decision logged only; no order queued, no slot claimed.',
+      orderStatus: AutonomousOrderStatus.NONE,
+    });
+    this.logger.log(`SHADOW ${instrument} ${direction} (decision ${decision.id}) for account ${accountId} at ${executablePrice} — no order queued.`);
+    return { instrument, action, decisionId: decision.id, rejectionReason: null };
   }
 }
 

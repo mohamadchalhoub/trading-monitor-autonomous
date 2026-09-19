@@ -74,6 +74,7 @@ model TradingAccount {
   trendBreakoutSlotLocks          TrendBreakoutSlotLock[]
   trendBreakoutRiskState          TrendBreakoutRiskState?
   trendBreakoutEmergencyIncidents TrendBreakoutEmergencyIncident[]
+  trendBreakoutCloseRequests      TrendBreakoutCloseRequest[]
 
   @@unique([platform, externalAccountId])
   @@map("trading_accounts")
@@ -1345,4 +1346,55 @@ model TrendBreakoutEmergencyIncident {
 
   @@index([accountId, status])
   @@map("trend_breakout_emergency_incidents")
+}
+
+// Symmetric to `GoldCloseRequest`, for trend-breakout's own DEMO execution
+// wiring (golden-singing-pearl plan) — deliberately its own model, not a
+// shared close-request table across strategies, same isolation posture as
+// every other trend-breakout-vs-gold table pair in this schema. `instrument`
+// scopes each request to EURUSD or XAUUSD specifically (unlike gold, which
+// only ever trades one symbol); `positionTicket` scopes it to one specific
+// MT5 position (never "close whatever is open"); `accountId` scopes it to
+// one trading account. The dashboard (`TrendBreakoutController.requestClose`)
+// creates one PENDING row per confirmed close click, the collector's own
+// poll (`GET .../trend-breakout/:instrument/close-request` on
+// `TrendBreakoutExecutionController`) atomically claims it (PENDING -> SENT,
+// same claim-race protection as `TrendBreakoutDecisionLoggerService
+// .claimOldestPendingOrder`), and only a broker-confirmed executor result
+// (`POST .../close-request/:id/result`) ever flips it to CLOSED — never the
+// request merely being sent. Only a CLOSED result ever releases the
+// instrument's `TrendBreakoutSlotLock` (see
+// `trend-breakout-close-execution.service.ts::recordResult`).
+enum TrendBreakoutCloseRequestStatus {
+  PENDING
+  SENT
+  CLOSED
+  FAILED
+}
+
+model TrendBreakoutCloseRequest {
+  id                String                           @id @default(uuid())
+  accountId         String                           @map("account_id")
+  instrument        TrendBreakoutInstrument
+  symbol            String // broker symbol at request time (resolveInstrumentMappings' own resolved value)
+  positionTicket    String                           @map("position_ticket") // MT5 position ticket (externalPositionId) — the exact position this request is scoped to
+  side              String // the POSITION's own side (BUY/SELL) — closing means trading the opposite direction
+  volume            Decimal                          @db.Decimal(18, 6)
+  status            TrendBreakoutCloseRequestStatus  @default(PENDING)
+  requestedAt       DateTime                         @default(now()) @map("requested_at")
+  sentAt            DateTime?                        @map("sent_at")
+  resultDealTicket  Int?                             @map("result_deal_ticket")
+  resultClosedPrice Decimal?                         @map("result_closed_price") @db.Decimal(18, 6)
+  resultError       String?                          @map("result_error")
+  closedAt          DateTime?                        @map("closed_at")
+
+  account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  // Application-layer dedup only (`TrendBreakoutController.requestClose`
+  // queries for an existing PENDING/SENT row for this positionTicket before
+  // creating a new one) — NOT a DB-level uniqueness constraint, same
+  // acceptable-for-single-operator-dashboard posture as `GoldCloseRequest`.
+  @@index([status, requestedAt])
+  @@index([positionTicket, status])
+  @@map("trend_breakout_close_requests")
 }

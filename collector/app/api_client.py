@@ -138,6 +138,29 @@ class ApiClient:
     def post_gold_restore_protection_result(self, account_id: str, request_id: str, result: dict[str, Any]) -> dict[str, Any]:
         return self._post(f"/collector/{account_id}/gold-execution/restore-protection-request/{request_id}/result", result)
 
+    # Trend-breakout (EURUSD + XAUUSD) execution — its OWN route, deliberately
+    # separate from both the EURUSD pair and the gold pair above
+    # (backend's TrendBreakoutExecutionController), instrument-parameterized
+    # via a path segment (not a query param) so each instrument's poll is a
+    # fully distinct URL, matching the backend's own canonical instrument
+    # identity (never the raw broker symbol string).
+    def get_pending_trend_breakout_order(self, account_id: str, instrument: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/trend-breakout/{instrument}/pending-order")
+
+    def post_trend_breakout_execution_result(self, account_id: str, instrument: str, decision_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/trend-breakout/{instrument}/pending-order/{decision_id}/result", result)
+
+    # Trend-breakout close-request — symmetric to the open pair above:
+    # the backend queues a confirmed dashboard close request, this collector
+    # polls for it (per instrument) on its own cycle and reports back the
+    # REAL broker result. "closed" is only ever reported when order_send()
+    # (inside executor.close_position) itself returned success.
+    def get_trend_breakout_close_request(self, account_id: str, instrument: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/trend-breakout/{instrument}/close-request")
+
+    def post_trend_breakout_close_result(self, account_id: str, instrument: str, request_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/trend-breakout/{instrument}/close-request/{request_id}/result", result)
+
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         try:

@@ -140,6 +140,17 @@ class Config:
     # size passed through — no gold-specific order code in executor.py).
     gold_execution_enabled: bool = False
 
+    # Trend-breakout (EURUSD + XAUUSD) execution poll — its OWN flag,
+    # deliberately separate from both autonomous_execution_enabled (legacy
+    # EURUSD) and gold_execution_enabled, off by default, so this strategy's
+    # activation can never be coupled to either other one. When true, the
+    # collector's poll loop additionally checks the backend's
+    # trend-breakout route for an approved pending order, looped over BOTH
+    # instruments (EURUSD, XAUUSD) each cycle — see
+    # golden-singing-pearl.md's confirmed "both instruments go live
+    # together" decision.
+    trend_breakout_execution_enabled: bool = False
+
     def timeframes_for(self, symbol: str) -> tuple[str, ...]:
         return (self.candle_timeframes_by_symbol or {}).get(symbol, self.candle_timeframes)
 
@@ -246,6 +257,7 @@ class Config:
 
         autonomous_execution_enabled = e.get("AUTONOMOUS_EXECUTION_ENABLED", "false").strip().lower() == "true"
         gold_execution_enabled = e.get("GOLD_EXECUTION_ENABLED", "false").strip().lower() == "true"
+        trend_breakout_execution_enabled = e.get("TREND_BREAKOUT_EXECUTION_ENABLED", "false").strip().lower() == "true"
 
         return Config(
             mt5_login=mt5_login,
@@ -273,6 +285,7 @@ class Config:
             autonomous_execution_enabled=autonomous_execution_enabled,
             candle_timeframes_by_symbol=candle_timeframes_by_symbol,
             gold_execution_enabled=gold_execution_enabled,
+            trend_breakout_execution_enabled=trend_breakout_execution_enabled,
         )
 
     @property

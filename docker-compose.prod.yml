@@ -106,6 +106,7 @@ services:
     # kill switch.
     volumes:
       - gold_runtime_data:/app/gold-execution-runtime
+      - trend_breakout_runtime_data:/app/trend-breakout-execution-runtime
     depends_on:
       postgres:
         condition: service_healthy
@@ -213,6 +214,30 @@ services:
         condition: service_healthy
     networks: [internal]
 
+  # Trend-breakout (EURUSD + XAUUSD) execution scheduler — the piece that
+  # actually evaluates the H4-trend/H1-breakout signal on a fixed interval
+  # for BOTH instruments and queues orders; without this running, the
+  # strategy's own coordinator/collector plumbing has nothing calling it.
+  # Reuses the SAME image as `api` (identical Dockerfile/build), same
+  # pattern as `gold-scheduler` above. Uses its OWN volume
+  # (`trend_breakout_runtime_data`), deliberately NOT shared with
+  # `gold_runtime_data` — trend-breakout's kill switch/stop-new-entries
+  # files must stay fully isolated from gold's, per the confirmed
+  # per-strategy isolation decision.
+  trend-breakout-scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ./backend/.env.production
+    command: ["node", "dist/scripts/trend-breakout-execution-scheduler.js"]
+    volumes:
+      - trend_breakout_runtime_data:/app/trend-breakout-execution-runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
   # NOTE (single-VPS-alongside-v1 topology): no `caddy` service is defined
   # in this file, on purpose. v1 already owns host ports 80/443 with its
   # own Caddy container — a second container binding the same ports on the
@@ -239,3 +264,4 @@ volumes:
   autonomous_trading_pgdata:
   autonomous_trading_redisdata:
   gold_runtime_data:
+  trend_breakout_runtime_data:

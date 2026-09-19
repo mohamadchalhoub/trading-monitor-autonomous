@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
+import { AccountsModule } from '../accounts/accounts.module';
 import { AuthModule } from '../auth/auth.module';
 import { MarketDataModule } from '../market-data/market-data.module';
 import { TrendBreakoutController } from './trend-breakout.controller';
+import { TrendBreakoutExecutionController } from './trend-breakout-execution.controller';
 import { TrendBreakoutCoordinatorService } from './trend-breakout-coordinator.service';
 import { TrendBreakoutDecisionLoggerService } from './trend-breakout-decision-logger.service';
+import { TrendBreakoutPreSendGuardService } from './trend-breakout-pre-send-guard.service';
+import { TrendBreakoutCloseExecutionService } from './trend-breakout-close-execution.service';
 import { TrendBreakoutRiskPolicySettingsService } from './risk-policy-settings.service';
 import { TrendBreakoutRiskStateService } from './risk-state.service';
 import { TrendBreakoutSlotLockService } from './slot-lock.service';
@@ -31,10 +35,20 @@ import { TrendBreakoutVolumeSettingsService } from './volume-settings.service';
  * collector's own execution-poll step stays off by default (same posture
  * as the legacy system's `AUTONOMOUS_EXECUTION_ENABLED`). See the delivery
  * report's "remaining prerequisites before demo execution."
+ *
+ * Execution wiring (golden-singing-pearl plan) added `TrendBreakoutExecutionController`
+ * (the collector-facing poll/report route, `CollectorTokenGuard` via
+ * `AuthModule`, same as `TrendBreakoutController`'s own `DashboardTokenGuard`)
+ * plus `TrendBreakoutPreSendGuardService`/`TrendBreakoutCloseExecutionService`.
+ * `AccountsModule` is now imported for `AccountsService.getOrThrow`, the same
+ * collector-route account-existence check every other collector-facing
+ * controller in this codebase uses. Still no scheduler wired INTO this
+ * module — `backend/scripts/trend-breakout-execution-scheduler.ts` is a
+ * separate standalone process, same posture as `gold-execution-scheduler.ts`.
  */
 @Module({
-  imports: [MarketDataModule, AuthModule],
-  controllers: [TrendBreakoutController],
+  imports: [MarketDataModule, AuthModule, AccountsModule],
+  controllers: [TrendBreakoutController, TrendBreakoutExecutionController],
   providers: [
     TrendBreakoutVolumeSettingsService,
     SymbolMetadataService,
@@ -43,6 +57,8 @@ import { TrendBreakoutVolumeSettingsService } from './volume-settings.service';
     TrendBreakoutRiskPolicySettingsService,
     TrendBreakoutDecisionLoggerService,
     TrendBreakoutCoordinatorService,
+    TrendBreakoutPreSendGuardService,
+    TrendBreakoutCloseExecutionService,
   ],
   exports: [
     TrendBreakoutVolumeSettingsService,
@@ -52,6 +68,8 @@ import { TrendBreakoutVolumeSettingsService } from './volume-settings.service';
     TrendBreakoutRiskPolicySettingsService,
     TrendBreakoutDecisionLoggerService,
     TrendBreakoutCoordinatorService,
+    TrendBreakoutPreSendGuardService,
+    TrendBreakoutCloseExecutionService,
   ],
 })
 export class TrendBreakoutModule {}

@@ -12,6 +12,8 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
   await prisma.goldProtectionRestoreRequest.deleteMany();
   await prisma.goldCloseRequest.deleteMany();
   await prisma.goldTelegramNotification.deleteMany();
+  await prisma.trendBreakoutCloseRequest.deleteMany();
+  await prisma.liveTick.deleteMany();
   await prisma.trendBreakoutSlotLock.deleteMany();
   await prisma.trendBreakoutDecision.deleteMany();
   await prisma.trendBreakoutEmergencyIncident.deleteMany();

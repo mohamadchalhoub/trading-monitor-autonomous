@@ -38,6 +38,12 @@ from app.mt5_client import Mt5Client, stored_candle_time_to_true_utc
 logger = logging.getLogger("collector.runner")
 
 COLLECTOR_VERSION = "0.2.0"
+
+# Trend-breakout's canonical instrument identifiers — must match the
+# backend's own `TREND_BREAKOUT_INSTRUMENTS` (instrument-config.ts) exactly;
+# this is the internal identity used in the URL path segment, never the raw
+# broker symbol string (the backend resolves broker symbol on its own side).
+TREND_BREAKOUT_INSTRUMENTS: tuple[str, ...] = ("EURUSD", "XAUUSD")
 TRADE_SYNC_INTERVAL_SECONDS = 60
 # Historical chart reconstruction phase — how many candles go in one
 # /collector/candles push. A multi-year M5 backfill is hundreds of
@@ -167,6 +173,7 @@ class CollectorApp:
             "candle_timeframes": self._config.candle_timeframes if self._config.candle_symbols else (),
             "autonomous_execution_enabled": self._config.autonomous_execution_enabled,
             "gold_execution_enabled": self._config.gold_execution_enabled,
+            "trend_breakout_execution_enabled": self._config.trend_breakout_execution_enabled,
         })
 
         backoff = self._config.reconnect_initial_backoff_seconds
@@ -200,6 +207,16 @@ class CollectorApp:
                         self._poll_and_execute_pending_gold_order()
                         self._poll_and_execute_gold_close_request()
                         self._poll_and_execute_gold_restore_protection_request()
+                    if self._config.trend_breakout_execution_enabled:
+                        # Both instruments go live together (confirmed
+                        # rollout decision) — looped every cycle, never
+                        # gated independently per instrument here (the
+                        # backend's own execution mode / kill switch /
+                        # stop-new-entries are the actual per-decision
+                        # gates; this loop just polls both routes).
+                        for instrument in TREND_BREAKOUT_INSTRUMENTS:
+                            self._poll_and_execute_pending_trend_breakout_order(instrument)
+                            self._poll_and_execute_trend_breakout_close_request(instrument)
                 finally:
                     self._mt5_call_lock.release()
 
@@ -574,6 +591,137 @@ class CollectorApp:
             self._api.post_gold_restore_protection_result(self._config.collector_account_id, request_id, payload)
         except ApiClientError as exc:
             logger.error("failed to report gold restore-protection result back to backend", extra={"request_id": request_id, "error": str(exc)})
+
+    def _poll_and_execute_pending_trend_breakout_order(self, instrument: str) -> None:
+        """Trend-breakout (EURUSD/XAUUSD) analog of `_poll_and_execute_pending_gold_order`
+        — its OWN backend route (`get_pending_trend_breakout_order`), instrument-
+        parameterized, only ever reached when `trend_breakout_execution_enabled`
+        is explicitly true, fully independent of the EURUSD-legacy and gold
+        flags above. Same failure posture: never crashes the main loop, every
+        outcome (including DemoAccountRequiredError) is reported back, never
+        left stuck. Passes the order's own `symbol`/`pointSize` through to
+        `send_bracket_order` — executor.py already supports this per-call, no
+        executor.py change was needed (same as gold's own note).
+        """
+        try:
+            response = self._api.get_pending_trend_breakout_order(self._config.collector_account_id, instrument)
+        except ApiClientError as exc:
+            logger.warning("trend-breakout pending-order poll failed, will retry next tick", extra={"instrument": instrument, "error": str(exc)})
+            return
+
+        order = response.get("order")
+        if not order:
+            return
+
+        logger.info("trend-breakout pending order claimed, attempting execution", extra={
+            "instrument": instrument, "decision_id": order["decisionId"], "side": order["side"], "volume": order["volume"], "symbol": order["symbol"],
+        })
+
+        try:
+            result = self._executor.send_bracket_order(
+                side=order["side"],
+                volume=order["volume"],
+                stop_loss_points=order["stopLossPoints"],
+                take_profit_points=order["takeProfitPoints"],
+                magic=order["magic"],
+                comment=order["comment"],
+                symbol=order["symbol"],
+                point_size=order["pointSize"],
+            )
+        except DemoAccountRequiredError as exc:
+            logger.critical("TREND-BREAKOUT: DEMO ACCOUNT CHECK FAILED — refusing to trade", extra={"instrument": instrument, "error": str(exc)})
+            self._report_trend_breakout_execution_result(instrument, order["decisionId"], ok=False, error_message=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("trend-breakout order execution raised an unexpected error", extra={"instrument": instrument, "error": str(exc)})
+            self._report_trend_breakout_execution_result(instrument, order["decisionId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("trend-breakout order execution result", extra={
+            "instrument": instrument, "decision_id": order["decisionId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_trend_breakout_execution_result(
+            instrument, order["decisionId"], ok=result.ok, ticket=result.ticket,
+            filled_price=result.price, error_message=result.error_message,
+        )
+
+    def _report_trend_breakout_execution_result(
+        self, instrument: str, decision_id: str, *, ok: bool, ticket: int | None = None,
+        filled_price: float | None = None, error_message: str | None = None,
+    ) -> None:
+        payload: dict = {"ok": ok}
+        if ticket is not None:
+            payload["ticket"] = ticket
+        if filled_price is not None:
+            payload["filledPrice"] = filled_price
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_trend_breakout_execution_result(self._config.collector_account_id, instrument, decision_id, payload)
+        except ApiClientError as exc:
+            logger.error("failed to report trend-breakout execution result back to backend", extra={"instrument": instrument, "decision_id": decision_id, "error": str(exc)})
+
+    def _poll_and_execute_trend_breakout_close_request(self, instrument: str) -> None:
+        """Trend-breakout close-request — symmetric to
+        `_poll_and_execute_pending_trend_breakout_order`, for the dashboard's
+        "request close" action (`TrendBreakoutController.requestClose`).
+        Same failure posture: never crashes the main loop, every outcome is
+        reported back so the backend row never sits stuck. Reports `ok=True`
+        (which the backend records as CLOSED) ONLY when `executor.close_position`
+        itself returns a broker-confirmed success (order_send() succeeded).
+        """
+        try:
+            response = self._api.get_trend_breakout_close_request(self._config.collector_account_id, instrument)
+        except ApiClientError as exc:
+            logger.warning("trend-breakout close-request poll failed, will retry next tick", extra={"instrument": instrument, "error": str(exc)})
+            return
+
+        request = response.get("request")
+        if not request:
+            return
+
+        logger.info("trend-breakout close-request claimed, attempting execution", extra={
+            "instrument": instrument, "request_id": request["requestId"], "ticket": request["ticket"], "side": request["side"], "volume": request["volume"],
+        })
+
+        try:
+            result = self._executor.close_position(
+                ticket=request["ticket"], side=request["side"], volume=request["volume"], symbol=request["symbol"],
+            )
+        except Exception as exc:  # noqa: BLE001 — must never crash the main loop over this
+            logger.error("trend-breakout close-position execution raised an unexpected error", extra={"instrument": instrument, "error": str(exc)})
+            self._report_trend_breakout_close_result(instrument, request["requestId"], ok=False, error_message=str(exc))
+            return
+
+        logger.info("trend-breakout close-position execution result", extra={
+            "instrument": instrument, "request_id": request["requestId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "error": result.error_message,
+        })
+        self._report_trend_breakout_close_result(
+            instrument, request["requestId"], ok=result.ok, deal_ticket=result.ticket,
+            closed_price=result.price, error_message=result.error_message,
+        )
+
+    def _report_trend_breakout_close_result(
+        self, instrument: str, request_id: str, *, ok: bool, deal_ticket: int | None = None,
+        closed_price: float | None = None, error_message: str | None = None,
+    ) -> None:
+        payload: dict = {"ok": ok}
+        if deal_ticket is not None:
+            payload["dealTicket"] = deal_ticket
+        if closed_price is not None:
+            payload["closedPrice"] = closed_price
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_trend_breakout_close_result(self._config.collector_account_id, instrument, request_id, payload)
+        except ApiClientError as exc:
+            # The close attempt already happened (or definitively failed) at
+            # the broker by this point — a failure to REPORT that back is a
+            # visibility problem, not a trading-safety one, but it does mean
+            # the request row stays stuck as SENT until this is noticed.
+            logger.error("failed to report trend-breakout close result back to backend", extra={"instrument": instrument, "request_id": request_id, "error": str(exc)})
 
     def _trade_sync_due(self) -> bool:
         if self._last_trade_sync_at is None:
