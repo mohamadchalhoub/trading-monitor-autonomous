@@ -18,6 +18,7 @@ import { AccountsService } from '../accounts/accounts.service';
 import { CollectorTokenGuard } from '../auth/collector-token.guard';
 import { RsiDecisionService } from './decision.service';
 import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
+import { GoldAiSummaryService } from '../gold-execution/gold-ai-summary.service';
 import { RSI_DEFAULT_VOLUME_LOTS, RSI_GOLD_POINT_SIZE, RSI_MAGIC_NUMBER, RSI_SYMBOL } from './safety-constants';
 
 class RsiExecutionResultDto {
@@ -40,6 +41,14 @@ export class RsiExecutionController {
     private readonly accounts: AccountsService,
     private readonly decisions: RsiDecisionService,
     private readonly telegram: GoldTelegramService,
+    /**
+     * Informational narration only. Nothing in the execution path or the
+     * Telegram path reads it, waits for it, or branches on it — it is invoked
+     * fire-and-forget AFTER the outcome has already been durably recorded and
+     * reported, so an AI provider being slow, wrong or entirely unavailable
+     * cannot affect a single trading decision or a single notification.
+     */
+    private readonly aiSummary: GoldAiSummaryService,
   ) {}
 
   @Get('pending-order')
@@ -126,12 +135,13 @@ export class RsiExecutionController {
           'The order may or may not have reached the broker; it is NOT assumed failed and the position slot stays occupied until reconciled.',
       );
     } else if (dto.ok) {
-      void this.telegram.notify(
-        'FILL_CONFIRMED',
-        `rsi-fill:${decisionId}`,
+      const text =
         `XAUUSD RSI DEMO — entry filled (broker-confirmed). decision=${decisionId} ticket=${dto.ticket ?? 'n/a'} ` +
-          `filled=${dto.filledPrice ?? 'n/a'} brokerSL=${dto.brokerStopLoss ?? 'n/a'} brokerTP=${dto.brokerTakeProfit ?? 'n/a'}`,
-      );
+        `filled=${dto.filledPrice ?? 'n/a'} brokerSL=${dto.brokerStopLoss ?? 'n/a'} brokerTP=${dto.brokerTakeProfit ?? 'n/a'}`;
+      void this.telegram.notify('FILL_CONFIRMED', `rsi-fill:${decisionId}`, text);
+      // Narration is generated from the SAME factual text that was already
+      // sent, and only after it was sent.
+      void this.aiSummary.generateForEvent('FILL_CONFIRMED', new Date().toISOString(), text);
     } else {
       void this.telegram.notify(
         'SUBMISSION_REJECTED',
