@@ -1,0 +1,172 @@
+==============================================================================
+Historical evaluation — xauusd-m1-rsi-retest-extremes-v1
+Spec hash 10401c7ba308da35 (frozen and committed before this run)
+==============================================================================
+
+## 1. Data coverage
+
+  M1 bars:            882,817
+  First bar:          2024-03-01T01:00:00.000Z
+  Last bar:           2026-09-16T20:02:00.000Z
+  Requested range:    2024-03-01T00:00:00.000Z -> 2026-09-20T18:18:28.886Z
+  Warm-up consumed:   256 bars before any signal may be emitted
+  Contiguous runs:    795 (a run ends wherever a minute is missing)
+  Missing minutes:    456,086 inside the covered span
+  Largest gap:        12890 minutes, starting 2026-05-19T21:59:00.000Z
+  NOTE: most gaps are weekends and broker closures, which are expected. Pattern
+        state is reset across every gap, exactly as the live engine does.
+
+  Tick coverage (for the faithful TICK_REPLAY model):
+    ticks:            141,626
+    span:             2026-09-15T01:00:00.517Z -> 2026-09-16T13:58:25.473Z
+    covers:           1.5 of 930 days (0.17%)
+    -> Tick coverage is a tiny fraction of the period. The faithful model can only
+       describe that fraction, and says nothing about the rest.
+
+## 2. CLOSED_M1_APPROXIMATION — a DIFFERENT observation model
+
+  This is not a backtest of the live strategy. One observation per closed bar
+  means intrabar invalidation and intrabar crossings are invisible, and entry
+  timing is quantised to bar boundaries. Read it as "what would a bar-close
+  version of these rules have done", not as "what this strategy would have done".
+
+  --- CLOSED_M1_APPROXIMATION ---
+  Signals emitted:    575
+  Trades opened:      488
+  Signals skipped:    87
+           46  DAILY_PAUSE
+           28  Occupancy
+           13  FRIDAY_ENTRY_CUTOFF
+
+  Per setup (every setup reported separately, spec §12):
+      setup                 trades      TP      SL  Friday  indet.  unres.   resolved WR
+      SELL_PEAK_RETEST         204     105      98       1       0       0        52.0%
+      BUY_TROUGH_RETEST        161      90      70       0       1       0        56.3%
+      EXTREME_SELL              86      33      52       0       1       0        38.8%
+      EXTREME_BUY               38      16      21       0       1       0        43.2%
+      COMBINED (one position)     488     244     240       1       3       0        50.5%
+
+  Outcome accounting:
+      resolved:            485
+      indeterminate:       3  (one M1 bar contained BOTH TP and SL — closed OHLC cannot say which came first)
+      unresolved at end:   0  (still open when the data ran out)
+
+  Performance (RESOLVED trades only):
+      wins / losses:       245 / 240
+      resolved win rate:   50.52%
+      with uncertainty:    50.20% .. 50.82%  (indeterminate trades all losing .. all winning)
+      net P&L:             -3342.50 USD at 0.5 lots (contract size 100)
+      expectancy / trade:  -6.89 USD
+      -- with ALL modelled costs removed --
+      gross P&L:           5387.50 USD
+      gross expectancy:    11.11 USD/trade
+      cost drag:           18.00 USD/trade (8730.00 USD total)
+      break-even win rate: 51.80%  (TP $5 vs SL $5, plus spread)
+      observed vs needed:  50.52% observed, 51.80% needed just to break even
+      max drawdown:        5692.00 USD
+      longest loss streak: 8
+
+  Exit reasons:
+      STOP_LOSS            240
+      TAKE_PROFIT          244
+      FRIDAY_CLOSE         1
+      INDETERMINATE        3
+
+      Friday forced closes produced partial results, not $5 outcomes:
+      range 13.50 .. 13.50 USD
+
+  Frequency:
+      0.53 trades/day, 0.62 signals/day over 928 days
+      first Fri 2024-03-01 19:52:59 Beirut
+      last  Wed 2026-09-16 04:59:59 Beirut
+
+  Cost assumptions applied:
+      spread:      $0.18 of gold price, charged on entry and exit (observed live quote)
+      commission:  $0 per lot round trip (assumed)
+      swap:        $0 per night (assumed)
+      slippage:    NOT modelled — real fills will differ
+
+## 3. TICK_REPLAY — the faithful model, where ticks exist
+
+  Replaying 141,626 ordered ticks through the live engine.
+  The engine is warmed from closed bars first, exactly as the live path warms up.
+
+  --- TICK_REPLAY ---
+  Signals emitted:    40
+  Trades opened:      10
+  Signals skipped:    30
+           30  Occupancy
+
+  Per setup (every setup reported separately, spec §12):
+      setup                 trades      TP      SL  Friday  indet.  unres.   resolved WR
+      SELL_PEAK_RETEST           5       3       2       0       0       0        60.0%
+      BUY_TROUGH_RETEST          3       2       1       0       0       0        66.7%
+      EXTREME_SELL               1       1       0       0       0       0       100.0%
+      EXTREME_BUY                1       0       1       0       0       0         0.0%
+      COMBINED (one position)      10       6       4       0       0       0        60.0%
+
+  Outcome accounting:
+      resolved:            10
+      indeterminate:       0  (one M1 bar contained BOTH TP and SL — closed OHLC cannot say which came first)
+      unresolved at end:   0  (still open when the data ran out)
+
+  Performance (RESOLVED trades only):
+      wins / losses:       6 / 4
+      resolved win rate:   60.00%
+      with uncertainty:    60.00% .. 60.00%  (indeterminate trades all losing .. all winning)
+      net P&L:             410.00 USD at 0.5 lots (contract size 100)
+      expectancy / trade:  41.00 USD
+      -- with ALL modelled costs removed --
+      gross P&L:           590.00 USD
+      gross expectancy:    59.00 USD/trade
+      cost drag:           18.00 USD/trade (180.00 USD total)
+      break-even win rate: 51.80%  (TP $5 vs SL $5, plus spread)
+      observed vs needed:  60.00% observed, 51.80% needed just to break even
+      max drawdown:        795.00 USD
+      longest loss streak: 2
+
+  Exit reasons:
+      TAKE_PROFIT          6
+      STOP_LOSS            4
+
+  Frequency:
+      7.87 trades/day, 31.49 signals/day over 1 days
+      first Tue 2026-09-15 09:42:00 Beirut
+      last  Wed 2026-09-16 16:11:08 Beirut
+
+  Cost assumptions applied:
+      spread:      $0.18 of gold price, charged on entry and exit (observed live quote)
+      commission:  $0 per lot round trip (assumed)
+      swap:        $0 per night (assumed)
+      slippage:    NOT modelled — real fills will differ
+
+  This covers only the span listed under tick coverage above. It is a faithful
+  reproduction for that span and makes no claim about any other period.
+
+## 4. The two models do NOT agree, and that is the headline
+
+  CLOSED_M1_APPROXIMATION:  0.62 signals/day
+  TICK_REPLAY (faithful):   31.49 signals/day
+  ratio:                    50.8x more signals under the faithful model
+
+  This gap is expected, and it is the point. One observation per closed bar can
+  only see a crossing that survives to the bar boundary; the live engine sees
+  every crossing as it happens, including the many that form and reverse inside
+  a single minute. The two models therefore trade different opportunities at
+  very different rates.
+
+  The practical consequence: the long-horizon approximation numbers above must
+  NOT be read as an estimate of live performance, not even a rough one. They
+  describe a different strategy. The faithful numbers are the right ones, and
+  there are far too few of them to conclude anything from.
+
+## 5. What would make this evaluation stronger
+
+  The only way to evaluate this strategy faithfully over a long period is ordered
+  tick data over that period. This deployment currently has ~2 days. Running the
+  collector with the live tick stream enabled accumulates it going forward, and
+  the same replay above can then be re-run over a genuinely representative span.
+  Until then, the approximation is the only long-horizon number available, and it
+  is a different strategy from the one that trades.
+
+JSON written to xauusd-rsi-evaluation.json

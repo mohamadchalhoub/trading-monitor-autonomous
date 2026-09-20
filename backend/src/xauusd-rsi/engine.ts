@@ -56,7 +56,14 @@ export interface EngineState {
    */
   lastAcceptedTickKey: string | null;
   observationMode: ObservationMode;
-  /** True when the RSI state must be rebuilt from history before signals may resume. */
+  /**
+   * True only when the indicator was genuinely discarded and must be rebuilt
+   * from broker history before signals may resume.
+   *
+   * Deliberately NOT set by an ordinary data gap: the indicator carries
+   * across session breaks exactly as MetaTrader's does (see `applyClosedBar`).
+   * A gap resets pattern state only.
+   */
   needsRsiReseed: boolean;
   /** Diagnostics. */
   closedBarsApplied: number;
@@ -156,12 +163,21 @@ export function applyClosedBar(state: EngineState, barStartT: number, close: num
     notes.push(
       `gap of ${missing} missing M1 bar(s) before ${new Date(bucket).toISOString()} — pattern state reset; a pattern is never inferred through an unobserved interval`,
     );
+    // PATTERN state is discarded; the INDICATOR is not.
+    //
+    // This distinction is what makes the engine MT5-faithful across session
+    // breaks. MetaTrader does not restart RSI after a weekend: the M1 series
+    // simply has no bars while the market is shut, and the first bar of the
+    // new week is smoothed against the last bars of the previous one. An
+    // engine that reset the recursive average here would disagree with the
+    // terminal on every Monday morning, and would additionally blind itself
+    // for a further 256 bars of warm-up after every weekend.
+    //
+    // Pattern state is different, and must go: a peak whose pullback happened
+    // while nobody was watching is not a peak this engine may trade.
     next = {
       ...next,
       pattern: createPatternState(next.specHash),
-      // The recursive average cannot legitimately skip bars either.
-      rsi: createRsiState(),
-      needsRsiReseed: true,
       gapResets: next.gapResets + 1,
     };
     didReset = true;
@@ -173,15 +189,15 @@ export function applyClosedBar(state: EngineState, barStartT: number, close: num
     rsi,
     lastClosedBarT: bucket,
     closedBarsApplied: next.closedBarsApplied + 1,
-    lastObservationT: Math.max(next.lastObservationT ?? bucket, bucket + M1_MS),
+    // The LAST instant belonging to this bar, not the first instant of the
+    // next one. Using the next minute's start would reject a legitimate
+    // observation timed at the very end of this bar as out-of-order, which
+    // silently discarded every observation in the historical replay path.
+    lastObservationT: Math.max(next.lastObservationT ?? bucket, bucket + M1_MS - 1),
     // The forming bar is whatever comes after this one.
     formingMinuteT: null,
     formingPrice: null,
-    // A gap reset above cleared the indicator; THIS bar begins rebuilding it.
-    // The reseed flag is therefore cleared here and the warm-up counter — now
-    // back near zero — is what keeps signals suppressed until the recursive
-    // average has genuinely converged again.
-    needsRsiReseed: didReset ? false : next.needsRsiReseed,
+    needsRsiReseed: next.needsRsiReseed,
   };
 
   return { state: next, signals: [], notes, didReset };
@@ -257,8 +273,9 @@ export function applyTick(state: EngineState, input: TickInput): StepResult {
     if (!alreadyApplied) {
       if (next.lastClosedBarT !== null && completedMinuteT > next.lastClosedBarT + M1_MS) {
         const skipped = (completedMinuteT - next.lastClosedBarT) / M1_MS - 1;
-        notes.push(`minute rollover skipped ${skipped} bar(s) — pattern state reset and RSI reseed required`);
-        next = { ...next, pattern: createPatternState(next.specHash), rsi: createRsiState(), needsRsiReseed: true, gapResets: next.gapResets + 1 };
+        // Same rule as `applyClosedBar`: the pattern goes, the indicator stays.
+        notes.push(`minute rollover skipped ${skipped} bar(s) — pattern state reset (the indicator continues, as MT5 does across a session break)`);
+        next = { ...next, pattern: createPatternState(next.specHash), gapResets: next.gapResets + 1 };
         didReset = true;
       }
       next = {

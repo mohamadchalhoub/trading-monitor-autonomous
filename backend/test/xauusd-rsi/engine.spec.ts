@@ -105,12 +105,28 @@ describe('Gaps and continuity (spec §8.6)', () => {
     expect(r.signals).toHaveLength(0);
   });
 
-  it('resets and demands an RSI reseed when closed bars skip a minute', () => {
+  it('resets PATTERN state when closed bars skip a minute, but carries the indicator across the gap', () => {
+    // MetaTrader does not restart RSI after a session break: the first bar of
+    // the new week is smoothed against the last bars of the previous one. An
+    // engine that reset the recursive average here would disagree with the
+    // terminal every Monday, and would blind itself for a further warm-up
+    // period after every weekend. Pattern state is the part that must go,
+    // because the pullback may have happened unobserved.
     const { state, nextBarT } = warmedEngine();
     const r = applyClosedBar(state, nextBarT + 5 * M1_MS, 2000.5);
+
     expect(r.didReset).toBe(true);
     expect(r.notes.join(' ')).toMatch(/missing M1 bar/);
-    expect(engineWarmedUp(r.state)).toBe(false);
+
+    // Indicator survives, so the engine can still trade immediately after.
+    expect(engineWarmedUp(r.state)).toBe(true);
+    expect(r.state.needsRsiReseed).toBe(false);
+    expect(r.state.rsi.seeded).toBe(true);
+
+    // Pattern progress does not survive.
+    expect(r.state.pattern.previousRsi).toBeNull();
+    expect(r.state.pattern.sellRetest.phase).toBe('AWAITING_ARM_RESET');
+    expect(r.state.gapResets).toBe(1);
   });
 
   it('ignores a closed bar that is not newer than the last applied one', () => {
