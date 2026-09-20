@@ -35,6 +35,8 @@ import { defaultStateDir, RsiWatchState, RsiWatchStore, SpecHashMismatchError } 
 import { getRsiExecutionMode, killSwitchState, stopNewEntriesState } from '../src/xauusd-rsi/controls';
 import { SPEC, SPEC_HASH } from '../src/xauusd-rsi/spec';
 import { beirutLabel } from '../src/xauusd-rsi/time';
+import { GoldTelegramService } from '../src/gold-execution/gold-telegram.service';
+import { ConfigService } from '@nestjs/config';
 
 async function main() {
   const prisma = new PrismaClient();
@@ -58,7 +60,11 @@ async function main() {
   const runtimeSettings = new RsiRuntimeSettingsService();
   const coordinator = new RsiCoordinatorService(prisma as any, runtimeSettings, accountState);
   const liquidation = new RsiLiquidationService(prisma as any, accountState);
-  const watch = new RsiWatchService(prisma as any, coordinator, accountState, liquidation);
+  // The gold Telegram channel is reused as-is (its own bot/chat, its own
+  // durable dedup). A ConfigService is constructed directly here because this
+  // process is standalone and deliberately does not boot the Nest container.
+  const telegram = new GoldTelegramService(prisma as any, new ConfigService());
+  const watch = new RsiWatchService(prisma as any, coordinator, accountState, liquidation, telegram);
 
   const intervalSeconds = Number(process.env.XAUUSD_RSI_SCHEDULER_INTERVAL_SECONDS ?? '5');
   const intervalMs = Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds * 1000 : 5_000;

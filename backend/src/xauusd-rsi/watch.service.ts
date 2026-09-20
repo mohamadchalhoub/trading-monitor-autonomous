@@ -25,6 +25,7 @@ import { applyClosedBar, applyTick, createEngineState, EmittedSignal, engineRsiN
 import { RsiCoordinatorService } from './coordinator.service';
 import { RsiAccountStateService } from './account-state.service';
 import { RsiLiquidationService, LiquidationCycleResult } from './liquidation.service';
+import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 import { RsiWatchState, RsiWatchStore } from './state-store';
 import { SPEC } from './spec';
 import { RSI_GOLD_POINT_SIZE, RSI_SYMBOL } from './safety-constants';
@@ -59,6 +60,14 @@ export class RsiWatchService {
     private readonly coordinator: RsiCoordinatorService,
     private readonly accountState: RsiAccountStateService,
     private readonly liquidation: RsiLiquidationService,
+    /**
+     * The gold Telegram channel, reused unchanged: its own bot and chat, its
+     * own durable per-key deduplication, and plain factual template strings
+     * with no AI narration. Every call here is fire-and-forget, because a
+     * Telegram outage must never stop a trading cycle — the database already
+     * holds the authoritative record of everything reported below.
+     */
+    private readonly telegram: GoldTelegramService,
   ) {}
 
   async runCycle(params: { accountId: string; store: RsiWatchStore; state: RsiWatchState; nowT?: number }): Promise<{ result: WatchCycleResult; state: RsiWatchState }> {
@@ -68,6 +77,7 @@ export class RsiWatchService {
 
     // 1. Protective work first, always.
     const liquidation = await this.liquidation.runCycle(params.accountId, nowT);
+    this.notifyLiquidation(liquidation);
 
     // 2. Recovery.
     if (!state.recovery.recoveryComplete) {
@@ -125,6 +135,7 @@ export class RsiWatchService {
           recoveryComplete: state.recovery.recoveryComplete,
         });
         decisions.push({ decisionId: outcome.decisionId, queued: outcome.queued, skipReason: outcome.skipReason });
+        this.notifyDecision(signal, outcome.decisionId, outcome.queued, outcome.skipReason);
       }
     }
 
@@ -162,6 +173,86 @@ export class RsiWatchService {
         entryBlockReason: eligibility.blockReason,
       },
     };
+  }
+
+
+  /**
+   * Reports the Friday liquidation's state transitions.
+   *
+   * Deduplicated per deadline and phase, so a worker cycling every few
+   * seconds through a half-hour liquidation window sends at most one message
+   * per meaningful change rather than hundreds. A missed deadline is reported
+   * once per deadline, and it names the remaining exposure.
+   */
+  private notifyLiquidation(liquidation: LiquidationCycleResult): void {
+    if (liquidation.phase === 'NOT_DUE') return;
+    const deadlineKey = liquidation.deadlineAtT ?? 0;
+
+    if (liquidation.criticalIncident) {
+      void this.telegram.notify(
+        'FRIDAY_LIQUIDATION_DEADLINE_MISSED',
+        `rsi-liq-missed:${deadlineKey}`,
+        `XAUUSD RSI — CRITICAL: ${liquidation.criticalIncident}`,
+      );
+      return;
+    }
+
+    if (liquidation.phase === 'IN_PROGRESS' && liquidation.closeRequestsCreated.length > 0) {
+      void this.telegram.notify(
+        'FRIDAY_LIQUIDATION_STARTED',
+        `rsi-liq-started:${deadlineKey}`,
+        `XAUUSD RSI — Friday pre-weekend liquidation started. Deadline ${liquidation.deadlineLabel}. ` +
+          `Owned items to clear: ${liquidation.outstanding.map((i) => i.ticket).join(', ') || 'none itemised'}. ` +
+          'Closure is only reported once the broker confirms it.',
+      );
+    }
+
+    if (liquidation.phase === 'CONFIRMED_FLAT' && liquidation.confirmedCleared.length > 0) {
+      void this.telegram.notify(
+        'FRIDAY_LIQUIDATION_CONFIRMED',
+        `rsi-liq-confirmed:${deadlineKey}`,
+        `XAUUSD RSI — Friday liquidation complete. Broker confirms no owned XAUUSD exposure remains ` +
+          `(cleared: ${liquidation.confirmedCleared.join(', ')}). ` +
+          (liquidation.foreignExposure.length > 0
+            ? `NOTE: ${liquidation.foreignExposure.length} foreign/manual position(s) remain and were deliberately NOT closed.`
+            : 'No foreign or manual XAUUSD exposure was present.'),
+      );
+    }
+  }
+
+  /**
+   * Reports entries and the skips worth knowing about.
+   *
+   * Routine, expected skips — the daily pause, the Friday cutoff, the
+   * one-position occupancy rule — are NOT sent. They are recorded in the
+   * decision table and shown on the dashboard, and sending them would flood
+   * the channel with messages describing the strategy working as designed,
+   * which is exactly how genuinely important messages get ignored.
+   *
+   * A skip that indicates something an operator may need to act on — a risk
+   * cap reached, a control engaged, a broker constraint refused — is sent.
+   */
+  private notifyDecision(signal: EmittedSignal, decisionId: string, queued: boolean, skipReason: string | null): void {
+    if (queued) {
+      void this.telegram.notify(
+        'SIGNAL_QUEUED',
+        `rsi-queued:${decisionId}`,
+        `XAUUSD RSI — ${signal.direction} signal queued for the broker. setups=${signal.kinds.join('+')} ` +
+          `rsi=${signal.rsi.toFixed(2)} decision=${decisionId}. A fill is only reported once the broker confirms it.`,
+      );
+      return;
+    }
+
+    if (!skipReason) return;
+    const routine = /DAILY_PAUSE|FRIDAY_ENTRY_CUTOFF|Occupancy|one-position slot|Execution mode is OFF|SHADOW mode/i;
+    if (routine.test(skipReason)) return;
+
+    void this.telegram.notify(
+      'SIGNAL_SKIPPED',
+      `rsi-skipped:${decisionId}`,
+      `XAUUSD RSI — ${signal.direction} signal NOT taken. setups=${signal.kinds.join('+')} ` +
+        `rsi=${signal.rsi.toFixed(2)} reason=${skipReason}`,
+    );
   }
 
   /**
