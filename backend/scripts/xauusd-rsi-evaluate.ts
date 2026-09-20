@@ -44,23 +44,44 @@ import { applyClosedBar, applyTick, createEngineState, EmittedSignal, EngineStat
 import { SPEC, SPEC_HASH } from '../src/xauusd-rsi/spec';
 import { evaluateClockSchedule, evaluateEntryEligibility } from '../src/xauusd-rsi/schedule';
 import { beirutLabel } from '../src/xauusd-rsi/time';
-import { SetupKind } from '../src/xauusd-rsi/pattern';
+import { RuleFamily, RULE_FAMILIES, SetupKind } from '../src/xauusd-rsi/pattern';
 
 const RSI_SYMBOL = SPEC.symbol;
 
 /**
  * Cost assumptions, stated rather than buried.
  *
- * The spread is taken from this deployment's own observed live XAUUSD quote
- * (bid 4345.45 / ask 4345.63 = $0.18). It is applied on entry AND exit, which
- * is the conservative reading. Commission and swap are set to zero because
- * this broker's demo XAUUSD contract reports no commission and swap depends
- * on holding overnight, which this strategy rarely does — both are reported
- * as assumptions, and the zero-cost figures are printed alongside so the
- * effect of the assumption is visible rather than hidden.
+ * ## How the spread is accounted for — corrected
+ *
+ * An earlier revision subtracted the spread from each trade's P&L. That was
+ * wrong, because it deducted a cost that the entry and exit prices already
+ * express. The spread is not a fee taken off the result; it is the reason the
+ * market must travel further before a target is reached.
+ *
+ * The model now uses executable prices directly. MT5 gold charts are BID
+ * based, so every OHLC value here is a bid:
+ *
+ *   BUY  enters at the ask (bid + spread) and exits at the bid. Its $5
+ *        take-profit sits 5 above the ask, so the BID must travel
+ *        5 + spread to reach it, and only 5 - spread to be stopped out.
+ *   SELL enters at the bid and exits at the ask. Its $5 take-profit sits 5
+ *        below the entry bid measured in ask terms, so again the bid must
+ *        travel further to win than to lose.
+ *
+ * A resolved trade therefore realises exactly +/-$5 per ounce, and the
+ * spread's cost shows up where it actually occurs: in how often the target is
+ * reached at all. Nothing is deducted twice, and nothing is deducted that the
+ * prices do not already contain.
+ *
+ * The spread figure itself is this deployment's own observed XAUUSD quote.
+ * Two values are reported because it varies materially with session: $0.18
+ * was observed during liquid hours and $0.43 at the Sunday reopening.
  */
 const COSTS = {
+  /** Observed live during liquid hours (bid 4345.45 / ask 4345.63). */
   spreadUsd: 0.18,
+  /** Observed live at the Sunday reopening (bid 4360.83 / ask 4361.26). */
+  wideSpreadUsd: 0.43,
   commissionPerLotRoundTripUsd: 0,
   swapPerNightUsd: 0,
   /** Slippage is NOT modelled. Disclosed, not silently assumed to be zero-effect. */
@@ -73,6 +94,7 @@ const VOLUME_LOTS = 0.5;
 type ExitReason = 'TAKE_PROFIT' | 'STOP_LOSS' | 'FRIDAY_CLOSE' | 'INDETERMINATE' | 'UNRESOLVED_AT_END';
 
 interface SimTrade {
+  family: RuleFamily;
   setupKinds: SetupKind[];
   direction: 'BUY' | 'SELL';
   signalAtT: number;
@@ -89,6 +111,7 @@ interface SimTrade {
 
 interface SkippedSignal {
   atT: number;
+  family: RuleFamily;
   setupKinds: SetupKind[];
   direction: 'BUY' | 'SELL';
   reason: string;
@@ -119,6 +142,12 @@ async function main() {
   console.log('='.repeat(78));
   console.log(`Historical evaluation — ${SPEC.strategyVersion}`);
   console.log(`Spec hash ${SPEC_HASH} (frozen and committed before this run)`);
+  console.log('');
+  console.log('These results describe SPECIFICATION REVISION 2: extreme SELL at 98.5, two');
+  console.log('independent execution slots, and the corrected spread accounting. Revision 1');
+  console.log("results (extreme SELL 98, one position total, spread deducted from P&L) do NOT");
+  console.log('describe this configuration and are retained only as history, in this file’s');
+  console.log('own git history at commit 56ee479.');
   console.log('='.repeat(78));
 
   // ---------------------------------------------------------------- coverage
@@ -173,7 +202,7 @@ async function main() {
   console.log('  timing is quantised to bar boundaries. Read it as "what would a bar-close');
   console.log('  version of these rules have done", not as "what this strategy would have done".');
 
-  const approx = simulateClosedM1(bars);
+  const approx = simulateClosedM1(bars, COSTS.spreadUsd);
   reportRun(approx, 'CLOSED_M1_APPROXIMATION');
 
   // ------------------------------------------------------------ tick replay
@@ -183,7 +212,7 @@ async function main() {
     const ticks = await loadTicks(prisma, tickCoverage._min.timestamp!, tickCoverage._max.timestamp!);
     console.log(`  Replaying ${ticks.length.toLocaleString()} ordered ticks through the live engine.`);
     console.log('  The engine is warmed from closed bars first, exactly as the live path warms up.');
-    tickRun = simulateTickReplay(bars, ticks);
+    tickRun = simulateTickReplay(bars, ticks, COSTS.spreadUsd);
     reportRun(tickRun, 'TICK_REPLAY');
     console.log('\n  This covers only the span listed under tick coverage above. It is a faithful');
     console.log('  reproduction for that span and makes no claim about any other period.');
@@ -195,17 +224,33 @@ async function main() {
 
   // ----------------------------------------------------------- what is owed
   // ------------------------------------------------ comparing the models
-  if (tickRun) {
+  if (tickRun && tickCoverage._min.timestamp && tickCoverage._max.timestamp) {
+    console.log('\n## 4. The two models do NOT agree, and that is the headline\n');
+
+    // A LIKE-FOR-LIKE comparison: the approximation re-run over exactly the
+    // span the tick data covers. Comparing rates measured over different
+    // periods would confound the models' difference with the market's.
+    const tickFrom = tickCoverage._min.timestamp.getTime();
+    const tickTo = tickCoverage._max.timestamp.getTime();
+    // Warmed from bars preceding the span so both models observe the same
+    // hours with an equally converged indicator.
+    const sameSpanBars = bars.filter((b) => b.t >= tickFrom - 400 * 60_000 && b.t <= tickTo);
+    const approxSameSpan = simulateClosedM1(sameSpanBars, COSTS.spreadUsd);
+    const spanDaysValue = Math.max(1 / 24, (tickTo - tickFrom) / 86_400_000);
+
+    console.log(`  Over the SAME interval (${new Date(tickFrom).toISOString()} -> ${new Date(tickTo).toISOString()}, ${spanDaysValue.toFixed(2)} days):`);
+    console.log(`      CLOSED_M1_APPROXIMATION:  ${approxSameSpan.signals} signals, ${approxSameSpan.trades.length} trades`);
+    console.log(`      TICK_REPLAY (faithful):   ${tickRun.signals} signals, ${tickRun.trades.length} trades`);
+    const sameRatio = approxSameSpan.signals > 0 ? tickRun.signals / approxSameSpan.signals : Number.POSITIVE_INFINITY;
+    console.log(`      ratio:                    ${Number.isFinite(sameRatio) ? `${sameRatio.toFixed(1)}x` : 'not computable (the approximation produced none)'} more signals under the faithful model`);
+
     const approxDays = spanDays(approx);
     const tickDays = spanDays(tickRun);
     const approxRate = approxDays > 0 ? approx.signals / approxDays : 0;
     const tickRate = tickDays > 0 ? tickRun.signals / tickDays : 0;
-    console.log('\n## 4. The two models do NOT agree, and that is the headline\n');
-    console.log(`  CLOSED_M1_APPROXIMATION:  ${approxRate.toFixed(2)} signals/day`);
-    console.log(`  TICK_REPLAY (faithful):   ${tickRate.toFixed(2)} signals/day`);
-    if (approxRate > 0) {
-      console.log(`  ratio:                    ${(tickRate / approxRate).toFixed(1)}x more signals under the faithful model`);
-    }
+    console.log(`\n  Over each model's own full span:`);
+    console.log(`      CLOSED_M1_APPROXIMATION:  ${approxRate.toFixed(2)} signals/day`);
+    console.log(`      TICK_REPLAY (faithful):   ${tickRate.toFixed(2)} signals/day`);
     console.log('');
     console.log('  This gap is expected, and it is the point. One observation per closed bar can');
     console.log('  only see a crossing that survives to the bar boundary; the live engine sees');
@@ -306,52 +351,80 @@ interface RunResult {
 /**
  * Shared position bookkeeping for both models.
  *
- * Enforces the same one-position-at-a-time occupancy rule the live path
- * enforces, and applies the same Friday forced closure. A signal that arrives
- * while a position is open, or while the schedule blocks entries, is recorded
- * as skipped with its reason — it is never queued for later, matching spec
- * §9.5.
+ * Enforces the TWO-SLOT rule: one open trade per rule family, so a retest and
+ * an extreme may run concurrently but a second entry in either family may
+ * not. A signal arriving while its own family is occupied is recorded as
+ * skipped with that reason and never queued for later, matching the live
+ * path.
+ *
+ * All prices here are BIDs, because that is what MT5 gold bars contain. Entry
+ * and exit sides are applied explicitly rather than by deducting a spread
+ * from the result — see the note on `COSTS`.
  */
 class Simulator {
   readonly trades: SimTrade[] = [];
   readonly skipped: SkippedSignal[] = [];
-  private open: SimTrade | null = null;
+  private open: Partial<Record<RuleFamily, SimTrade>> = {};
 
-  constructor(private readonly model: string) {}
+  constructor(private readonly spreadUsd: number) {}
 
-  /** Called for each signal, in time order. `entryPrice` is the executable price. */
-  onSignal(signal: { atT: number; kinds: SetupKind[]; direction: 'BUY' | 'SELL' }, entryAtT: number, entryPrice: number) {
+  /** `entryBid` is the bid the entry is priced from. */
+  onSignal(
+    signal: { atT: number; family: RuleFamily; kinds: SetupKind[]; direction: 'BUY' | 'SELL' },
+    entryAtT: number,
+    entryBid: number,
+  ) {
     const eligibility = evaluateEntryEligibility({
       utcMs: signal.atT,
-      // A bar or tick existing at this instant is the evidence that the
-      // session was open. Nothing else in historical data can establish it.
+      // A bar existing at this instant is the evidence the session was open;
+      // nothing else in historical data can establish it.
       brokerSessionOpen: true,
       dataFresh: true,
       recoveryComplete: true,
       otherBlock: null,
     });
     if (!eligibility.entriesAllowed) {
-      this.skipped.push({ atT: signal.atT, setupKinds: signal.kinds, direction: signal.direction, reason: `${eligibility.blockReason}: ${eligibility.detail}` });
+      this.skipped.push({ atT: signal.atT, family: signal.family, setupKinds: signal.kinds, direction: signal.direction, reason: `${eligibility.blockReason}: ${eligibility.detail}` });
       return;
     }
-    if (this.open) {
-      this.skipped.push({ atT: signal.atT, setupKinds: signal.kinds, direction: signal.direction, reason: 'Occupancy: a position was already open (one at a time).' });
+    if (this.open[signal.family]) {
+      this.skipped.push({
+        atT: signal.atT,
+        family: signal.family,
+        setupKinds: signal.kinds,
+        direction: signal.direction,
+        reason: `Occupancy: the ${signal.family} slot was already held.`,
+      });
       return;
     }
 
-    // Entry pays the spread: a BUY fills at ask, a SELL at bid.
-    const fill = signal.direction === 'BUY' ? entryPrice + COSTS.spreadUsd : entryPrice;
-    const tp = signal.direction === 'BUY' ? fill + SPEC.brackets.takeProfitUsd : fill - SPEC.brackets.takeProfitUsd;
-    const sl = signal.direction === 'BUY' ? fill - SPEC.brackets.stopLossUsd : fill + SPEC.brackets.stopLossUsd;
+    const S = this.spreadUsd;
+    const tp = SPEC.brackets.takeProfitUsd;
+    const sl = SPEC.brackets.stopLossUsd;
 
-    this.open = {
+    // Executable entry, and the BID levels at which each bracket is reached.
+    let entryPrice: number;
+    let tpBid: number;
+    let slBid: number;
+    if (signal.direction === 'BUY') {
+      entryPrice = entryBid + S;              // fills at the ask
+      tpBid = entryPrice + tp;                // long exits at the bid
+      slBid = entryPrice - sl;
+    } else {
+      entryPrice = entryBid;                  // fills at the bid
+      tpBid = entryPrice - tp - S;            // short exits at the ask = bid + S
+      slBid = entryPrice + sl - S;
+    }
+
+    this.open[signal.family] = {
+      family: signal.family,
       setupKinds: signal.kinds,
       direction: signal.direction,
       signalAtT: signal.atT,
       entryAtT,
-      entryPrice: fill,
-      takeProfit: tp,
-      stopLoss: sl,
+      entryPrice,
+      takeProfit: tpBid,
+      stopLoss: slBid,
       exitAtT: null,
       exitPrice: null,
       exitReason: 'UNRESOLVED_AT_END',
@@ -360,68 +433,72 @@ class Simulator {
   }
 
   /**
-   * Advances an open position against one closed bar.
+   * Advances every open position against one closed bar.
    *
-   * When the bar's range contains BOTH levels, closed OHLC cannot say which
-   * came first, so the trade is marked INDETERMINATE rather than resolved in
-   * either direction.
+   * When a bar's range contains BOTH bracket levels, closed OHLC cannot say
+   * which came first, so the trade is marked INDETERMINATE rather than
+   * resolved in either direction.
    */
   onBar(bar: Bar) {
-    const t = this.open;
-    if (!t) return;
+    for (const family of RULE_FAMILIES) {
+      const t = this.open[family];
+      if (!t) continue;
+      if (bar.t < t.entryAtT) continue;
 
-    // Only bars strictly after entry can resolve it.
-    if (bar.t < t.entryAtT) return;
+      const hitTp = t.direction === 'BUY' ? bar.high >= t.takeProfit : bar.low <= t.takeProfit;
+      const hitSl = t.direction === 'BUY' ? bar.low <= t.stopLoss : bar.high >= t.stopLoss;
 
-    const hitTp = t.direction === 'BUY' ? bar.high >= t.takeProfit : bar.low <= t.takeProfit;
-    const hitSl = t.direction === 'BUY' ? bar.low <= t.stopLoss : bar.high >= t.stopLoss;
+      if (hitTp && hitSl) {
+        this.close(family, bar.t, null, 'INDETERMINATE');
+        continue;
+      }
+      if (hitTp) {
+        this.close(family, bar.t, t.takeProfit, 'TAKE_PROFIT');
+        continue;
+      }
+      if (hitSl) {
+        this.close(family, bar.t, t.stopLoss, 'STOP_LOSS');
+        continue;
+      }
 
-    if (hitTp && hitSl) {
-      this.close(bar.t, null, 'INDETERMINATE');
-      return;
-    }
-    if (hitTp) {
-      this.close(bar.t, t.takeProfit, 'TAKE_PROFIT');
-      return;
-    }
-    if (hitSl) {
-      this.close(bar.t, t.stopLoss, 'STOP_LOSS');
-      return;
-    }
-
-    // Friday forced closure, at the deadline, at whatever price the bar shows.
-    const clock = evaluateClockSchedule(bar.t);
-    if (clock.fridayDeadlineT !== null && bar.t >= clock.fridayDeadlineT && clock.fridayLiquidationDue) {
-      this.close(bar.t, bar.close, 'FRIDAY_CLOSE');
+      // Friday forced closure applies to BOTH slots.
+      const clock = evaluateClockSchedule(bar.t);
+      if (clock.fridayDeadlineT !== null && bar.t >= clock.fridayDeadlineT && clock.fridayLiquidationDue) {
+        this.close(family, bar.t, bar.close, 'FRIDAY_CLOSE');
+      }
     }
   }
 
-  private close(atT: number, price: number | null, reason: ExitReason) {
-    const t = this.open;
+  private close(family: RuleFamily, atT: number, exitBid: number | null, reason: ExitReason) {
+    const t = this.open[family];
     if (!t) return;
     t.exitAtT = atT;
-    t.exitPrice = price;
+    t.exitPrice = exitBid;
     t.exitReason = reason;
-    if (price !== null) {
-      // Exit also pays the spread on the closing side.
-      const raw = t.direction === 'BUY' ? price - t.entryPrice : t.entryPrice - price;
-      t.grossUsdPerOunce = raw - (t.direction === 'BUY' ? COSTS.spreadUsd : COSTS.spreadUsd);
+    if (exitBid !== null) {
+      // Exit side applied explicitly; no spread is subtracted afterwards,
+      // because these prices already are the executable ones.
+      const exitExecutable = t.direction === 'BUY' ? exitBid : exitBid + this.spreadUsd;
+      t.grossUsdPerOunce = t.direction === 'BUY' ? exitExecutable - t.entryPrice : t.entryPrice - exitExecutable;
     }
     this.trades.push(t);
-    this.open = null;
+    delete this.open[family];
   }
 
   finish() {
-    if (this.open) {
-      this.trades.push(this.open);
-      this.open = null;
+    for (const family of RULE_FAMILIES) {
+      const t = this.open[family];
+      if (t) {
+        this.trades.push(t);
+        delete this.open[family];
+      }
     }
   }
 }
 
-function simulateClosedM1(bars: Bar[]): RunResult {
+function simulateClosedM1(bars: Bar[], spreadUsd: number): RunResult {
   let engine = createEngineState('CLOSED_BAR_ONLY');
-  const sim = new Simulator('CLOSED_M1_APPROXIMATION');
+  const sim = new Simulator(spreadUsd);
   let signals = 0;
 
   for (let i = 0; i < bars.length; i += 1) {
@@ -452,17 +529,17 @@ function simulateClosedM1(bars: Bar[]): RunResult {
       // which would be look-ahead.
       const next = bars[i + 1];
       if (!next) {
-        sim.skipped.push({ atT: signal.atT, setupKinds: signal.kinds, direction: signal.direction, reason: 'No subsequent bar to enter on (end of data).' });
+        sim.skipped.push({ atT: signal.atT, family: signal.family, setupKinds: signal.kinds, direction: signal.direction, reason: 'No subsequent bar to enter on (end of data).' });
         continue;
       }
-      sim.onSignal({ atT: signal.atT, kinds: signal.kinds, direction: signal.direction }, next.t, next.open);
+      sim.onSignal({ atT: signal.atT, family: signal.family, kinds: signal.kinds, direction: signal.direction }, next.t, next.open);
     }
   }
   sim.finish();
   return { model: 'CLOSED_M1_APPROXIMATION', signals, skipped: sim.skipped, trades: sim.trades };
 }
 
-function simulateTickReplay(bars: Bar[], ticks: Array<{ t: number; bid: number; ask: number; key: string }>): RunResult {
+function simulateTickReplay(bars: Bar[], ticks: Array<{ t: number; bid: number; ask: number; key: string }>, spreadUsd: number): RunResult {
   // Warm the engine from the closed bars immediately preceding the tick span,
   // exactly as the live path warms from candle history.
   const firstTickT = ticks[0].t;
@@ -474,7 +551,7 @@ function simulateTickReplay(bars: Bar[], ticks: Array<{ t: number; bid: number; 
   let engine = createEngineState('TICK');
   for (const b of warmBars) engine = applyClosedBar(engine, b.t, b.close).state;
 
-  const sim = new Simulator('TICK_REPLAY');
+  const sim = new Simulator(spreadUsd);
   let signals = 0;
 
   // Bars covering the tick span, used to resolve exits.
@@ -493,13 +570,11 @@ function simulateTickReplay(bars: Bar[], ticks: Array<{ t: number; bid: number; 
 
     for (const signal of step.signals) {
       signals += 1;
-      // Entry at the very tick that produced the signal — which is what the
-      // live path does, using ask for a BUY and bid for a SELL.
-      const price = signal.direction === 'BUY' ? tick.ask : tick.bid;
-      // The spread is already in ask/bid here, so entry does not pay it twice:
-      // pass the raw side price and let the simulator apply its own model
-      // consistently with the approximation run.
-      sim.onSignal({ atT: signal.atT, kinds: signal.kinds, direction: signal.direction }, tick.t, signal.direction === 'BUY' ? price - COSTS.spreadUsd : price);
+      // The simulator prices from the BID and applies the entry side itself,
+      // so the real bid is what it is given — the tick's own ask is not
+      // re-applied here, which is precisely the double-count that was wrong
+      // before.
+      sim.onSignal({ atT: signal.atT, family: signal.family, kinds: signal.kinds, direction: signal.direction }, tick.t, tick.bid);
     }
   }
   while (barIndex < exitBars.length) {
@@ -535,7 +610,16 @@ function reportRun(run: RunResult, label: string) {
     const subset = run.trades.filter((t) => t.setupKinds.includes(setup));
     console.log(`      ${setup.padEnd(20)} ${fmtRow(subset)}`);
   }
-  console.log(`      ${'COMBINED (one position)'.padEnd(20)} ${fmtRow(run.trades)}`);
+  console.log('\n  Per execution slot:');
+  for (const family of RULE_FAMILIES) {
+    const subset = run.trades.filter((t) => t.family === family);
+    console.log(`      ${`${family} slot`.padEnd(20)} ${fmtRow(subset)}`);
+  }
+  console.log(`      ${'COMBINED (two slots)'.padEnd(20)} ${fmtRow(run.trades)}`);
+
+  // Concurrency actually observed, as opposed to permitted.
+  const overlaps = countOverlaps(run.trades);
+  console.log(`\n  Observed concurrency: ${overlaps} trade(s) opened while the other slot was already holding.`);
 
   const resolved = run.trades.filter((t) => t.exitReason === 'TAKE_PROFIT' || t.exitReason === 'STOP_LOSS' || t.exitReason === 'FRIDAY_CLOSE');
   const indeterminate = run.trades.filter((t) => t.exitReason === 'INDETERMINATE');
@@ -564,23 +648,41 @@ function reportRun(run: RunResult, label: string) {
     console.log(`      with uncertainty:    ${wrIfAllIndetLose.toFixed(2)}% .. ${wrIfAllIndetWin.toFixed(2)}%  (indeterminate trades all losing .. all winning)`);
     console.log(`      net P&L:             ${net.toFixed(2)} USD at ${VOLUME_LOTS} lots (contract size ${CONTRACT_SIZE})`);
     console.log(`      expectancy / trade:  ${expectancy.toFixed(2)} USD`);
-
-    // The same trades with costs removed, so the effect of the cost
-    // assumption is visible rather than buried inside a single number.
-    const costPerTrade = COSTS.spreadUsd * 2 * CONTRACT_SIZE * VOLUME_LOTS;
-    const grossNet = net + resolved.length * costPerTrade;
-    console.log('      -- with ALL modelled costs removed --');
-    console.log(`      gross P&L:           ${grossNet.toFixed(2)} USD`);
-    console.log(`      gross expectancy:    ${(grossNet / resolved.length).toFixed(2)} USD/trade`);
-    console.log(`      cost drag:           ${costPerTrade.toFixed(2)} USD/trade (${(resolved.length * costPerTrade).toFixed(2)} USD total)`);
-
-    // The geometry, stated plainly. With a symmetric bracket the break-even
-    // win rate is not 50%: the spread must be earned back on every trade.
-    const breakEvenWr = ((SPEC.brackets.stopLossUsd + COSTS.spreadUsd) / (SPEC.brackets.takeProfitUsd + SPEC.brackets.stopLossUsd)) * 100;
-    console.log(`      break-even win rate: ${breakEvenWr.toFixed(2)}%  (TP $${SPEC.brackets.takeProfitUsd} vs SL $${SPEC.brackets.stopLossUsd}, plus spread)`);
-    console.log(`      observed vs needed:  ${wr.toFixed(2)}% observed, ${breakEvenWr.toFixed(2)}% needed just to break even`);
     console.log(`      max drawdown:        ${maxDrawdown(pnl).toFixed(2)} USD`);
     console.log(`      longest loss streak: ${longestLossStreak(pnl)}`);
+
+    // --- Reconciliation, so the numbers above can be checked rather than
+    // --- taken on trust. Every trade lands in exactly one bucket, and the
+    // --- P&L total is reproduced from the per-outcome counts.
+    const perOunceWin = SPEC.brackets.takeProfitUsd;
+    const perOunceLoss = -SPEC.brackets.stopLossUsd;
+    const unitsPerTrade = CONTRACT_SIZE * VOLUME_LOTS;
+    const tpCount = run.trades.filter((t) => t.exitReason === 'TAKE_PROFIT').length;
+    const slCount = run.trades.filter((t) => t.exitReason === 'STOP_LOSS').length;
+    const frCount = run.trades.filter((t) => t.exitReason === 'FRIDAY_CLOSE').length;
+    const frPnl = run.trades
+      .filter((t) => t.exitReason === 'FRIDAY_CLOSE')
+      .reduce((a, t) => a + (t.grossUsdPerOunce ?? 0) * unitsPerTrade, 0);
+    const reconstructed = tpCount * perOunceWin * unitsPerTrade + slCount * perOunceLoss * unitsPerTrade + frPnl;
+
+    console.log('\n  Reconciliation:');
+    console.log(`      trades opened:       ${run.trades.length}`);
+    console.log(`      = resolved ${resolved.length} + indeterminate ${indeterminate.length} + unresolved ${unresolved.length}  -> ${resolved.length + indeterminate.length + unresolved.length === run.trades.length ? 'BALANCES' : 'MISMATCH'}`);
+    console.log(`      resolved ${resolved.length} = TP ${tpCount} + SL ${slCount} + Friday ${frCount}  -> ${tpCount + slCount + frCount === resolved.length ? 'BALANCES' : 'MISMATCH'}`);
+    console.log(`      P&L from counts:     ${reconstructed.toFixed(2)} USD  (TP ${tpCount} x +${(perOunceWin * unitsPerTrade).toFixed(0)}, SL ${slCount} x ${(perOunceLoss * unitsPerTrade).toFixed(0)}, Friday ${frPnl.toFixed(2)})`);
+    console.log(`      P&L from trades:     ${net.toFixed(2)} USD  -> ${Math.abs(reconstructed - net) < 0.01 ? 'BALANCES' : 'MISMATCH'}`);
+    console.log(`      mean x count:        ${(expectancy * resolved.length).toFixed(2)} USD  -> ${Math.abs(expectancy * resolved.length - net) < 0.01 ? 'BALANCES' : 'MISMATCH'}`);
+    console.log(`      win-rate denominator is RESOLVED (${resolved.length}), not opened (${run.trades.length}).`);
+    console.log(`      Indeterminate and unresolved trades are excluded from P&L entirely, not counted as zero.`);
+
+    // --- How the spread affects this, correctly stated.
+    const breakEvenWr = (SPEC.brackets.stopLossUsd / (SPEC.brackets.takeProfitUsd + SPEC.brackets.stopLossUsd)) * 100;
+    console.log('\n  Geometry:');
+    console.log(`      break-even win rate: ${breakEvenWr.toFixed(2)}% on a symmetric $${SPEC.brackets.takeProfitUsd}/$${SPEC.brackets.stopLossUsd} bracket`);
+    console.log(`      observed:            ${wr.toFixed(2)}%`);
+    console.log(`      The spread is NOT deducted from P&L — a resolved trade realises exactly`);
+    console.log(`      +/-$${(perOunceWin * unitsPerTrade).toFixed(0)}. It acts on the WIN RATE instead: the bid must travel`);
+    console.log(`      $${(SPEC.brackets.takeProfitUsd + COSTS.spreadUsd).toFixed(2)} to reach a target but only $${(SPEC.brackets.stopLossUsd - COSTS.spreadUsd).toFixed(2)} to be stopped out.`);
 
     const exitCounts = new Map<ExitReason, number>();
     for (const t of run.trades) exitCounts.set(t.exitReason, (exitCounts.get(t.exitReason) ?? 0) + 1);
@@ -609,7 +711,8 @@ function reportRun(run: RunResult, label: string) {
   }
 
   console.log('\n  Cost assumptions applied:');
-  console.log(`      spread:      $${COSTS.spreadUsd} of gold price, charged on entry and exit (observed live quote)`);
+  console.log(`      spread:      $${COSTS.spreadUsd} of gold price, applied as entry/exit SIDE (never deducted from P&L)`);
+  console.log(`                   observed range this deployment: $${COSTS.spreadUsd} liquid hours, $${COSTS.wideSpreadUsd} at the Sunday reopen`);
   console.log(`      commission:  $${COSTS.commissionPerLotRoundTripUsd} per lot round trip (assumed)`);
   console.log(`      swap:        $${COSTS.swapPerNightUsd} per night (assumed)`);
   console.log(`      slippage:    NOT modelled — real fills will differ`);
@@ -625,6 +728,25 @@ function fmtRow(trades: SimTrade[]): string {
   const wins = trades.filter((t) => (t.exitReason === 'TAKE_PROFIT' || t.exitReason === 'FRIDAY_CLOSE') && (t.grossUsdPerOunce ?? 0) > 0).length;
   const wr = resolved > 0 ? `${((wins / resolved) * 100).toFixed(1)}%` : 'n/a';
   return `${String(trades.length).padStart(7)} ${String(tp).padStart(7)} ${String(sl).padStart(7)} ${String(fr).padStart(7)} ${String(ind).padStart(7)} ${String(unres).padStart(7)} ${wr.padStart(12)}`;
+}
+
+/** How many trades opened while the other slot was already holding. */
+function countOverlaps(trades: SimTrade[]): number {
+  const sorted = [...trades].sort((a, b) => a.entryAtT - b.entryAtT);
+  let overlaps = 0;
+  for (let i = 0; i < sorted.length; i += 1) {
+    const t = sorted[i];
+    for (let j = 0; j < i; j += 1) {
+      const p = sorted[j];
+      if (p.family === t.family) continue;
+      const pEnd = p.exitAtT ?? Number.POSITIVE_INFINITY;
+      if (p.entryAtT <= t.entryAtT && pEnd > t.entryAtT) {
+        overlaps += 1;
+        break;
+      }
+    }
+  }
+  return overlaps;
 }
 
 /** Days spanned by a run's own trades, for a like-for-like frequency figure. */
