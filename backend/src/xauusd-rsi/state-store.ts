@@ -43,6 +43,15 @@ export interface RecoveryMetadata {
   /** Human-readable account of the last recovery, for the dashboard. */
   lastRecoveryDetail: string | null;
   restartCount: number;
+  /**
+   * Recent measured gaps between completed cycles, in milliseconds.
+   *
+   * Persisted so the dashboard can report the ACTUAL observation cadence
+   * rather than the configured one. The configured interval is an intention;
+   * this is what happened. Bounded to the most recent samples so the state
+   * file cannot grow without limit.
+   */
+  cadenceSamplesMs: number[];
 }
 
 export interface RsiWatchState {
@@ -65,6 +74,7 @@ export function createWatchState(strategyVersion: string, mode: ObservationMode)
       recoveryComplete: false,
       lastRecoveryDetail: null,
       restartCount: 0,
+      cadenceSamplesMs: [],
     },
   };
 }
@@ -108,6 +118,10 @@ export class RsiWatchStore {
       ...parsed.recovery,
       recoveryComplete: false,
       restartCount: (parsed.recovery?.restartCount ?? 0) + 1,
+      // Cadence samples from BEFORE the restart describe a process that is no
+      // longer running, so they are discarded rather than blended with the
+      // new one's.
+      cadenceSamplesMs: [],
     };
     return parsed;
   }

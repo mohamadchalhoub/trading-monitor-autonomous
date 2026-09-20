@@ -185,7 +185,14 @@ export class RsiWatchService {
       ...state,
       engine,
       cursor,
-      recovery: { ...state.recovery, lastCycleAtUtc: new Date(nowT).toISOString() },
+      recovery: {
+        ...state.recovery,
+        lastCycleAtUtc: new Date(nowT).toISOString(),
+        cadenceSamplesMs:
+          measuredCadenceMs === null
+            ? (state.recovery.cadenceSamplesMs ?? [])
+            : [...(state.recovery.cadenceSamplesMs ?? []), measuredCadenceMs].slice(-120),
+      },
     };
 
     const eligibility = evaluateEntryEligibility({

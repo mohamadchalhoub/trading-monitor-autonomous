@@ -1,8 +1,21 @@
 # XAUUSD M1 RSI Retest / Extremes — Frozen Specification
 
 **Strategy identifier:** `xauusd-m1-rsi-retest-extremes-v1`
-**Status:** FROZEN. Committed before aggregate historical evaluation was run.
+**Status:** FROZEN, revision 2. Committed before the aggregate historical
+evaluation of this configuration was run.
 **Scope:** The single enabled entry strategy of this application. DEMO accounts only.
+
+**Revision 2 changed three things**, all at the user's explicit instruction:
+
+1. Extreme SELL is **98.5** everywhere. Revision 1 fired at 98 because the
+   user's original text stated 98.5 as the threshold while its crossing and
+   rearm examples said 98; the user has confirmed those were stale.
+2. The one-position-total rule is replaced by **two independent execution
+   slots** (§6A), so a retest and an extreme position may be open at once.
+3. XAUUSD is observed **once per second** (§8.2).
+
+Revision 1's evaluation results do not describe this configuration and are
+retained as historical results only.
 
 This document is the authority for the rules below. Code must match it, and
 `spec.ts` carries a hash of the machine-readable half of it so a runtime state
@@ -26,8 +39,8 @@ ask for. The strategy is implemented faithfully whether it makes or loses money.
 | Instrument | XAUUSD | USER RULE |
 | Timeframe | M1 | USER RULE |
 | Indicator | RSI, period 5 | USER RULE |
-| Applied price | Close | IMPLEMENTATION ASSUMPTION (§8.1) |
-| Smoothing | Wilder (MT5 `iRSI` convention) | IMPLEMENTATION ASSUMPTION (§8.1) |
+| Applied price | Close | **VERIFIED** against the terminal's own `iRSI` (§8.1) |
+| Smoothing | Wilder (MT5 `iRSI` convention) | **VERIFIED** against the terminal's own `iRSI` (§8.1) |
 
 The RSI period of 5 is read from the screenshots' own `RSI(5)` sub-window label,
 which the user confirmed in prose.
@@ -40,7 +53,7 @@ which the user confirmed in prose.
 | Sell 1 | 82 | USER RULE |
 | Buy 1 | **18** | USER RULE — explicitly overrides the `14` visible in the screenshots |
 | Buy 2 | 8.9 | USER RULE (taken from the screenshot) |
-| Extreme SELL | 98.5 | USER RULE |
+| Extreme SELL | 98.5 | USER RULE — used for triggering, rearming, config, dashboard and tests |
 | Extreme BUY | 1.5 | USER RULE |
 
 All comparisons use full-precision floating point RSI values. Rounded display
@@ -114,42 +127,91 @@ Detection is **intrabar**, not completed-M1-close.
 |---|---|
 | SELL retest | `previous < savedPeak` and `current >= savedPeak` |
 | BUY retest | `previous > savedTrough` and `current <= savedTrough` |
-| Extreme SELL | crossing from `< 98` to `>= 98` |
+| Extreme SELL | crossing from `< 98.5` to `>= 98.5` |
 | Extreme BUY | crossing from `> 1.5` to `<= 1.5` |
 
-> **Note on the extreme-SELL numbers.** §3.3 sets the extreme-SELL *threshold* at
-> 98.5, while the user's own crossing definition in their §6.2 is written as
-> "crossing from <98 to ≥98". These are two different numbers in the user's text.
-> The implementation follows the user's crossing definition **literally** —
-> arm/disarm at 98, fire at `>= 98` — because that is the sentence that defines
-> the live detection test, and §6.4's rearm rule ("a new one requires RSI <98 and
-> a fresh crossing to ≥98") independently uses 98 as well, twice. 98.5 is
-> retained in `spec.ts` as `extremeSellDisplayThreshold` for the dashboard's
-> threshold panel, which §11 requires show the user's stated values. This
-> discrepancy is surfaced rather than silently resolved; if the user intends
-> 98.5 to be the firing level, one constant changes and the spec is re-frozen.
+> **Resolved in revision 2.** Revision 1 fired extreme SELL at 98 rather than
+> 98.5, because the user's original text gave 98.5 as the threshold while its
+> crossing definition and rearm rule both said 98. That discrepancy was
+> surfaced rather than silently resolved, and the user has since confirmed the
+> 98 references were stale text. A single value, **98.5**, is now used for
+> triggering, rearming, configuration, the dashboard, this specification and
+> the tests.
 
-Extreme BUY has no such discrepancy: 1.5 is used for the threshold, the crossing,
-and the rearm.
+Extreme BUY never had such a discrepancy: 1.5 is used for the threshold, the
+crossing, and the rearm.
 
 ## 6. Rearming and duplicate prevention — IMPLEMENTATION ASSUMPTION (§8.4)
 
 - After a SELL retest signal, the SELL retest setup rearms only once RSI `< 82`.
 - After a BUY retest signal, the BUY retest setup rearms only once RSI `> 18`.
-- After an extreme SELL, a new one requires RSI `< 98` and then a fresh crossing
-  back to `>= 98`.
+- After an extreme SELL, a new one requires RSI `< 98.5` and then a fresh
+  crossing back to `>= 98.5`.
 - After an extreme BUY, a new one requires RSI `> 1.5` and then a fresh crossing
   back to `<= 1.5`.
 
 Merely **remaining** inside an extreme region can never repeatedly create orders.
 
-If more than one same-direction setup triggers on a single observation, exactly
-**one** decision is created, carrying all applicable reasons, and every
-contributing event is consumed.
+If more than one setup triggers on a single observation, **one decision per
+rule family** is created (§6A), each carrying only its own family's reasons,
+and every contributing event is consumed. Within a family, simultaneous
+triggers still merge into one decision.
 
 A position closing while RSI is still extreme does **not** produce a new entry —
 rearming is driven purely by RSI leaving and re-entering the region, never by
 occupancy becoming free.
+
+## 6A. Execution slots — USER RULE (revision 2)
+
+The four setups group into **two independent rule families**, each holding at
+most one active, pending or uncertain entry of its own:
+
+| Slot | Setups |
+|---|---|
+| `RETEST` | SELL peak retest, BUY trough retest |
+| `EXTREME` | Extreme SELL (>= 98.5), Extreme BUY (<= 1.5) |
+
+Consequences, stated explicitly because each is easy to get wrong:
+
+- One retest position **may** coexist with one extreme position.
+- Maximum concurrency is **two** positions.
+- This is **not** one slot per directional setup. A SELL retest and a BUY
+  retest compete for the same slot.
+- A second entry is never opened for a family while its existing exposure or
+  submission is unresolved — including an `UNKNOWN` submission, which holds
+  its slot precisely because its outcome is not known.
+- Closing a position does not by itself create a signal, and a signal skipped
+  because its slot was occupied is consumed, never replayed.
+
+This supersedes revision 1's one-XAUUSD-position-total rule **for this
+strategy's own two slots only**. It does not relax the separate protection
+against exposure the application cannot attribute to a slot: a foreign or
+manual position, or an unresolved submission from a retired strategy, still
+blocks both families entirely.
+
+Slot reservation is **atomic at the database level** (a partial unique index),
+so two concurrent evaluations cannot both take one family's slot. Aggregate
+risk accounting includes already-reserved stop risk, so two signals on one
+observation cannot jointly exceed the combined cap.
+
+Each family uses its **own magic number** — `262610190` for RETEST and
+`262610191` for EXTREME — so an open broker ticket is attributable to one slot
+rather than merely to this strategy.
+
+### Broker account compatibility — IMPLEMENTATION REQUIREMENT
+
+Two independent positions on one symbol, each with its own stop and target,
+exist only on a **hedging** account. On a netting account a second order
+merges with, reduces or reverses the first.
+
+The application therefore reads `account_info().margin_mode` and **refuses**
+the second concurrent position unless the account is `RETAIL_HEDGING`. It does
+not emulate two positions with one net position, and it treats "margin mode
+unknown" as a refusal distinct from "netting".
+
+*Verified on this deployment:* MetaQuotes-Demo account 5055783885 reports
+`margin_mode = 2 (RETAIL_HEDGING)`, so the two-slot model is faithfully
+supported here.
 
 ## 7. Take profit, stop loss, duration
 
@@ -181,21 +243,55 @@ exception is Friday's mandatory pre-weekend liquidation (§9.3).
 ## 8. Implementation assumptions, collected
 
 ### 8.1 RSI calculation
-MT5-compatible Wilder RSI(5) applied to **Close**. Apply-to could not be read
-from the screenshots, which show only `RSI(5)`; Close is MT5's own default for
-`iRSI` and is therefore the assumption. Until a parity check against trusted MT5
-output has been run and recorded, the dashboard labels the Apply-to setting as
-**assumed**, and this implementation does not claim exact screenshot parity.
+MT5-compatible Wilder RSI(5) applied to **Close**.
 
-Intrabar values are computed from the **previous closed-bar Wilder state** plus
-the forming M1 bar's current price. Each tick is *not* treated as its own RSI
-period; the forming bar is recomputed from the prior closed state on every tick,
-and the state is committed exactly once when the minute completes.
+**Parity verified (revision 2).** The MetaTrader5 Python API exposes no
+indicator functions, so an MQL5 script (`MQL5/Scripts/RsiReference.mq5`) was
+compiled and run inside the terminal to export `iRSI(XAUUSD, PERIOD_M1, 5,
+PRICE_CLOSE)` alongside the bars it was computed from. This implementation,
+recomputed over exactly those closes, agrees with the terminal to
+**5 x 10^-11** across 5,000 live M1 bars once the recursive average has
+converged. Applied-price is therefore no longer an assumption: `PRICE_CLOSE`
+reproduces the terminal's own values. A 1,200-bar extract is kept as a
+regression fixture.
+
+Intrabar values are computed from the **previous closed-bar Wilder state**
+plus the forming M1 bar's current price. Each tick is *not* treated as its own
+RSI period; the forming bar is recomputed from the prior closed state on every
+tick, and the state is committed exactly once when the minute completes. The
+projection was verified to equal the committed value for the same price, and
+to leave committed state untouched.
+
+**Flat-price behaviour, corrected.** MT5 reports RSI 100 whenever average loss
+is zero, including on a perfectly flat series, and that is reproduced. The
+practical reach of this is narrower than revision 1 stated: Wilder's average
+loss decays geometrically but never reaches zero, so **once any downward move
+exists in the smoothed history, flat closes raise RSI without pinning it to
+100**. A mixed history followed by five flat closes reads ~54.5, not 100. Only
+a history containing no downward change at all reads 100. Across 5,000 live
+M1 bars the longest run of unchanged closes was shorter than the RSI period,
+so the pinned case did not arise. It is still disclosed rather than filtered.
 
 ### 8.2 Live timing
 Intrabar detection, per §5. Completed-M1-close detection is never silently
-substituted; if only closed bars are available the observation mode is reported
-as such and the limitation is disclosed.
+substituted; if only closed bars are available the observation mode is
+reported as such and the limitation is disclosed.
+
+**Observation cadence — USER RULE (revision 2): once per second.** Both halves
+are required and both are implemented: the collector reads XAUUSD every second
+on its own dedicated thread, and the strategy's watch loop evaluates at the
+same cadence. A one-second collector feeding a sixty-second evaluator would
+not satisfy this.
+
+The collector fetches **incremental ticks** (`copy_ticks_from`) against a
+cursor rather than only sampling the instant each poll lands on, so movement
+between polls is captured. The cursor's boundary tick is never re-pushed, an
+unchanged quote produces no synthetic observation, and a failed push does not
+advance the cursor. Actual cadence, observation age and cycle latency are
+measured and reported rather than assumed.
+
+The collector's main poll loop keeps its own interval, so unrelated EURUSD
+collection is unchanged.
 
 ### 8.3 Peak / trough formation
 Per §4.

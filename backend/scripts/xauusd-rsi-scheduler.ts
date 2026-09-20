@@ -31,10 +31,12 @@ import { RsiCoordinatorService } from '../src/xauusd-rsi/coordinator.service';
 import { RsiLiquidationService } from '../src/xauusd-rsi/liquidation.service';
 import { RsiRuntimeSettingsService } from '../src/xauusd-rsi/runtime-settings.service';
 import { RsiWatchService } from '../src/xauusd-rsi/watch.service';
+import { RsiDecisionService } from '../src/xauusd-rsi/decision.service';
 import { defaultStateDir, RsiWatchState, RsiWatchStore, SpecHashMismatchError } from '../src/xauusd-rsi/state-store';
 import { getRsiExecutionMode, killSwitchState, stopNewEntriesState } from '../src/xauusd-rsi/controls';
 import { SPEC, SPEC_HASH } from '../src/xauusd-rsi/spec';
 import { beirutLabel } from '../src/xauusd-rsi/time';
+import { RSI_OBSERVATION_INTERVAL_MS } from '../src/xauusd-rsi/safety-constants';
 import { GoldTelegramService } from '../src/gold-execution/gold-telegram.service';
 import { ConfigService } from '@nestjs/config';
 
@@ -64,10 +66,14 @@ async function main() {
   // durable dedup). A ConfigService is constructed directly here because this
   // process is standalone and deliberately does not boot the Nest container.
   const telegram = new GoldTelegramService(prisma as any, new ConfigService());
-  const watch = new RsiWatchService(prisma as any, coordinator, accountState, liquidation, telegram);
+  const decisions = new RsiDecisionService(prisma as any, accountState);
+  const watch = new RsiWatchService(prisma as any, coordinator, accountState, liquidation, decisions, telegram);
 
-  const intervalSeconds = Number(process.env.XAUUSD_RSI_SCHEDULER_INTERVAL_SECONDS ?? '5');
-  const intervalMs = Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds * 1000 : 5_000;
+  // One second by default: the strategy must EVALUATE at the observation
+  // cadence, not merely receive observations at it. An operator may raise this
+  // but the default is the specified target.
+  const intervalSeconds = Number(process.env.XAUUSD_RSI_SCHEDULER_INTERVAL_SECONDS ?? '1');
+  const intervalMs = Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? intervalSeconds * 1000 : RSI_OBSERVATION_INTERVAL_MS;
 
   let state: RsiWatchState;
   try {
@@ -131,7 +137,9 @@ async function main() {
       if (result.ticksConsumed > 0 || result.signalsEmitted.length > 0 || result.reseeded) {
         console.log(
           `[${new Date().toISOString()}] ticks=${result.ticksConsumed} rsi=${result.currentRsi?.toFixed(2) ?? 'n/a'} ` +
-            `warm=${result.warmedUp} signals=${result.signalsEmitted.length} entries=${result.entriesAllowed ? 'allowed' : `blocked(${result.entryBlockReason})`}`,
+            `warm=${result.warmedUp} signals=${result.signalsEmitted.length} ` +
+            `slots=[RETEST:${result.slots.RETEST.occupied ? 'held' : 'free'} EXTREME:${result.slots.EXTREME.occupied ? 'held' : 'free'}] ` +
+            `cadence=${result.cadence.measuredMs ?? 'n/a'}ms entries=${result.entriesAllowed ? 'allowed' : `blocked(${result.entryBlockReason})`}`,
         );
       }
       for (const decision of result.decisions) {

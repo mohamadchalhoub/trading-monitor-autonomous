@@ -35,7 +35,9 @@
     "restore": "bash scripts/restore.sh",
     "xauusd-rsi:scheduler": "tsx scripts/xauusd-rsi-scheduler.ts",
     "xauusd-rsi:migrate": "tsx scripts/xauusd-rsi-migrate.ts",
-    "xauusd-rsi:evaluate": "tsx scripts/xauusd-rsi-evaluate.ts"
+    "xauusd-rsi:evaluate": "tsx scripts/xauusd-rsi-evaluate.ts",
+    "xauusd-rsi:telegram-test": "tsx scripts/xauusd-rsi-telegram-test.ts",
+    "xauusd-rsi:verify-rsi": "tsx scripts/xauusd-rsi-verify-rsi.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.4",
