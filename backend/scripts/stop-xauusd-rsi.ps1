@@ -32,6 +32,27 @@ if (-not (Test-Path $switchPath)) {
     Write-Host "Strategy kill switch already engaged at $switchPath."
 }
 
+# Direct and indirect children of one specific pid. Used ONLY to clean up
+# processes our own tracked process spawned; see Stop-Component.
+function Get-Descendant-Pids($rootPid) {
+    $all = Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId
+    $found = New-Object System.Collections.Generic.List[int]
+    $frontier = @([int]$rootPid)
+    while ($frontier.Count -gt 0) {
+        $next = @()
+        foreach ($parent in $frontier) {
+            foreach ($proc in $all) {
+                if ($proc.ParentProcessId -eq $parent -and -not $found.Contains([int]$proc.ProcessId)) {
+                    $found.Add([int]$proc.ProcessId)
+                    $next += [int]$proc.ProcessId
+                }
+            }
+        }
+        $frontier = $next
+    }
+    return $found
+}
+
 # --- 2. Stop only our own tracked PIDs, gracefully. Nothing is force-killed. ---
 function Stop-Component($name, $pidFile) {
     $pidPath = Join-Path $runtimeDir $pidFile
@@ -47,6 +68,23 @@ function Stop-Component($name, $pidFile) {
         return
     }
     Write-Host "Stopping $name (pid $storedPid) ..."
+    # Children are recorded BEFORE the parent goes, because once it exits the
+    # parent link is gone and an orphan can no longer be attributed to it.
+    #
+    # This matters: the collector re-execs itself, and stopping only the
+    # tracked pid left the child alive. The next start then refused with
+    # "already running but not tracked by this script's lock file".
+    #
+    # The filter is deliberately narrow. A child is only ever a candidate if
+    # it is a DIRECT descendant of our own tracked pid AND its command line
+    # names this repository. Categories of process are never targeted.
+    $ourChildren = @(Get-Descendant-Pids $storedPid | Where-Object {
+        $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$_" -ErrorAction SilentlyContinue).CommandLine
+        $cmd -and $cmd.Contains($repoRoot)
+    })
+    if ($ourChildren.Count -gt 0) {
+        Write-Host "  $name has $($ourChildren.Count) child process(es) belonging to this repo: $($ourChildren -join ', ')"
+    }
     try {
         Stop-Process -Id $storedPid -ErrorAction Stop
         # The watch process saves state and releases its lock on shutdown, so
@@ -56,6 +94,19 @@ function Stop-Component($name, $pidFile) {
             Write-Warning "$name (pid $storedPid) did not exit within 3s of Stop-Process - check it manually. It was NOT force-killed by this script."
         } else {
             Write-Host "$name stopped."
+            foreach ($childPid in $ourChildren) {
+                $child = Get-Process -Id $childPid -ErrorAction SilentlyContinue
+                if (-not $child) { continue }
+                # Re-verify identity at the moment of acting: a pid can be
+                # reused between the snapshot above and now.
+                $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$childPid" -ErrorAction SilentlyContinue).CommandLine
+                if (-not ($cmd -and $cmd.Contains($repoRoot))) {
+                    Write-Warning "  child pid $childPid no longer looks like ours - leaving it alone."
+                    continue
+                }
+                Write-Host "  stopping orphaned $name child (pid $childPid) ..."
+                try { Stop-Process -Id $childPid -ErrorAction Stop } catch { Write-Warning "  failed to stop child pid ${childPid}: $_" }
+            }
             Remove-Item $pidPath -Force -ErrorAction SilentlyContinue
         }
     } catch {
