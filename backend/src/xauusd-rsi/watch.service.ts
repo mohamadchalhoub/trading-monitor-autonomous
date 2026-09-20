@@ -1,0 +1,329 @@
+/**
+ * One watch cycle: reconcile, recover, observe, decide.
+ *
+ * Ordering inside a cycle is deliberate and is itself a requirement:
+ *
+ *   1. **Friday liquidation first.** Protective closure of owned exposure
+ *      takes precedence over opening anything (spec §10), and it must run
+ *      even when pauses or kill switches are blocking entries.
+ *   2. **Recovery before trading.** A restart re-establishes continuity and
+ *      reconciles persisted decisions against real broker exposure before a
+ *      single entry may be submitted.
+ *   3. **Reseed before observing.** The indicator is rebuilt from broker
+ *      candle history when it is cold, without emitting anything for the
+ *      historical bars it walks through.
+ *   4. **Observe, then decide.** Ticks are replayed in order through the pure
+ *      engine; whatever it emits is handed to the coordinator.
+ *
+ * The cycle never throws its way out of the loop: a failure is reported and
+ * the next cycle tries again. Uncertain submissions are reconciled rather
+ * than retried blindly.
+ */
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { applyClosedBar, applyTick, createEngineState, EmittedSignal, engineRsiNow, engineWarmedUp, M1_MS } from './engine';
+import { RsiCoordinatorService } from './coordinator.service';
+import { RsiAccountStateService } from './account-state.service';
+import { RsiLiquidationService, LiquidationCycleResult } from './liquidation.service';
+import { RsiWatchState, RsiWatchStore } from './state-store';
+import { SPEC } from './spec';
+import { RSI_GOLD_POINT_SIZE, RSI_SYMBOL } from './safety-constants';
+import { evaluateEntryEligibility } from './schedule';
+
+/** How many ticks one cycle will consume at most, so a long backlog cannot stall a cycle indefinitely. */
+const MAX_TICKS_PER_CYCLE = 5_000;
+
+export interface WatchCycleResult {
+  nowT: number;
+  liquidation: LiquidationCycleResult;
+  recoveryComplete: boolean;
+  recoveryDetail: string | null;
+  reseeded: boolean;
+  ticksConsumed: number;
+  signalsEmitted: EmittedSignal[];
+  decisions: Array<{ decisionId: string; queued: boolean; skipReason: string | null }>;
+  currentRsi: number | null;
+  warmedUp: boolean;
+  observationMode: string;
+  notes: string[];
+  entriesAllowed: boolean;
+  entryBlockReason: string | null;
+}
+
+@Injectable()
+export class RsiWatchService {
+  private readonly logger = new Logger(RsiWatchService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly coordinator: RsiCoordinatorService,
+    private readonly accountState: RsiAccountStateService,
+    private readonly liquidation: RsiLiquidationService,
+  ) {}
+
+  async runCycle(params: { accountId: string; store: RsiWatchStore; state: RsiWatchState; nowT?: number }): Promise<{ result: WatchCycleResult; state: RsiWatchState }> {
+    const nowT = params.nowT ?? Date.now();
+    let state = params.state;
+    const notes: string[] = [];
+
+    // 1. Protective work first, always.
+    const liquidation = await this.liquidation.runCycle(params.accountId, nowT);
+
+    // 2. Recovery.
+    if (!state.recovery.recoveryComplete) {
+      const recovery = await this.reconcileOnStartup(params.accountId, nowT);
+      state = { ...state, recovery: { ...state.recovery, recoveryComplete: recovery.complete, lastRecoveryDetail: recovery.detail } };
+      notes.push(`recovery: ${recovery.detail}`);
+    }
+
+    // 3. Reseed the indicator from broker candle history when it is cold.
+    let reseeded = false;
+    if (!engineWarmedUp(state.engine)) {
+      const seed = await this.reseedFromCandles(state);
+      state = { ...state, engine: seed.engine, recovery: { ...state.recovery, lastReseedAtUtc: new Date(nowT).toISOString() } };
+      reseeded = true;
+      notes.push(seed.detail);
+    }
+
+    // 4. Observe.
+    const session = await this.accountState.resolveBrokerSessionOpen(new Date(nowT));
+    const ticks = await this.readNewTicks(state.cursor.lastTimestampMs, state.cursor.lastTimestampKeys);
+
+    const signalsEmitted: EmittedSignal[] = [];
+    const decisions: WatchCycleResult['decisions'] = [];
+    let cursor = state.cursor;
+    let engine = state.engine;
+
+    for (const tick of ticks) {
+      const step = applyTick(engine, {
+        atT: tick.timestampMs,
+        bid: tick.bid,
+        tickKey: tick.key,
+        // Freshness is judged against wall clock, not against the tick's own
+        // time, so replaying a backlog cannot produce live entries from
+        // observations that are already minutes old.
+        nowT,
+      });
+      engine = step.state;
+      if (step.notes.length > 0) notes.push(...step.notes.slice(0, 3));
+
+      cursor =
+        tick.timestampMs === cursor.lastTimestampMs
+          ? { ...cursor, lastTickKey: tick.key, lastTimestampKeys: [...cursor.lastTimestampKeys, tick.key] }
+          : { lastTimestampMs: tick.timestampMs, lastTickKey: tick.key, lastTimestampKeys: [tick.key] };
+
+      for (const signal of step.signals) {
+        signalsEmitted.push(signal);
+        const executablePrice = signal.direction === 'BUY' ? tick.ask : tick.bid;
+        const outcome = await this.coordinator.evaluate(signal, {
+          accountId: params.accountId,
+          nowT,
+          currentExecutablePrice: executablePrice,
+          brokerSessionOpen: session.open,
+          brokerSessionDetail: session.detail,
+          dataFresh: session.open === true,
+          recoveryComplete: state.recovery.recoveryComplete,
+        });
+        decisions.push({ decisionId: outcome.decisionId, queued: outcome.queued, skipReason: outcome.skipReason });
+      }
+    }
+
+    state = {
+      ...state,
+      engine,
+      cursor,
+      recovery: { ...state.recovery, lastCycleAtUtc: new Date(nowT).toISOString() },
+    };
+
+    const eligibility = evaluateEntryEligibility({
+      utcMs: nowT,
+      brokerSessionOpen: session.open,
+      dataFresh: session.open === true,
+      recoveryComplete: state.recovery.recoveryComplete,
+      otherBlock: null,
+    });
+
+    return {
+      state,
+      result: {
+        nowT,
+        liquidation,
+        recoveryComplete: state.recovery.recoveryComplete,
+        recoveryDetail: state.recovery.lastRecoveryDetail,
+        reseeded,
+        ticksConsumed: ticks.length,
+        signalsEmitted,
+        decisions,
+        currentRsi: engineRsiNow(engine),
+        warmedUp: engineWarmedUp(engine),
+        observationMode: engine.observationMode,
+        notes,
+        entriesAllowed: eligibility.entriesAllowed,
+        entryBlockReason: eligibility.blockReason,
+      },
+    };
+  }
+
+  /**
+   * Startup/reconnect reconciliation.
+   *
+   * Resolves anything this strategy left in flight against REAL broker state:
+   * a decision still `PENDING` was never sent and is retired; a decision
+   * `SENT` or `UNKNOWN` may or may not have reached the broker, so it is
+   * matched against actual open positions rather than assumed either way.
+   *
+   * Entries stay blocked until this completes — spec §9.4's "recovery/
+   * reconciliation is complete" gate.
+   */
+  private async reconcileOnStartup(accountId: string, nowT: number): Promise<{ complete: boolean; detail: string }> {
+    const inFlight = await this.prisma.xauusdRsiDecision.findMany({
+      where: { accountId, orderStatus: { in: ['PENDING', 'SENT', 'UNKNOWN'] } },
+      orderBy: { evaluatedAt: 'asc' },
+    });
+    if (inFlight.length === 0) {
+      return { complete: true, detail: 'No in-flight decisions to reconcile.' };
+    }
+
+    const exposure = await this.accountState.resolveExposure(accountId);
+    const liveTickets = new Set(exposure.items.filter((i) => i.kind === 'POSITION').map((i) => i.ticket));
+    const parts: string[] = [];
+
+    for (const decision of inFlight) {
+      if (decision.orderStatus === 'PENDING') {
+        // Never sent — retiring it is safe and is what spec §10 asks for
+        // ("Retire unsent old-strategy intentions with audit reasons").
+        await this.prisma.xauusdRsiDecision.update({
+          where: { id: decision.id },
+          data: {
+            orderStatus: 'NONE',
+            approved: false,
+            skipReason: `Retired during startup reconciliation at ${new Date(nowT).toISOString()}: the process restarted before this queued entry was ever sent, and an intrabar signal is not valid to submit later.`,
+          },
+        });
+        parts.push(`retired unsent decision ${decision.id}`);
+        continue;
+      }
+
+      // SENT or UNKNOWN: the outcome is genuinely uncertain.
+      if (decision.mt5Ticket !== null && liveTickets.has(String(decision.mt5Ticket))) {
+        await this.prisma.xauusdRsiDecision.update({
+          where: { id: decision.id },
+          data: { orderStatus: 'FILLED', filledAt: decision.filledAt ?? new Date(nowT) },
+        });
+        parts.push(`confirmed decision ${decision.id} is FILLED (ticket ${decision.mt5Ticket} is open at the broker)`);
+        continue;
+      }
+
+      // No matching open position. That is NOT proof it never filled — it may
+      // have filled and already closed. It is therefore marked UNKNOWN and
+      // left for an operator, never silently marked failed, because marking
+      // it failed would free the occupancy slot on an assumption.
+      await this.prisma.xauusdRsiDecision.update({
+        where: { id: decision.id },
+        data: {
+          orderStatus: 'UNKNOWN',
+          executionError:
+            (decision.executionError ? `${decision.executionError} | ` : '') +
+            `Startup reconciliation at ${new Date(nowT).toISOString()} found no matching open position. This does not prove the order never filled — it may have filled and closed. Requires operator confirmation against the broker's own deal history.`,
+        },
+      });
+      parts.push(`decision ${decision.id} remains UNKNOWN and needs operator confirmation`);
+    }
+
+    const unresolved = await this.prisma.xauusdRsiDecision.count({
+      where: { accountId, orderStatus: 'UNKNOWN' },
+    });
+
+    if (unresolved > 0) {
+      return {
+        complete: false,
+        detail: `${parts.join('; ')}. ${unresolved} decision(s) remain UNKNOWN — new entries stay blocked until these are resolved against the broker's deal history.`,
+      };
+    }
+    return { complete: true, detail: parts.join('; ') || 'Reconciliation complete.' };
+  }
+
+  /**
+   * Rebuilds the indicator from the broker's own closed M1 candles.
+   *
+   * Walks history through the engine so the Wilder average converges exactly
+   * as it would have live, but emits nothing: `applyClosedBar` never produces
+   * signals, so no historical bar can ever be submitted as a live entry
+   * (spec §7's "warm up without submitting historical signals").
+   *
+   * Only a CONTIGUOUS run of the most recent bars is used. A gap in history
+   * would make the resulting average one no real sequence produced, so the
+   * seed starts after the most recent gap instead of bridging it.
+   */
+  private async reseedFromCandles(state: RsiWatchState): Promise<{ engine: RsiWatchState['engine']; detail: string }> {
+    const required = SPEC.rsi.period + 1 + SPEC.rsi.warmupBars;
+    const rows = await this.prisma.historicalCandle.findMany({
+      where: { symbol: RSI_SYMBOL, timeframe: 'M1' },
+      orderBy: { openTime: 'desc' },
+      take: required + 200,
+      select: { openTime: true, close: true },
+    });
+    if (rows.length === 0) {
+      return { engine: state.engine, detail: 'No M1 candle history available — the indicator cannot be seeded, so signals stay suppressed.' };
+    }
+
+    const ascending = rows.slice().reverse();
+    // Trim to the most recent contiguous run.
+    let startIndex = 0;
+    for (let i = 1; i < ascending.length; i += 1) {
+      const gap = ascending[i].openTime.getTime() - ascending[i - 1].openTime.getTime();
+      if (gap !== M1_MS) startIndex = i;
+    }
+    const contiguous = ascending.slice(startIndex);
+
+    let engine = createEngineState(state.engine.observationMode);
+    for (const row of contiguous) {
+      engine = applyClosedBar(engine, row.openTime.getTime(), row.close.toNumber()).state;
+    }
+
+    const warmed = engineWarmedUp(engine);
+    const detail = warmed
+      ? `Indicator seeded from ${contiguous.length} contiguous closed M1 bars ending ${contiguous[contiguous.length - 1].openTime.toISOString()}; warm-up satisfied.`
+      : `Indicator seeded from ${contiguous.length} contiguous closed M1 bars, which is short of the ${required} required — signals stay suppressed until more history is available.`;
+    return { engine, detail };
+  }
+
+  /**
+   * Reads ordered broker ticks newer than the cursor.
+   *
+   * `HistoricalTick` is the collector's own ingested tick store, deduplicated
+   * at the database level, so this is genuine ordered broker tick data rather
+   * than a periodic quote sample. Same-millisecond ties are resolved with the
+   * cursor's key list so an overlapping refetch cannot re-process a tick.
+   */
+  private async readNewTicks(
+    lastTimestampMs: number | null,
+    lastTimestampKeys: string[],
+  ): Promise<Array<{ timestampMs: number; bid: number; ask: number; key: string }>> {
+    const rows = await this.prisma.historicalTick.findMany({
+      where: {
+        symbol: RSI_SYMBOL,
+        ...(lastTimestampMs !== null ? { timestamp: { gte: new Date(lastTimestampMs) } } : {}),
+      },
+      orderBy: [{ timestamp: 'asc' }, { batchSeq: 'asc' }, { id: 'asc' }],
+      take: MAX_TICKS_PER_CYCLE,
+      select: { id: true, timestamp: true, bid: true, ask: true, batchSeq: true },
+    });
+
+    const consumed = new Set(lastTimestampKeys);
+    const out: Array<{ timestampMs: number; bid: number; ask: number; key: string }> = [];
+    for (const row of rows) {
+      const timestampMs = row.timestamp.getTime();
+      const key = `${timestampMs}:${row.id.toString()}`;
+      if (lastTimestampMs !== null && timestampMs === lastTimestampMs && consumed.has(key)) continue;
+      if (lastTimestampMs !== null && timestampMs < lastTimestampMs) continue;
+      const bid = row.bid.toNumber();
+      const ask = row.ask.toNumber();
+      if (!(bid > 0) || !(ask > 0)) continue;
+      out.push({ timestampMs, bid, ask, key });
+    }
+    return out;
+  }
+}
+
+export { RSI_GOLD_POINT_SIZE };

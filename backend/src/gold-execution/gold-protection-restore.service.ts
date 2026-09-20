@@ -40,8 +40,18 @@ export class GoldProtectionRestoreService {
     side: 'BUY' | 'SELL';
     entryPrice: number;
     goldPointSize: number;
+    /**
+     * The protective distance, in USD of gold price, that THIS position's
+     * owning strategy manages it at. Defaults to the retired H4 strategy's
+     * $10 so an existing caller keeps its exact previous behaviour.
+     *
+     * Passing it explicitly is what lets one restore path serve two
+     * strategies without ever changing an old position's protection to the
+     * new strategy's $5 — which the migration spec (§10) forbids.
+     */
+    protectionUsd?: number;
   }): Promise<{ id: string }> {
-    const { stopLoss, takeProfit } = computeFrozenProtection(params.side, params.entryPrice, params.goldPointSize);
+    const { stopLoss, takeProfit } = computeFrozenProtection(params.side, params.entryPrice, params.goldPointSize, params.protectionUsd);
     const row = await this.prisma.goldProtectionRestoreRequest.create({
       data: {
         accountId: params.accountId,
@@ -104,8 +114,14 @@ export class GoldProtectionRestoreService {
 }
 
 /** Same formula as gold-execution-coordinator.service.ts's own bracket pricing — frozen distance, never a different one. */
-export function computeFrozenProtection(side: 'BUY' | 'SELL', entryPrice: number, goldPointSize: number): { stopLoss: number; takeProfit: number } {
-  const offset = GOLD_TP_SL_POINTS * goldPointSize;
+export function computeFrozenProtection(
+  side: 'BUY' | 'SELL',
+  entryPrice: number,
+  goldPointSize: number,
+  /** USD price distance; defaults to the retired H4 strategy's $10. */
+  protectionUsd?: number,
+): { stopLoss: number; takeProfit: number } {
+  const offset = protectionUsd !== undefined ? protectionUsd : GOLD_TP_SL_POINTS * goldPointSize;
   return side === 'BUY'
     ? { stopLoss: entryPrice - offset, takeProfit: entryPrice + offset }
     : { stopLoss: entryPrice + offset, takeProfit: entryPrice - offset };

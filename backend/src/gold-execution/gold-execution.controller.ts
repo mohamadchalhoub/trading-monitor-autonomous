@@ -52,9 +52,38 @@ export class GoldExecutionController {
     private readonly prisma: PrismaService,
   ) {}
 
+  /**
+   * DISABLED as of the migration to `xauusd-m1-rsi-retest-extremes-v1`.
+   *
+   * This route was the retired H4 confirmed-retest strategy's only path to
+   * the broker. It now always returns `{ order: null }` WITHOUT claiming
+   * anything, so that:
+   *
+   *   - no pre-existing queued row from that strategy can ever be sent, even
+   *     if one is still sitting PENDING in the database (they are retired
+   *     with an audit reason by the migration script, but this route must not
+   *     depend on that having run);
+   *   - a collector still configured with `GOLD_EXECUTION_ENABLED=true`
+   *     degrades to a harmless no-op instead of resurrecting the old
+   *     strategy;
+   *   - the close-request and protection-restore routes below keep working,
+   *     because positions that strategy already opened must retain their
+   *     protective management until they resolve.
+   *
+   * The active strategy has its own route: `/collector/:accountId/xauusd-rsi`.
+   */
   @Get('pending-order')
   async getPendingOrder(@Param('accountId', ParseUUIDPipe) accountId: string) {
     await this.accounts.getOrThrow(accountId);
+    this.preSendLogger.warn(
+      `gold pending-order poll for account ${accountId} refused: the H4 confirmed-retest strategy is retired and can no longer submit entries. ` +
+        'The active strategy polls /collector/:accountId/xauusd-rsi. Set GOLD_EXECUTION_ENABLED=false in the collector to stop this poll.',
+    );
+    return { order: null };
+  }
+
+  /** @deprecated Retired with the strategy; retained only so its shape stays documented. */
+  private async retiredGetPendingOrder(accountId: string) {
     const decision = await this.logger.claimOldestPendingOrder(accountId, GOLD_SYMBOL);
     if (!decision || decision.entryPrice === null || decision.stopLoss === null || decision.takeProfit === null) {
       return { order: null };

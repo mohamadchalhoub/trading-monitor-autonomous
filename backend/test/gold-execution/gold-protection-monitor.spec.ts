@@ -58,8 +58,16 @@ describe('GoldProtectionMonitorService — one restore attempt, then reconciliat
     expect(eventTypes).toContain('MISSING_PROTECTION');
     expect(eventTypes).toContain('PROTECTION_RESTORE_REQUESTED');
     expect(protectionRestoreMock.requestRestore).toHaveBeenCalledTimes(1);
+    // `protectionUsd` is asserted explicitly, not loosely: after the strategy
+    // migration this monitor serves two owners, and a position opened by the
+    // RETIRED H4 strategy must keep being restored at ITS OWN $10 distance —
+    // never re-protected at the active RSI strategy's $5. The test position's
+    // magic is the retired strategy's, so $10 is the correct expectation, and
+    // a regression that applied the new distance to an old position would
+    // fail here rather than silently change a live position's stop.
     expect(protectionRestoreMock.requestRestore).toHaveBeenCalledWith({
       accountId: ACCOUNT_ID, positionTicket: 'pos-1', side: 'BUY', entryPrice: 2400, goldPointSize: expect.any(Number),
+      protectionUsd: 10,
     });
     expect(closeExecutionMock.requestClose).not.toHaveBeenCalled();
   });

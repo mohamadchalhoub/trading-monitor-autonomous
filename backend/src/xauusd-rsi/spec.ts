@@ -1,0 +1,124 @@
+/**
+ * Machine-readable half of XAUUSD_M1_RSI_RETEST_EXTREMES_V1_SPEC.md.
+ *
+ * Every number the strategy's decisions depend on lives here and nowhere
+ * else, so there is exactly one place to read the rules from and exactly
+ * one thing to hash. `SPEC_HASH` is derived from the frozen object below;
+ * a persisted pattern-state file carries the hash it was written under and
+ * is REFUSED (never silently migrated) if the rules have since changed —
+ * the same posture `research/confirmed-retest-v2/spec.ts` established, for
+ * the same reason: mixing two rule versions inside one state file produces
+ * decisions no audit can later explain.
+ *
+ * Nothing here is tunable at runtime. These are not `.env` values on
+ * purpose: the user's rules are not operator-adjustable, and an entry
+ * threshold that could be edited without a spec re-freeze would make the
+ * hash meaningless.
+ */
+import { createHash } from 'node:crypto';
+
+export const XAUUSD_RSI_STRATEGY_VERSION = 'xauusd-m1-rsi-retest-extremes-v1';
+
+export const SPEC = {
+  strategyVersion: XAUUSD_RSI_STRATEGY_VERSION,
+  symbol: 'XAUUSD',
+  timeframe: 'M1',
+
+  rsi: {
+    /** USER RULE — "RSI period: 5, as displayed in the screenshots." */
+    period: 5,
+    /**
+     * IMPLEMENTATION ASSUMPTION (spec §8.1). MT5's own `iRSI` default.
+     * Surfaced on the dashboard as "assumed" until a recorded parity check
+     * against trusted MT5 output upgrades its provenance.
+     */
+    appliedPrice: 'CLOSE' as const,
+    /** Wilder smoothing, matching MT5's RSI implementation. */
+    smoothing: 'WILDER' as const,
+    /**
+     * Closed M1 bars required beyond the `period` seed before any signal
+     * may be emitted (spec §8.5). Wilder's recursive average carries its
+     * seeding transient for many multiples of the period; 250 bars is a
+     * deliberately generous margin, not a tuned value.
+     */
+    warmupBars: 250,
+  },
+
+  thresholds: {
+    /** USER RULE — "Sell 2 | 91". Entering above this arms the SELL peak-retest setup. */
+    sell2: 91,
+    /** USER RULE — "Sell 1 | 82". Falling below this invalidates an armed SELL pattern. */
+    sell1: 82,
+    /** USER RULE — "Buy 1 is explicitly 18, replacing the 14 shown in the images." */
+    buy1: 18,
+    /** USER RULE — "Buy 2 = 8.9 is taken from the screenshot". */
+    buy2: 8.9,
+
+    /**
+     * USER RULE §3.3 states the extreme SELL threshold as 98.5, but the
+     * user's own crossing definition (§6.2) and rearm rule (§6.4) both use
+     * 98. See the spec document's §5 note: the crossing/rearm number is
+     * what actually defines live detection, so 98 is what fires, and 98.5
+     * is retained below purely for the dashboard's threshold display.
+     * Deliberately NOT reconciled silently — surfaced to the user instead.
+     */
+    extremeSellCross: 98,
+    extremeSellDisplayThreshold: 98.5,
+
+    /** USER RULE — 1.5 is consistent across the threshold, the crossing and the rearm. */
+    extremeBuyCross: 1.5,
+    extremeBuyDisplayThreshold: 1.5,
+  },
+
+  brackets: {
+    /**
+     * USER RULE — "TP distance: 5.00 USD in quoted gold price" and the same
+     * for SL. A gold-PRICE distance, not broker points and not a promised
+     * account-currency amount.
+     */
+    takeProfitUsd: 5,
+    stopLossUsd: 5,
+  },
+
+  schedule: {
+    timeZone: 'Asia/Beirut',
+    /** USER RULE §5.1 — daily entry pause, 23:30 inclusive to 01:00 exclusive. */
+    dailyPauseStartSecondsBeirut: 23 * 3600 + 30 * 60,
+    dailyPauseEndSecondsBeirutExclusive: 1 * 3600,
+    /** USER RULE §5.2 — Friday entries allowed strictly before 23:00:00. */
+    fridayEntryCutoffSecondsBeirut: 23 * 3600,
+    /** USER RULE §5.3 — owned exposure must be flat before Friday 23:30. */
+    fridayClosureDeadlineSecondsBeirut: 23 * 3600 + 30 * 60,
+    /**
+     * IMPLEMENTATION ASSUMPTION (spec §9.3) — liquidation starts at the
+     * 23:00 cutoff rather than waiting for 23:29, so there is half an hour
+     * of retry/reconciliation headroom before the deadline.
+     */
+    fridayLiquidationStartSecondsBeirut: 23 * 3600,
+  },
+
+  observation: {
+    /**
+     * IMPLEMENTATION ASSUMPTION (spec §8.6). A gap longer than this between
+     * two consecutive accepted observations means the engine cannot honestly
+     * claim to know what RSI did in between, so pattern state is reset
+     * rather than carried across. 90s spans one full M1 bar plus margin.
+     */
+    maxContinuityGapMs: 90_000,
+    /**
+     * An observation whose own timestamp is older than this relative to
+     * wall clock is not fresh enough to act on. Signals are not emitted
+     * from stale data; state still updates so continuity is tracked.
+     */
+    maxStalenessMs: 30_000,
+  },
+} as const;
+
+export type XauusdRsiSpec = typeof SPEC;
+
+/**
+ * Stable hash of the rules. `JSON.stringify` over this object is
+ * deterministic because the object literal's key order is fixed at compile
+ * time and never built dynamically.
+ */
+export const SPEC_HASH = createHash('sha256').update(JSON.stringify(SPEC)).digest('hex').slice(0, 16);
