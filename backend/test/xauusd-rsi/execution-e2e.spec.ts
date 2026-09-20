@@ -1,0 +1,406 @@
+/**
+ * The active strategy's execution path, end to end through the real HTTP
+ * stack: coordinator decision -> collector poll -> pre-send recheck ->
+ * broker-reported result.
+ *
+ * The scenarios that matter most are the refusals. A gate that lets an order
+ * through when it should not is the failure mode with consequences, so most
+ * of what follows plants a decision that looks ready and then proves it does
+ * not reach the collector.
+ */
+import { writeFileSync, rmSync } from 'node:fs';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { PrismaClient } from '@prisma/client';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createTestApp } from '../helpers/app';
+import { resetDatabase } from '../helpers/db';
+import { setupAccountWithToken } from '../helpers/factories';
+import { request } from '../helpers/http';
+import { RSI_MAGIC_NUMBER } from '../../src/xauusd-rsi/safety-constants';
+import { getRsiKillSwitchPath, getRsiStopNewEntriesPath } from '../../src/xauusd-rsi/controls';
+import { SPEC, SPEC_HASH } from '../../src/xauusd-rsi/spec';
+
+/**
+ * Wednesday 2026-09-23, 15:00 Beirut — a plainly eligible instant: not in the
+ * daily pause, not Friday, and well away from every boundary, so a failure
+ * here is never a schedule artefact.
+ */
+const ELIGIBLE_T = Date.parse('2026-09-23T12:00:00.000Z');
+
+describe('XAUUSD RSI execution — collector poll and report', () => {
+  let app: NestFastifyApplication;
+  let prisma: PrismaClient;
+
+  // The shared test environment pins the mode to OFF so nothing can submit by
+  // accident. This file is specifically about the submission path, so it opts
+  // in explicitly and puts the value back afterwards.
+  let originalMode: string | undefined;
+
+  beforeAll(async () => {
+    originalMode = process.env.XAUUSD_RSI_EXECUTION_MODE;
+    process.env.XAUUSD_RSI_EXECUTION_MODE = 'DEMO';
+    app = await createTestApp();
+    prisma = new PrismaClient();
+  });
+  afterAll(async () => {
+    if (originalMode === undefined) delete process.env.XAUUSD_RSI_EXECUTION_MODE;
+    else process.env.XAUUSD_RSI_EXECUTION_MODE = originalMode;
+    await prisma.$disconnect();
+    await app.close();
+  });
+  beforeEach(async () => {
+    await resetDatabase(prisma);
+  });
+  afterEach(() => {
+    // Never leave a control engaged for the next case.
+    rmSync(getRsiKillSwitchPath(), { force: true });
+    rmSync(getRsiStopNewEntriesPath(), { force: true });
+  });
+
+  /**
+   * Everything the pre-send guard needs to say yes: a fresh quote at an
+   * eligible instant, a DEMO snapshot, and current symbol metadata.
+   */
+  async function seedPrerequisites(accountId: string) {
+    await prisma.liveTick.upsert({
+      where: { symbol: 'XAUUSD' },
+      create: { symbol: 'XAUUSD', bid: 4345.45, ask: 4345.63, tickAt: new Date(ELIGIBLE_T) },
+      update: { bid: 4345.45, ask: 4345.63, tickAt: new Date(ELIGIBLE_T) },
+    });
+    await prisma.accountSnapshot.create({
+      data: {
+        accountId, tradeMode: 'DEMO', balance: 50000, equity: 50000,
+        margin: 0, freeMargin: 50000, profit: 0, capturedAt: new Date(ELIGIBLE_T),
+      },
+    });
+    await prisma.symbolMetadata.upsert({
+      where: { symbol: 'XAUUSD' },
+      create: {
+        symbol: 'XAUUSD', volumeMin: 0.01, volumeMax: 100, volumeStep: 0.01, digits: 2,
+        point: 0.01, contractSize: 100, profitCurrency: 'USD', tradeStopsLevel: 0,
+        tradeFreezeLevel: 0, tradeTickSize: 0.01, tradeMode: 4,
+      },
+      update: { updatedAt: new Date() },
+    });
+  }
+
+  async function queueDecision(accountId: string, overrides: Record<string, unknown> = {}) {
+    return prisma.xauusdRsiDecision.create({
+      data: {
+        strategyVersion: SPEC.strategyVersion,
+        specHash: SPEC_HASH,
+        accountId,
+        symbol: 'XAUUSD',
+        observedAt: new Date(ELIGIBLE_T),
+        direction: 'SELL',
+        setupKinds: ['SELL_PEAK_RETEST'],
+        rsiValue: 92.5,
+        previousRsi: 90.1,
+        basisPrice: 4345.45,
+        observationMode: 'TICK',
+        entryPrice: 4345.45,
+        requestedPrice: 4345.45,
+        stopLoss: 4350.45,
+        takeProfit: 4340.45,
+        volumeLots: 0.5,
+        reasoning: 'planted by an execution test',
+        evidence: {},
+        approved: true,
+        orderStatus: 'PENDING',
+        magicNumber: RSI_MAGIC_NUMBER,
+        ...overrides,
+      },
+    });
+  }
+
+  const poll = (accountId: string, token: string) =>
+    request(app, {
+      method: 'GET',
+      url: `/collector/${accountId}/xauusd-rsi/pending-order`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+  it('serves a correctly-shaped order with the $5 brackets and this strategy’s own magic number', async () => {
+    const { account, token } = await setupAccountWithToken(prisma);
+    await seedPrerequisites(account.id);
+    const decision = await queueDecision(account.id);
+
+    const res = await poll(account.id, token);
+
+    expect(res.statusCode).toBe(200);
+    const order = res.body.order;
+    expect(order).not.toBeNull();
+    expect(order.decisionId).toBe(decision.id);
+    expect(order.side).toBe('SELL');
+    expect(order.symbol).toBe('XAUUSD');
+    expect(order.magic).toBe(RSI_MAGIC_NUMBER);
+    // Never the retired strategies' numbers.
+    expect(order.magic).not.toBe(262610181);
+    expect(order.magic).not.toBe(262610180);
+    expect(order.volume).toBe(0.5);
+    expect(order.pointSize).toBe(0.01);
+    // $5 at $0.01 per point.
+    expect(order.stopLossPoints).toBeCloseTo(500, 3);
+    expect(order.takeProfitPoints).toBeCloseTo(500, 3);
+    // Absolute levels travel alongside the distances so the executor can
+    // verify rather than re-derive them.
+    expect(order.stopLoss).toBeCloseTo(4350.45, 6);
+    expect(order.takeProfit).toBeCloseTo(4340.45, 6);
+  });
+
+  it('claims atomically — a second poll sees nothing', async () => {
+    const { account, token } = await setupAccountWithToken(prisma);
+    await seedPrerequisites(account.id);
+    await queueDecision(account.id);
+
+    const first = await poll(account.id, token);
+    const second = await poll(account.id, token);
+
+    expect(first.body.order).not.toBeNull();
+    expect(second.body.order).toBeNull();
+  });
+
+  it('serves the volume the risk gate approved, not a value re-read from live settings', async () => {
+    const { account, token } = await setupAccountWithToken(prisma);
+    await seedPrerequisites(account.id);
+    await queueDecision(account.id, { volumeLots: 0.03 });
+
+    const res = await poll(account.id, token);
+    expect(res.body.order.volume).toBe(0.03);
+  });
+
+  describe('the pre-send recheck cancels rather than sends', () => {
+    it('when the kill switch engaged after queuing', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      const decision = await queueDecision(account.id);
+
+      writeFileSync(getRsiKillSwitchPath(), 'engaged by a test');
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+
+      // Already claimed, so it must be explicitly cancelled — never left SENT.
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
+      expect(after.orderStatus).toBe('NONE');
+      expect(after.skipReason).toMatch(/pre-send check/);
+      expect(after.skipReason).toMatch(/Kill switch/);
+    });
+
+    it('when stop-new-entries engaged after queuing', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      const decision = await queueDecision(account.id);
+
+      writeFileSync(getRsiStopNewEntriesPath(), 'engaged by a test');
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
+      expect(after.orderStatus).toBe('NONE');
+      expect(after.skipReason).toMatch(/STOP NEW ENTRIES/);
+    });
+
+    it('when the Friday cutoff has been reached by send time', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      const decision = await queueDecision(account.id);
+
+      // Friday 2026-09-25, 23:05 Beirut — past the 23:00 cutoff. The decision
+      // was created before it; this proves a queued entry cannot submit after.
+      await prisma.liveTick.update({
+        where: { symbol: 'XAUUSD' },
+        data: { tickAt: new Date(Date.parse('2026-09-25T20:05:00.000Z')) },
+      });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
+      expect(after.orderStatus).toBe('NONE');
+      expect(after.skipReason).toMatch(/FRIDAY_ENTRY_CUTOFF/);
+    });
+
+    it('when the daily pause has begun by send time', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      await queueDecision(account.id);
+
+      // Wednesday 23:35 Beirut.
+      await prisma.liveTick.update({
+        where: { symbol: 'XAUUSD' },
+        data: { tickAt: new Date(Date.parse('2026-09-23T20:35:00.000Z')) },
+      });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+    });
+
+    it('when the account is no longer DEMO', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      const decision = await queueDecision(account.id);
+
+      await prisma.accountSnapshot.create({
+        data: {
+          accountId: account.id, tradeMode: 'REAL', balance: 50000, equity: 50000,
+          margin: 0, freeMargin: 50000, profit: 0, capturedAt: new Date(ELIGIBLE_T + 1000),
+        },
+      });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
+      expect(after.skipReason).toMatch(/not DEMO/);
+    });
+
+    it('when the signal has gone stale by send time', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      // Observed two minutes before the quote's own time; the limit is 60s.
+      await queueDecision(account.id, { observedAt: new Date(ELIGIBLE_T - 120_000) });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+    });
+
+    it('when the price has drifted beyond the deviation limit', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      // 100pt = $1.00 is the limit; move the quote $3.
+      await prisma.liveTick.update({
+        where: { symbol: 'XAUUSD' },
+        data: { bid: 4348.45, ask: 4348.63, tickAt: new Date(ELIGIBLE_T) },
+      });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+    });
+
+    it('when exposure appeared since queuing', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      await queueDecision(account.id);
+
+      await prisma.position.create({
+        data: {
+          accountId: account.id, platform: 'MT5', externalPositionId: '5001', symbol: 'XAUUSD',
+          side: 'BUY', volume: 0.1, openPrice: 4340, profit: 0, swap: 0,
+          openedAt: new Date(ELIGIBLE_T), status: 'OPEN',
+        },
+      });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+    });
+
+    it('when there is no live quote at all — refusing to send blind', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      // Deliberately no LiveTick row.
+      await prisma.accountSnapshot.create({
+        data: {
+          accountId: account.id, tradeMode: 'DEMO', balance: 50000, equity: 50000,
+          margin: 0, freeMargin: 50000, profit: 0, capturedAt: new Date(),
+        },
+      });
+      await queueDecision(account.id);
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+    });
+  });
+
+  describe('result reporting', () => {
+    async function claimed(accountId: string, token: string) {
+      await seedPrerequisites(accountId);
+      const decision = await queueDecision(accountId);
+      await poll(accountId, token);
+      return decision;
+    }
+
+    it('records a confirmed fill with slippage and broker-reported protection', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      const decision = await claimed(account.id, token);
+
+      const res = await request(app, {
+        method: 'POST',
+        url: `/collector/${account.id}/xauusd-rsi/pending-order/${decision.id}/result`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ok: true, ticket: 7777, filledPrice: 4345.5, brokerStopLoss: 4350.5, brokerTakeProfit: 4340.5 },
+      });
+      expect(res.statusCode).toBeLessThan(300);
+
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
+      expect(after.orderStatus).toBe('FILLED');
+      expect(after.mt5Ticket).toBe(7777);
+      expect(after.filledPrice?.toNumber()).toBeCloseTo(4345.5, 6);
+      // |4345.5 - 4345.45| / 0.01 = 5 points
+      expect(after.slippagePoints?.toNumber()).toBeCloseTo(5, 3);
+      expect(after.brokerStopLoss?.toNumber()).toBeCloseTo(4350.5, 6);
+      expect(after.filledAt).not.toBeNull();
+    });
+
+    it('records a clear rejection as FAILED', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      const decision = await claimed(account.id, token);
+
+      await request(app, {
+        method: 'POST',
+        url: `/collector/${account.id}/xauusd-rsi/pending-order/${decision.id}/result`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ok: false, errorMessage: 'invalid stops' },
+      });
+
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
+      expect(after.orderStatus).toBe('FAILED');
+      expect(after.executionError).toBe('invalid stops');
+      expect(after.filledAt).toBeNull();
+    });
+
+    it('records an ambiguous response as UNKNOWN, NOT as FAILED', async () => {
+      // This is the distinction that keeps the position slot occupied. Marking
+      // a lost response as failed would let a second order through while the
+      // first may well be open at the broker.
+      const { account, token } = await setupAccountWithToken(prisma);
+      const decision = await claimed(account.id, token);
+
+      await request(app, {
+        method: 'POST',
+        url: `/collector/${account.id}/xauusd-rsi/pending-order/${decision.id}/result`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ok: false, uncertain: true, errorMessage: 'no response from terminal' },
+      });
+
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
+      expect(after.orderStatus).toBe('UNKNOWN');
+      expect(after.filledAt).toBeNull();
+    });
+
+    it('an UNKNOWN decision still occupies the one-position slot', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      const decision = await claimed(account.id, token);
+      await request(app, {
+        method: 'POST',
+        url: `/collector/${account.id}/xauusd-rsi/pending-order/${decision.id}/result`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ok: false, uncertain: true, errorMessage: 'lost' },
+      });
+
+      // A second decision queued afterwards must not be served.
+      await queueDecision(account.id);
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+    });
+  });
+
+  it('rejects a poll for an account the token is not bound to', async () => {
+    const { token } = await setupAccountWithToken(prisma);
+    const other = await setupAccountWithToken(prisma);
+
+    const res = await request(app, {
+      method: 'GET',
+      url: `/collector/${other.account.id}/xauusd-rsi/pending-order`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+  });
+});

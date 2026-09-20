@@ -241,7 +241,13 @@ export class RsiLiquidationService {
       // position.
       if (item.status === 'SUBMITTED' && item.lastAttemptAt) {
         const sinceSeconds = (nowT - item.lastAttemptAt.getTime()) / 1000;
-        if (sinceSeconds < RSI_LIQUIDATION_ATTEMPT_TIMEOUT_SECONDS) continue;
+        if (sinceSeconds < RSI_LIQUIDATION_ATTEMPT_TIMEOUT_SECONDS) {
+          notes.push(
+            `liquidation item ${item.ticket}: a close attempt is already in flight (${sinceSeconds.toFixed(0)}s ago, ` +
+              `waiting up to ${RSI_LIQUIDATION_ATTEMPT_TIMEOUT_SECONDS}s for broker confirmation) — not duplicating it`,
+          );
+          continue;
+        }
       }
 
       const existingRequest = await this.prisma.goldCloseRequest.findFirst({
