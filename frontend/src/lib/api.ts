@@ -650,6 +650,10 @@ export interface XauusdRsiExposureItem {
   volume: number;
   magicNumber: number | null;
   owned: boolean;
+  ruleFamily: 'RETEST' | 'EXTREME' | null;
+  openPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
   description: string;
 }
 
@@ -659,7 +663,7 @@ export interface XauusdRsiStatus {
     specHash: string;
     symbol: string;
     timeframe: string;
-    magicNumber: number;
+    magicNumbers: { RETEST: number; EXTREME: number };
     executionMode: 'OFF' | 'SHADOW' | 'DEMO';
     isTheOnlyEnabledEntryStrategy: boolean;
   };
@@ -669,6 +673,16 @@ export interface XauusdRsiStatus {
     demoVerified: boolean;
     equity: number | null;
     accountCurrency: string | null;
+    marginMode: string;
+    supportsTwoIndependentPositions: boolean;
+    marginModeNote: string;
+  };
+  slots: {
+    RETEST: { occupied: boolean | null; reason: string | null; holders: XauusdRsiExposureItem[] };
+    EXTREME: { occupied: boolean | null; reason: string | null; holders: XauusdRsiExposureItem[] };
+    maxConcurrentPositions: number;
+    note: string;
+    reservedStopRisk: { amount: number; count: number; note: string } | null;
   };
   indicator: {
     period: number;
@@ -676,6 +690,8 @@ export interface XauusdRsiStatus {
     smoothing: string;
     appliedPriceProvenance: string;
     parityVerified: boolean;
+    parityMaxAbsDifference: number;
+    paritySource: string;
     currentRsi: number | null;
     warmedUp: boolean;
     warmupBarsRequired: number;
@@ -687,8 +703,7 @@ export interface XauusdRsiStatus {
     sell1: number;
     buy1: number;
     buy2: number;
-    extremeSellStated: number;
-    extremeSellCrossingUsed: number;
+    extremeSell: number;
     extremeBuy: number;
     note: string;
   };
@@ -710,6 +725,15 @@ export interface XauusdRsiStatus {
     gapResets: number;
     needsReseed: boolean;
     cursor: unknown;
+    cadence: {
+      targetMs: number;
+      samples: number;
+      medianMs: number | null;
+      p95Ms: number | null;
+      maxMs: number | null;
+      withinTarget: boolean | null;
+      detail: string;
+    };
   };
   schedule: {
     timeZone: string;
@@ -797,6 +821,7 @@ export interface XauusdRsiStatus {
     evaluatedAt: string;
     observedAt: string;
     direction: string;
+    ruleFamily?: 'RETEST' | 'EXTREME';
     setupKinds: string[];
     rsi: number;
     previousRsi: number | null;

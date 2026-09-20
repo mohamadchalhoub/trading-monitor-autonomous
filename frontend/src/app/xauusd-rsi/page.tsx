@@ -49,7 +49,7 @@ export default async function XauusdRsiPage() {
     );
   }
 
-  const { strategy, demo, indicator, thresholds, patternState, quote, observation, schedule, brokerSession, liquidation, exposure, order, risk, controls, heartbeats, recentDecisions, confirmedEntries } = status;
+  const { strategy, demo, slots, indicator, thresholds, patternState, quote, observation, schedule, brokerSession, liquidation, exposure, order, risk, controls, heartbeats, recentDecisions, confirmedEntries } = status;
 
   return (
     <div className="flex flex-col gap-8">
@@ -58,8 +58,9 @@ export default async function XauusdRsiPage() {
       <section className="rounded-lg border border-border bg-surface px-4 py-3 text-sm">
         <p className="text-text-muted">
           <strong className="text-text">{strategy.version}</strong> (spec {strategy.specHash}) — the only enabled entry
-          strategy in this application. Magic number {strategy.magicNumber}. Every previous strategy is retired and
-          cannot submit an entry; positions they opened keep their own protective management until they resolve.
+          strategy in this application. Two execution slots, magic {strategy.magicNumbers.RETEST} (RETEST) and{" "}
+          {strategy.magicNumbers.EXTREME} (EXTREME). Every previous strategy is retired and cannot submit an entry;
+          positions they opened keep their own protective management until they resolve.
         </p>
       </section>
 
@@ -96,11 +97,54 @@ export default async function XauusdRsiPage() {
 
       {/* ---------------------------------------------------------------- */}
       <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted mb-3">
+          Execution slots — at most {slots.maxConcurrentPositions} positions
+        </h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Tile
+            label="RETEST slot"
+            value={slots.RETEST.occupied === null ? "unknown" : slots.RETEST.occupied ? "HELD" : "free"}
+            tone={slots.RETEST.occupied ? "warn" : "ok"}
+          />
+          <Tile
+            label="EXTREME slot"
+            value={slots.EXTREME.occupied === null ? "unknown" : slots.EXTREME.occupied ? "HELD" : "free"}
+            tone={slots.EXTREME.occupied ? "warn" : "ok"}
+          />
+          <Tile
+            label="Broker margin mode"
+            value={demo.marginMode}
+            tone={demo.supportsTwoIndependentPositions ? "ok" : "down"}
+          />
+          <Tile
+            label="Reserved stop risk"
+            value={slots.reservedStopRisk ? `${n(slots.reservedStopRisk.amount)} (${slots.reservedStopRisk.count})` : "—"}
+          />
+        </div>
+        <p className="text-xs text-text-muted mt-2">{slots.note}</p>
+        <p className={`text-xs mt-1 ${demo.supportsTwoIndependentPositions ? "text-text-muted" : "text-down"}`}>
+          {demo.marginModeNote}
+        </p>
+        {slots.RETEST.reason && <p className="text-xs text-text-muted mt-1">RETEST: {slots.RETEST.reason}</p>}
+        {slots.EXTREME.reason && <p className="text-xs text-text-muted mt-1">EXTREME: {slots.EXTREME.reason}</p>}
+        {slots.reservedStopRisk && (
+          <p className="text-xs text-text-muted mt-1">
+            Combined-risk accounting includes reserved stop risk: {slots.reservedStopRisk.note}
+          </p>
+        )}
+      </section>
+
+      {/* ---------------------------------------------------------------- */}
+      <section>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted mb-3">Indicator</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Tile label="RSI now" value={n(indicator.currentRsi, 2)} />
           <Tile label="Period" value={String(indicator.period)} />
-          <Tile label="Applied to" value={`${indicator.appliedPrice} (assumed)`} tone="warn" />
+          <Tile
+            label="Applied to"
+            value={`${indicator.appliedPrice} (${indicator.parityVerified ? "verified" : "assumed"})`}
+            tone={indicator.parityVerified ? "ok" : "warn"}
+          />
           <Tile
             label="Warm-up"
             value={indicator.warmedUp ? "complete" : `${indicator.closedBarsApplied}/${indicator.warmupBarsRequired}`}
@@ -108,9 +152,7 @@ export default async function XauusdRsiPage() {
           />
         </div>
         <p className="text-xs text-text-muted mt-2">
-          Provenance: {indicator.appliedPriceProvenance}. Parity against the terminal has{" "}
-          <strong>{indicator.parityVerified ? "been verified" : "not been verified"}</strong>, so exact screenshot
-          parity is not claimed.
+          Provenance: {indicator.appliedPriceProvenance} Source: {indicator.paritySource}.
         </p>
         <p className="text-xs text-text-muted mt-1">{indicator.flatPriceBehaviourNote}</p>
       </section>
@@ -123,7 +165,7 @@ export default async function XauusdRsiPage() {
           <Tile label="Sell 1" value={String(thresholds.sell1)} />
           <Tile label="Buy 1" value={String(thresholds.buy1)} />
           <Tile label="Buy 2" value={String(thresholds.buy2)} />
-          <Tile label="Extreme SELL" value={`${thresholds.extremeSellCrossingUsed} (stated ${thresholds.extremeSellStated})`} tone="warn" />
+          <Tile label="Extreme SELL" value={String(thresholds.extremeSell)} />
           <Tile label="Extreme BUY" value={String(thresholds.extremeBuy)} />
         </div>
         <p className="text-xs text-text-muted mt-2">{thresholds.note}</p>
@@ -191,6 +233,13 @@ export default async function XauusdRsiPage() {
           rejected · {observation.outOfOrderRejected.toLocaleString()} out-of-order rejected ·{" "}
           {observation.gapResets.toLocaleString()} gap resets
           {observation.needsReseed ? " · INDICATOR RESEED OUTSTANDING" : ""}
+        </p>
+        <p
+          className={`text-xs mt-1 ${
+            observation.cadence.withinTarget === false ? "text-down" : "text-text-muted"
+          }`}
+        >
+          Measured cadence: {observation.cadence.detail}
         </p>
       </section>
 
@@ -368,6 +417,7 @@ export default async function XauusdRsiPage() {
               <thead className="text-xs uppercase tracking-wide text-text-muted">
                 <tr>
                   <th className="text-left py-1">Observed</th>
+                  <th className="text-left py-1">Slot</th>
                   <th className="text-left py-1">Setup</th>
                   <th className="text-left py-1">Dir</th>
                   <th className="text-left py-1">RSI</th>
@@ -379,6 +429,7 @@ export default async function XauusdRsiPage() {
                 {recentDecisions.map((d) => (
                   <tr key={d.id} className="border-t border-border align-top">
                     <td className="py-1 font-mono text-xs whitespace-nowrap">{formatDateTime(d.observedAt)}</td>
+                    <td className="py-1 font-mono text-xs">{d.ruleFamily ?? "—"}</td>
                     <td className="py-1 text-xs">{d.setupKinds.join(", ")}</td>
                     <td className="py-1 font-mono text-xs">{d.direction}</td>
                     <td className="py-1 font-mono text-xs">

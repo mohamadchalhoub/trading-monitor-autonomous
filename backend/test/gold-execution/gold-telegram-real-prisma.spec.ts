@@ -15,6 +15,11 @@ import { GoldTelegramService } from '../../src/gold-execution/gold-telegram.serv
  * that the dedup check is a real DB round-trip, not the earlier unit test's
  * mocked assumption of one.
  *
+ * Rows are now keyed PER RECIPIENT: the sender appends the destination chat
+ * to the caller's logical key, so one event fanned out to several recipients
+ * produces one row each. These cases therefore look the row up by prefix
+ * rather than by the bare logical key.
+ *
  * Every dedupKey/eventType here is prefixed `SYNTHETIC_TEST_` so it is
  * unambiguously distinguishable from any real trading notification in the
  * same table, and this file cleans its own rows up afterward.
@@ -56,7 +61,7 @@ describe('GoldTelegramService — real Prisma-backed durable dedup (synthetic ev
     await service.notify('SYNTHETIC_TEST_EVENT', dedupKey, 'synthetic test message — not a real trading notification');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const row = await prisma.goldTelegramNotification.findUnique({ where: { dedupKey } });
+    const row = await prisma.goldTelegramNotification.findFirst({ where: { dedupKey: { startsWith: dedupKey } } });
     expect(row).not.toBeNull();
     expect(row?.status).toBe('SENT');
     expect(row?.messageId).toBe(999999);
@@ -71,7 +76,7 @@ describe('GoldTelegramService — real Prisma-backed durable dedup (synthetic ev
     await service.notify('SYNTHETIC_TEST_EVENT', dedupKey, 'second synthetic send attempt — must be skipped');
 
     expect(fetchMock).toHaveBeenCalledTimes(1); // not 2
-    const rows = await prisma.goldTelegramNotification.findMany({ where: { dedupKey } });
+    const rows = await prisma.goldTelegramNotification.findMany({ where: { dedupKey: { startsWith: dedupKey } } });
     expect(rows).toHaveLength(1); // still exactly one row, not two
   });
 
@@ -93,7 +98,7 @@ describe('GoldTelegramService — real Prisma-backed durable dedup (synthetic ev
 
     await service.notify('SYNTHETIC_TEST_EVENT', dedupKey, 'synthetic failing send');
 
-    const row = await prisma.goldTelegramNotification.findUnique({ where: { dedupKey } });
+    const row = await prisma.goldTelegramNotification.findFirst({ where: { dedupKey: { startsWith: dedupKey } } });
     expect(row?.status).toBe('FAILED');
     expect(row?.lastError).toBeTruthy();
   });

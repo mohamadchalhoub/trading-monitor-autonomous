@@ -68,7 +68,11 @@ describe('GoldTelegramService — routing isolation from the shared legacy Teleg
     const service = new GoldTelegramService(prismaMock, configService);
     await service.notify('FILL_CONFIRMED', 'dedup-2', 'test message');
 
-    expect(prismaMock.goldTelegramNotification.findUnique).toHaveBeenCalledWith({ where: { dedupKey: 'dedup-2' } });
+    // Per-recipient key: the destination chat is appended to the caller's
+    // logical key, which is what lets a retry re-send only what failed.
+    expect(prismaMock.goldTelegramNotification.findUnique).toHaveBeenCalledWith({
+      where: { dedupKey: expect.stringContaining('dedup-2#chat:') },
+    });
     expect(prismaMock.goldTelegramNotification.upsert).toHaveBeenCalledTimes(1);
   });
 
@@ -85,7 +89,27 @@ describe('GoldTelegramService — routing isolation from the shared legacy Teleg
     configValues.GOLD_TELEGRAM_BOT_TOKEN = '';
     configValues.GOLD_TELEGRAM_CHAT_ID = '';
     const service = new GoldTelegramService(prismaMock, configService);
-    await expect(service.notify('FILL_CONFIRMED', 'dedup-4', 'test message')).resolves.toBeUndefined();
+
+    // `notify` now returns a per-recipient delivery report rather than void,
+    // so the assertion is that it RESOLVES with the problem described rather
+    // than throwing into the trading path that called it.
+    const report = await service.notify('FILL_CONFIRMED', 'dedup-4', 'test message');
+
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(report.results).toHaveLength(0);
+    expect(report.problems.join(' ')).toMatch(/not configured/);
+  });
+
+  it('still sends to the remaining recipients when one of them is malformed', async () => {
+    // One recipient's configuration being wrong must not silence the others.
+    configValues.GOLD_TELEGRAM_BOT_TOKEN = 'token';
+    configValues.GOLD_TELEGRAM_CHAT_ID = '111';
+    configValues.GOLD_TELEGRAM_CHAT_IDS = 'Broken:not-a-number,Friend:222';
+    const service = new GoldTelegramService(prismaMock, configService);
+
+    const report = await service.notify('FILL_CONFIRMED', 'dedup-5', 'test message');
+
+    expect(report.problems.join(' ')).toMatch(/not a valid Telegram chat id/);
+    expect(report.results.map((r) => r.recipient.chatId).sort()).toEqual(['111', '222']);
   });
 });
