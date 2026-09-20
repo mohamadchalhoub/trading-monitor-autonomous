@@ -94,21 +94,25 @@ async function main() {
     session = await accountState.resolveBrokerSessionOpen();
   }
 
+  const watch = readWatchState();
+
   const eligibility = evaluateEntryEligibility({
     utcMs: Date.now(),
     brokerSessionOpen: session.open,
     dataFresh: session.open === true,
-    recoveryComplete: false,
+    // Read from the watch process's own persisted state rather than assumed.
+    // Hardcoding `false` here made an earlier run report the block as
+    // RECOVERY_INCOMPLETE when the real blocker was the kill switch.
+    recoveryComplete: watch.recoveryComplete,
     otherBlock: kill.active ? `kill switch active (${kill.source})` : stop.active ? `stop-new-entries active (${stop.source})` : mode === 'OFF' ? 'execution mode OFF' : null,
   });
-
-  const watchRunning = readWatchRunning();
 
   const executionState = [
     `mode ${mode}`,
     kill.active ? 'KILL SWITCH ENGAGED' : 'kill switch off',
     stop.active ? 'entries stopped' : 'entries not stopped',
-    watchRunning ? 'watch process running' : 'watch process NOT running',
+    watch.running ? 'watch process running' : 'watch process NOT running',
+    watch.recoveryComplete ? 'recovery complete' : 'recovery incomplete',
     eligibility.entriesAllowed ? 'eligible for entries' : `entries blocked (${eligibility.blockReason})`,
   ].join('; ');
 
@@ -170,17 +174,25 @@ async function main() {
   if (anyFailed) process.exitCode = 1;
 }
 
-/** Whether the standalone watch process has cycled recently. */
-function readWatchRunning(): boolean {
+/**
+ * The standalone watch process's own reported state.
+ *
+ * Read rather than assumed: this message states the execution state, and a
+ * guessed value would make it wrong in exactly the situation where an
+ * operator most needs it to be right.
+ */
+function readWatchState(): { running: boolean; recoveryComplete: boolean } {
   const statePath = join(defaultStateDir(), 'xauusd-rsi-watch-state.json');
-  if (!existsSync(statePath)) return false;
+  if (!existsSync(statePath)) return { running: false, recoveryComplete: false };
   try {
-    const state = JSON.parse(readFileSync(statePath, 'utf8')) as { recovery?: { lastCycleAtUtc?: string | null } };
+    const state = JSON.parse(readFileSync(statePath, 'utf8')) as {
+      recovery?: { lastCycleAtUtc?: string | null; recoveryComplete?: boolean };
+    };
     const last = state.recovery?.lastCycleAtUtc;
-    if (!last) return false;
-    return Date.now() - new Date(last).getTime() < 300_000;
+    const running = last ? Date.now() - new Date(last).getTime() < 300_000 : false;
+    return { running, recoveryComplete: state.recovery?.recoveryComplete === true };
   } catch {
-    return false;
+    return { running: false, recoveryComplete: false };
   }
 }
 
