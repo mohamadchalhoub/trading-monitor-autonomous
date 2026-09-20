@@ -134,6 +134,37 @@ TICK_SYNC_OVERLAP_SECONDS = 30
 # a given range.
 TICK_SYNC_SOURCE = "collector_live_sync"
 
+# xauusd-m1-rsi-retest-extremes-v1 — the LIVE tick stream that feeds the
+# strategy's intrabar RSI, deliberately separate from the archival tick sync
+# above.
+#
+# The archival sync runs every TICK_SYNC_INTERVAL_SECONDS (300s) on a
+# background thread because a tick call can hang for ~106s. That cadence is
+# right for building history and useless for trading: a signal this strategy
+# can only act on for about a minute would be five minutes stale before the
+# backend ever saw the tick that produced it.
+#
+# So this second path fetches a SMALL, recent window (seconds, not minutes)
+# for one symbol on the MAIN loop, at poll_interval_seconds cadence. A window
+# this narrow returns quickly, and the main loop's existing non-blocking lock
+# discipline is unchanged. The ticks land in the same deduplicated store via
+# the same /collector/ticks endpoint, so the archival sync and this one can
+# freely overlap — whichever sees a tick first, the other's copy is dropped
+# by the database's own uniqueness constraint.
+#
+# Honest limitation: delivery latency is up to one poll interval, so the
+# backend observes a crossing a few seconds after it happened. No crossing is
+# MISSED (copy_ticks_range returns every tick in the window), but the
+# strategy's own signal-age and entry-deviation guards may legitimately
+# reject a signal that arrived too late to still be the event the rules
+# described. That is intended behaviour, not a defect.
+RSI_TICK_SYMBOL = "XAUUSD"
+# How far back each fetch reaches. Comfortably wider than one poll interval
+# so a slow cycle cannot leave a hole; the overlap costs nothing because
+# duplicates are rejected at the database.
+RSI_TICK_WINDOW_SECONDS = 90
+
+
 
 class CollectorApp:
     def __init__(self, config: Config, client: Mt5Client, api: ApiClient, executor: Executor) -> None:
@@ -174,6 +205,7 @@ class CollectorApp:
             "autonomous_execution_enabled": self._config.autonomous_execution_enabled,
             "gold_execution_enabled": self._config.gold_execution_enabled,
             "trend_breakout_execution_enabled": self._config.trend_breakout_execution_enabled,
+            "rsi_execution_enabled": self._config.rsi_execution_enabled,
         })
 
         backoff = self._config.reconnect_initial_backoff_seconds
@@ -207,6 +239,12 @@ class CollectorApp:
                         self._poll_and_execute_pending_gold_order()
                         self._poll_and_execute_gold_close_request()
                         self._poll_and_execute_gold_restore_protection_request()
+                    if self._config.rsi_execution_enabled:
+                        # Ticks FIRST, then the order poll: a signal produced
+                        # from this cycle's ticks can then be picked up on the
+                        # very next cycle rather than one full interval later.
+                        self._stream_rsi_ticks()
+                        self._poll_and_execute_pending_rsi_order()
                     if self._config.trend_breakout_execution_enabled:
                         # Both instruments go live together (confirmed
                         # rollout decision) — looped every cycle, never
@@ -412,6 +450,165 @@ class CollectorApp:
             # visibility problem, not a trading-safety one, but it does mean
             # the decision row stays stuck as SENT until this is noticed.
             logger.error("failed to report execution result back to backend", extra={"decision_id": decision_id, "error": str(exc)})
+
+    def _stream_rsi_ticks(self) -> None:
+        """Pushes the last RSI_TICK_WINDOW_SECONDS of XAUUSD ticks to the
+        backend so the active strategy observes ordered broker ticks in
+        near-real-time. See RSI_TICK_WINDOW_SECONDS' own comment for why this
+        exists alongside the 5-minute archival sync.
+
+        Never raises: a tick-stream failure must not stop snapshots, trades,
+        candles or the order/close polls that protective work depends on.
+        """
+        now = datetime.now(tz=timezone.utc)
+        window_start = now - timedelta(seconds=RSI_TICK_WINDOW_SECONDS)
+        try:
+            ticks = self._client.get_ticks(RSI_TICK_SYMBOL, window_start, now)
+        except Exception as exc:  # noqa: BLE001 - MT5 boundary; never crash the loop
+            logger.warning("rsi tick stream: MT5 call raised, will retry next cycle", extra={
+                "symbol": RSI_TICK_SYMBOL, "error": str(exc),
+            })
+            return
+
+        if not ticks:
+            # A legitimate answer (market closed, or genuinely no ticks in a
+            # 90s window) - not an error, and deliberately not logged at
+            # warning level so a quiet weekend does not fill the log.
+            return
+
+        try:
+            payload = build_ticks_payload(RSI_TICK_SYMBOL, None, None, None, ticks)
+            result = self._api.post_ticks(payload)
+            logger.debug("rsi tick stream pushed", extra={
+                "symbol": RSI_TICK_SYMBOL, "row_count": len(ticks), "inserted": result.get("inserted"),
+            })
+        except Exception as exc:  # noqa: BLE001
+            # Deliberately broader than ApiClientError: payload construction
+            # sits inside this block too, so a single malformed tick from the
+            # terminal would otherwise escape and kill the main loop. Losing
+            # one tick batch is recoverable (the next cycle overlaps this
+            # window); losing the loop is not, because the order poll and the
+            # Friday close requests run on it.
+            logger.warning("rsi tick stream failed, will retry next cycle", extra={
+                "symbol": RSI_TICK_SYMBOL, "error": str(exc),
+            })
+
+    def _poll_and_execute_pending_rsi_order(self) -> None:
+        """Polls the active strategy's own route and executes an approved
+        entry. Same failure posture as every other execution poll here: never
+        crashes the main loop, and every outcome is reported back so nothing
+        is left silently in flight.
+
+        One deliberate behavioural difference from the retired strategies'
+        polls: when the broker's response is ambiguous (the executor reports
+        neither a confirmed fill nor a definite rejection), this reports
+        `uncertain=True` rather than `ok=False`. The backend records that as
+        UNKNOWN and keeps the position slot occupied, because a lost response
+        does not mean the order never reached the broker.
+        """
+        try:
+            response = self._api.get_pending_rsi_order(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("xauusd-rsi pending-order poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        order = response.get("order")
+        if not order:
+            return
+
+        logger.info("xauusd-rsi pending order claimed, attempting execution", extra={
+            "decision_id": order["decisionId"], "side": order["side"],
+            "volume": order["volume"], "symbol": order["symbol"],
+        })
+
+        try:
+            result = self._executor.send_bracket_order(
+                side=order["side"],
+                volume=order["volume"],
+                stop_loss_points=order["stopLossPoints"],
+                take_profit_points=order["takeProfitPoints"],
+                magic=order["magic"],
+                comment=order["comment"],
+                symbol=order["symbol"],
+                point_size=order["pointSize"],
+            )
+        except DemoAccountRequiredError as exc:
+            logger.critical("XAUUSD-RSI: DEMO ACCOUNT CHECK FAILED - refusing to trade", extra={"error": str(exc)})
+            self._report_rsi_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - must never crash the main loop
+            logger.error("xauusd-rsi order execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_rsi_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+
+        # A non-ok result with neither a ticket nor a broker retcode means the
+        # executor could not establish what happened (executor._unknown_result)
+        # - genuinely uncertain, as opposed to a broker that clearly refused.
+        uncertain = (not result.ok) and result.ticket is None and result.retcode is None
+
+        logger.info("xauusd-rsi order execution result", extra={
+            "decision_id": order["decisionId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "uncertain": uncertain, "error": result.error_message,
+        })
+
+        broker_sl, broker_tp = self._read_position_protection(result.ticket, order["symbol"])
+        self._report_rsi_execution_result(
+            order["decisionId"], ok=result.ok, ticket=result.ticket,
+            filled_price=result.price, error_message=result.error_message,
+            uncertain=uncertain, broker_stop_loss=broker_sl, broker_take_profit=broker_tp,
+        )
+
+    def _read_position_protection(self, ticket, symbol: str):
+        """Reads the SL/TP the broker ACTUALLY attached to the freshly opened
+        position, so the backend can reconcile them against what was requested
+        instead of assuming the request was honoured verbatim.
+
+        Best-effort by design: a failure returns (None, None), which the
+        backend records as "not verified" rather than as a match.
+        """
+        if ticket is None:
+            return (None, None)
+        try:
+            position = self._executor.find_any_position(symbol)
+            if position is None or getattr(position, "ticket", None) != ticket:
+                return (None, None)
+            sl = getattr(position, "sl", None)
+            tp = getattr(position, "tp", None)
+            # MT5 reports 0 for "no level set" - surfaced as None, never as a
+            # real price of zero.
+            return (sl if sl else None, tp if tp else None)
+        except Exception as exc:  # noqa: BLE001 - diagnostic only
+            logger.warning("xauusd-rsi: could not read broker protection after fill", extra={
+                "ticket": ticket, "error": str(exc),
+            })
+            return (None, None)
+
+    def _report_rsi_execution_result(
+        self, decision_id: str, *, ok: bool, ticket=None,
+        filled_price=None, error_message=None,
+        uncertain: bool = False, broker_stop_loss=None,
+        broker_take_profit=None,
+    ) -> None:
+        payload = {"ok": ok, "uncertain": uncertain}
+        if ticket is not None:
+            payload["ticket"] = ticket
+        if filled_price is not None:
+            payload["filledPrice"] = filled_price
+        if broker_stop_loss is not None:
+            payload["brokerStopLoss"] = broker_stop_loss
+        if broker_take_profit is not None:
+            payload["brokerTakeProfit"] = broker_take_profit
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_rsi_execution_result(self._config.collector_account_id, decision_id, payload)
+        except ApiClientError as exc:
+            # The backend's own startup reconciliation is the backstop: an
+            # unreported result stays SENT and is resolved against real broker
+            # state later, never assumed either way.
+            logger.error("xauusd-rsi: failed to report execution result to backend", extra={
+                "decision_id": decision_id, "error": str(exc),
+            })
 
     def _poll_and_execute_pending_gold_order(self) -> None:
         """Gold (XAUUSD) analog of `_poll_and_execute_pending_order` — its

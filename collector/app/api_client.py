@@ -138,6 +138,16 @@ class ApiClient:
     def post_gold_restore_protection_result(self, account_id: str, request_id: str, result: dict[str, Any]) -> dict[str, Any]:
         return self._post(f"/collector/{account_id}/gold-execution/restore-protection-request/{request_id}/result", result)
 
+    # xauusd-m1-rsi-retest-extremes-v1 — the active strategy's OWN route.
+    # Deliberately separate from every pair above so a retired strategy's
+    # wire contract and this one can never be confused, and so disabling one
+    # can never disable the other.
+    def get_pending_rsi_order(self, account_id: str) -> dict[str, Any]:
+        return self._get(f"/collector/{account_id}/xauusd-rsi/pending-order")
+
+    def post_rsi_execution_result(self, account_id: str, decision_id: str, result: dict[str, Any]) -> dict[str, Any]:
+        return self._post(f"/collector/{account_id}/xauusd-rsi/pending-order/{decision_id}/result", result)
+
     # Trend-breakout (EURUSD + XAUUSD) execution — its OWN route, deliberately
     # separate from both the EURUSD pair and the gold pair above
     # (backend's TrendBreakoutExecutionController), instrument-parameterized

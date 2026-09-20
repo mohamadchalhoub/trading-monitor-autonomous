@@ -151,6 +151,15 @@ class Config:
     # together" decision.
     trend_breakout_execution_enabled: bool = False
 
+    # xauusd-m1-rsi-retest-extremes-v1 — the active strategy. Its OWN flag,
+    # off by default like every other execution flag here, so enabling it is
+    # always a deliberate act. When true the collector does two extra things
+    # each cycle: it streams recent XAUUSD ticks to the backend at the main
+    # poll cadence (so the strategy observes ordered broker ticks within
+    # seconds rather than waiting for the 5-minute archival tick sync), and
+    # it polls the strategy's own pending-order route.
+    rsi_execution_enabled: bool = False
+
     def timeframes_for(self, symbol: str) -> tuple[str, ...]:
         return (self.candle_timeframes_by_symbol or {}).get(symbol, self.candle_timeframes)
 
@@ -258,6 +267,7 @@ class Config:
         autonomous_execution_enabled = e.get("AUTONOMOUS_EXECUTION_ENABLED", "false").strip().lower() == "true"
         gold_execution_enabled = e.get("GOLD_EXECUTION_ENABLED", "false").strip().lower() == "true"
         trend_breakout_execution_enabled = e.get("TREND_BREAKOUT_EXECUTION_ENABLED", "false").strip().lower() == "true"
+        rsi_execution_enabled = e.get("XAUUSD_RSI_EXECUTION_ENABLED", "false").strip().lower() == "true"
 
         return Config(
             mt5_login=mt5_login,
@@ -286,6 +296,7 @@ class Config:
             candle_timeframes_by_symbol=candle_timeframes_by_symbol,
             gold_execution_enabled=gold_execution_enabled,
             trend_breakout_execution_enabled=trend_breakout_execution_enabled,
+            rsi_execution_enabled=rsi_execution_enabled,
         )
 
     @property

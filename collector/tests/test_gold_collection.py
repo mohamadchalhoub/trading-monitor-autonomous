@@ -60,6 +60,12 @@ class _FakeConfig:
     candle_initial_sync_days: int = 1000
     autonomous_execution_enabled: bool = False
     gold_execution_enabled: bool = False
+    # Added when each strategy was wired in. Keeping this fake in step with
+    # the real Config matters: the runner logs every flag at startup, so a
+    # missing attribute fails the very first loop cycle rather than the
+    # feature under test.
+    trend_breakout_execution_enabled: bool = False
+    rsi_execution_enabled: bool = False
     mt5_broker_timezone: str = "UTC"  # UTC makes the candle-sync timezone conversion a no-op for tests unrelated to it
     candle_timeframes_by_symbol: dict = field(default_factory=lambda: {"XAUUSD": ("M1", "H4")})
 
