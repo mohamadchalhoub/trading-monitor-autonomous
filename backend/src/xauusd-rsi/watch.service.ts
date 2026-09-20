@@ -90,7 +90,25 @@ export class RsiWatchService {
     let reseeded = false;
     if (!engineWarmedUp(state.engine)) {
       const seed = await this.reseedFromCandles(state);
-      state = { ...state, engine: seed.engine, recovery: { ...state.recovery, lastReseedAtUtc: new Date(nowT).toISOString() } };
+      // The observation cursor must be moved to the end of the seeded range.
+      //
+      // Seeding leaves the engine's own clock at the last closed bar it
+      // applied. Any tick older than that is, by definition, already inside
+      // the indicator and would be rejected as out-of-order — so leaving the
+      // cursor behind the seed point makes the loop re-read and discard the
+      // same historical ticks on every cycle, forever. Observed live on a
+      // cold start: 44,992 ticks read, 44,992 rejected, none applied.
+      const cursorFloor = seed.lastSeededBarEndT;
+      const cursor =
+        cursorFloor !== null && (state.cursor.lastTimestampMs === null || state.cursor.lastTimestampMs < cursorFloor)
+          ? { lastTimestampMs: cursorFloor, lastTickKey: null, lastTimestampKeys: [] }
+          : state.cursor;
+      state = {
+        ...state,
+        engine: seed.engine,
+        cursor,
+        recovery: { ...state.recovery, lastReseedAtUtc: new Date(nowT).toISOString() },
+      };
       reseeded = true;
       notes.push(seed.detail);
     }
@@ -346,7 +364,7 @@ export class RsiWatchService {
    * would make the resulting average one no real sequence produced, so the
    * seed starts after the most recent gap instead of bridging it.
    */
-  private async reseedFromCandles(state: RsiWatchState): Promise<{ engine: RsiWatchState['engine']; detail: string }> {
+  private async reseedFromCandles(state: RsiWatchState): Promise<{ engine: RsiWatchState['engine']; detail: string; lastSeededBarEndT: number | null }> {
     const required = SPEC.rsi.period + 1 + SPEC.rsi.warmupBars;
     const rows = await this.prisma.historicalCandle.findMany({
       where: { symbol: RSI_SYMBOL, timeframe: 'M1' },
@@ -355,7 +373,11 @@ export class RsiWatchService {
       select: { openTime: true, close: true },
     });
     if (rows.length === 0) {
-      return { engine: state.engine, detail: 'No M1 candle history available — the indicator cannot be seeded, so signals stay suppressed.' };
+      return {
+        engine: state.engine,
+        detail: 'No M1 candle history available — the indicator cannot be seeded, so signals stay suppressed.',
+        lastSeededBarEndT: null,
+      };
     }
 
     const ascending = rows.slice().reverse();
@@ -376,7 +398,8 @@ export class RsiWatchService {
     const detail = warmed
       ? `Indicator seeded from ${contiguous.length} contiguous closed M1 bars ending ${contiguous[contiguous.length - 1].openTime.toISOString()}; warm-up satisfied.`
       : `Indicator seeded from ${contiguous.length} contiguous closed M1 bars, which is short of the ${required} required — signals stay suppressed until more history is available.`;
-    return { engine, detail };
+    const lastBar = contiguous[contiguous.length - 1];
+    return { engine, detail, lastSeededBarEndT: lastBar.openTime.getTime() + M1_MS };
   }
 
   /**
