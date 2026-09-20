@@ -20,6 +20,7 @@ import { RsiCoordinatorService } from '../../src/xauusd-rsi/coordinator.service'
 import { RsiLiquidationService } from '../../src/xauusd-rsi/liquidation.service';
 import { RsiRuntimeSettingsService } from '../../src/xauusd-rsi/runtime-settings.service';
 import { RsiWatchService } from '../../src/xauusd-rsi/watch.service';
+import { RsiDecisionService } from '../../src/xauusd-rsi/decision.service';
 import { createWatchState, RsiWatchStore } from '../../src/xauusd-rsi/state-store';
 import { SPEC } from '../../src/xauusd-rsi/spec';
 import { M1_MS } from '../../src/xauusd-rsi/engine';
@@ -43,10 +44,11 @@ describe('Watch cycle — cold start', () => {
     const runtimeSettings = new RsiRuntimeSettingsService();
     const coordinator = new RsiCoordinatorService(prisma as never, runtimeSettings, accountState);
     const liquidation = new RsiLiquidationService(prisma as never, accountState);
+    const decisions = new RsiDecisionService(prisma as never, accountState);
     // Telegram is stubbed: this file is about observation, and a real send
     // would be an outbound network call from a unit test.
     const telegram = { notify: async () => undefined } as never;
-    watch = new RsiWatchService(prisma as never, coordinator, accountState, liquidation, telegram);
+    watch = new RsiWatchService(prisma as never, coordinator, accountState, liquidation, decisions, telegram);
   });
   afterAll(async () => {
     await prisma.$disconnect();
@@ -162,6 +164,8 @@ describe('Watch cycle — cold start', () => {
         symbol: 'XAUUSD',
         observedAt: new Date(NOW_T - 600_000),
         direction: 'SELL',
+        ruleFamily: 'EXTREME',
+        eventId: 'test-restart-1',
         setupKinds: ['EXTREME_SELL'],
         rsiValue: 99,
         basisPrice: 4300,
@@ -170,7 +174,7 @@ describe('Watch cycle — cold start', () => {
         evidence: {},
         approved: true,
         orderStatus: 'PENDING',
-        magicNumber: 262610190,
+        magicNumber: 262610191,
       },
     });
 
@@ -192,6 +196,8 @@ describe('Watch cycle — cold start', () => {
         symbol: 'XAUUSD',
         observedAt: new Date(NOW_T - 600_000),
         direction: 'BUY',
+        ruleFamily: 'EXTREME',
+        eventId: 'test-restart-2',
         setupKinds: ['EXTREME_BUY'],
         rsiValue: 1,
         basisPrice: 4300,
@@ -200,7 +206,7 @@ describe('Watch cycle — cold start', () => {
         evidence: {},
         approved: true,
         orderStatus: 'SENT',
-        magicNumber: 262610190,
+        magicNumber: 262610191,
       },
     });
 

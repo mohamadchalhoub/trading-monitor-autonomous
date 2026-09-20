@@ -39,18 +39,36 @@ export const RSI_SL_POINTS = RSI_SL_USD / RSI_GOLD_POINT_SIZE; // 500 points
 export const RSI_SL_TP_TOLERANCE_POINTS = 1;
 
 /**
- * A magic number used by no previous strategy in this codebase. The two
- * that came before are 262610180 (legacy EURUSD autonomous) and 262610181
- * (H4 confirmed-retest gold); trend-breakout allocates its own from its
- * instrument config. 262610190 is deliberately well clear of that run so a
- * future off-by-one in either family cannot collide with it.
+ * ONE MAGIC NUMBER PER RULE FAMILY.
  *
- * Ownership matters more here than usual: spec §10 requires that existing
- * old-strategy positions keep their original identity, so this strategy
- * claims ONLY positions carrying this magic number, and never adopts or
- * relabels one it did not open.
+ * This is what makes an open broker position attributable to a specific
+ * execution slot rather than merely to this strategy. With the two families
+ * able to hold a position each at the same time, a single shared magic would
+ * leave close requests, protection remediation, Friday liquidation and the
+ * dashboard unable to say which slot a given ticket belongs to — and unable
+ * to tell whether a family's slot is actually free.
+ *
+ * Both are clear of every number any previous strategy used: 262610180 was
+ * the legacy EURUSD autonomous strategy and 262610181 the H4 confirmed-retest
+ * gold strategy, while trend-breakout allocated its own from instrument
+ * config. This strategy claims ONLY these two, and never adopts or relabels a
+ * position it did not open.
  */
-export const RSI_MAGIC_NUMBER = 262610190;
+export const RSI_MAGIC_RETEST = 262610190;
+export const RSI_MAGIC_EXTREME = 262610191;
+
+/** Every magic number this strategy owns, for ownership and occupancy checks. */
+export const RSI_MAGIC_NUMBERS: readonly number[] = [RSI_MAGIC_RETEST, RSI_MAGIC_EXTREME];
+
+export function rsiMagicForFamily(family: 'RETEST' | 'EXTREME'): number {
+  return family === 'RETEST' ? RSI_MAGIC_RETEST : RSI_MAGIC_EXTREME;
+}
+
+export function rsiFamilyForMagic(magic: number | null | undefined): 'RETEST' | 'EXTREME' | null {
+  if (magic === RSI_MAGIC_RETEST) return 'RETEST';
+  if (magic === RSI_MAGIC_EXTREME) return 'EXTREME';
+  return null;
+}
 
 /**
  * USER RULE (spec §10) — "Keep the current valid configured volume. Default
@@ -84,6 +102,24 @@ export const RSI_MAX_SIGNAL_AGE_SECONDS = 60;
  * usable for entry detection or submission.
  */
 export const RSI_QUOTE_MAX_STALENESS_SECONDS = SPEC.observation.maxStalenessMs / 1000;
+
+/**
+ * Target observation cadence: read XAUUSD and evaluate once per second.
+ *
+ * Both halves matter. A one-second collector feeding a sixty-second evaluator
+ * would satisfy neither the letter nor the point of the requirement, so the
+ * collector's dedicated XAUUSD loop and the strategy's own watch loop are
+ * both driven at this interval.
+ */
+export const RSI_OBSERVATION_INTERVAL_MS = 1_000;
+
+/**
+ * How far behind the target cadence the measured interval may drift before
+ * the dashboard reports the cadence as degraded rather than as met. Generous
+ * enough to absorb ordinary scheduling jitter on a desktop machine, tight
+ * enough that a genuinely stalled loop is visible.
+ */
+export const RSI_OBSERVATION_CADENCE_TOLERANCE_MS = 2_000;
 
 /**
  * Risk caps. Carried over UNWEAKENED from the strategy this one replaces

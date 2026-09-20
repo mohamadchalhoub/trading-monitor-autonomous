@@ -14,7 +14,8 @@
  * counted for occupancy (so the application never opens a second position
  * alongside one), but is never closed, never modified, and never adopted.
  */
-import { RSI_MAGIC_NUMBER, RSI_SL_USD, RSI_TP_USD } from './safety-constants';
+import { RSI_MAGIC_EXTREME, RSI_MAGIC_RETEST, RSI_SL_USD, RSI_TP_USD } from './safety-constants';
+import type { RuleFamily } from './pattern';
 import { XAUUSD_RSI_STRATEGY_VERSION } from './spec';
 
 export interface GoldPositionOwner {
@@ -27,6 +28,12 @@ export interface GoldPositionOwner {
   stopLossUsd: number;
   /** True only for the one currently enabled entry strategy. */
   isActiveStrategy: boolean;
+  /**
+   * Which execution slot this owner's positions occupy, for owners belonging
+   * to the active strategy. Null for a retired strategy, whose positions are
+   * still managed but compete for no slot.
+   */
+  ruleFamily: RuleFamily | null;
   /**
    * Whether this application may close or modify these positions.
    *
@@ -53,16 +60,33 @@ export const ARCHIVED_H4_CONFIRMED_RETEST_OWNER: GoldPositionOwner = {
   takeProfitUsd: 10,
   stopLossUsd: 10,
   isActiveStrategy: false,
+  ruleFamily: null,
   managedByThisApplication: true,
 };
 
-export const XAUUSD_RSI_OWNER: GoldPositionOwner = {
-  magicNumber: RSI_MAGIC_NUMBER,
+/**
+ * The active strategy owns TWO magic numbers, one per execution slot, so an
+ * open ticket identifies not just "this strategy" but which slot it holds.
+ */
+export const XAUUSD_RSI_RETEST_OWNER: GoldPositionOwner = {
+  magicNumber: RSI_MAGIC_RETEST,
   strategyVersion: XAUUSD_RSI_STRATEGY_VERSION,
-  label: 'XAUUSD M1 RSI retest/extremes (active)',
+  label: 'XAUUSD M1 RSI — RETEST slot (active)',
   takeProfitUsd: RSI_TP_USD,
   stopLossUsd: RSI_SL_USD,
   isActiveStrategy: true,
+  ruleFamily: 'RETEST',
+  managedByThisApplication: true,
+};
+
+export const XAUUSD_RSI_EXTREME_OWNER: GoldPositionOwner = {
+  magicNumber: RSI_MAGIC_EXTREME,
+  strategyVersion: XAUUSD_RSI_STRATEGY_VERSION,
+  label: 'XAUUSD M1 RSI — EXTREME slot (active)',
+  takeProfitUsd: RSI_TP_USD,
+  stopLossUsd: RSI_SL_USD,
+  isActiveStrategy: true,
+  ruleFamily: 'EXTREME',
   managedByThisApplication: true,
 };
 
@@ -74,7 +98,11 @@ export const XAUUSD_RSI_OWNER: GoldPositionOwner = {
  * never touched. That is the safe direction to fail, and it is disclosed on
  * the dashboard rather than silently adopted.
  */
-export const GOLD_POSITION_OWNERS: readonly GoldPositionOwner[] = [XAUUSD_RSI_OWNER, ARCHIVED_H4_CONFIRMED_RETEST_OWNER];
+export const GOLD_POSITION_OWNERS: readonly GoldPositionOwner[] = [
+  XAUUSD_RSI_RETEST_OWNER,
+  XAUUSD_RSI_EXTREME_OWNER,
+  ARCHIVED_H4_CONFIRMED_RETEST_OWNER,
+];
 
 export function ownerForMagic(magic: number | null | undefined): GoldPositionOwner | null {
   if (magic === null || magic === undefined) return null;
@@ -87,6 +115,11 @@ export function isOwnedByThisApplication(magic: number | null | undefined): bool
 
 export function isActiveStrategyPosition(magic: number | null | undefined): boolean {
   return ownerForMagic(magic)?.isActiveStrategy === true;
+}
+
+/** Which slot an open position occupies, or null if it occupies none. */
+export function ruleFamilyForMagic(magic: number | null | undefined): RuleFamily | null {
+  return ownerForMagic(magic)?.ruleFamily ?? null;
 }
 
 /** Describes a position's ownership for dashboards, Telegram and audit records. */

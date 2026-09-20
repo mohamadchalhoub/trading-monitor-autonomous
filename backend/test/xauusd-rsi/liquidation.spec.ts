@@ -15,7 +15,7 @@ import { createTradingAccount, createUser } from '../helpers/factories';
 import { RsiAccountStateService } from '../../src/xauusd-rsi/account-state.service';
 import { RsiLiquidationService } from '../../src/xauusd-rsi/liquidation.service';
 import { ARCHIVED_H4_CONFIRMED_RETEST_OWNER } from '../../src/xauusd-rsi/ownership';
-import { RSI_MAGIC_NUMBER } from '../../src/xauusd-rsi/safety-constants';
+import { RSI_MAGIC_EXTREME, RSI_MAGIC_RETEST } from '../../src/xauusd-rsi/safety-constants';
 
 /** Friday 2026-09-25, 23:05 Beirut — past the 23:00 cutoff, before the 23:30 deadline. */
 const FRIDAY_LIQUIDATION_T = Date.parse('2026-09-25T20:05:00.000Z');
@@ -57,7 +57,7 @@ describe('Friday liquidation', () => {
   }
 
   it('does nothing on an ordinary weekday', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
     const result = await service.runCycle(accountId, ORDINARY_T);
 
     expect(result.phase).toBe('NOT_DUE');
@@ -66,7 +66,7 @@ describe('Friday liquidation', () => {
   });
 
   it('starts at the Friday cutoff and submits a close for an owned position', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
     const result = await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
 
     expect(result.phase).toBe('IN_PROGRESS');
@@ -112,7 +112,7 @@ describe('Friday liquidation', () => {
   });
 
   it('does not submit a second close while one is already in flight', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
     await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
     expect(await prisma.goldCloseRequest.count()).toBe(1);
 
@@ -126,7 +126,7 @@ describe('Friday liquidation', () => {
   });
 
   it('confirms clearance ONLY when the position is gone from broker data', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
     await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
 
     // Marking the close request CLOSED is NOT enough on its own.
@@ -149,7 +149,7 @@ describe('Friday liquidation', () => {
   });
 
   it('records a durable failure and a critical incident when the deadline passes with exposure remaining', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
     await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
 
     const missed = await service.runCycle(accountId, FRIDAY_PAST_DEADLINE_T);
@@ -166,7 +166,7 @@ describe('Friday liquidation', () => {
   });
 
   it('does not report a miss when exposure was confirmed gone before the deadline', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
     await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
     await prisma.position.updateMany({ where: { externalPositionId: '1001' }, data: { status: 'CLOSED' } });
     await service.runCycle(accountId, FRIDAY_LIQUIDATION_T + 60_000);
@@ -179,7 +179,7 @@ describe('Friday liquidation', () => {
   it('still drives liquidation after a weekend restart with exposure remaining', async () => {
     // Nothing ran on Friday — the machine was off. Starting on Saturday must
     // pick the obligation up from real state rather than depend on a callback.
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
 
     const result = await service.runCycle(accountId, WEEKEND_T);
 
@@ -190,15 +190,44 @@ describe('Friday liquidation', () => {
   });
 
   it('keeps one liquidation item per ticket per deadline across repeated cycles', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
     for (let i = 0; i < 5; i += 1) {
       await service.runCycle(accountId, FRIDAY_LIQUIDATION_T + i * 1_000);
     }
     expect(await prisma.xauusdRsiLiquidationItem.count()).toBe(1);
   });
 
+  it('liquidates BOTH family slots when both hold a position', async () => {
+    // The Friday deadline applies to every owned position, and with two slots
+    // that can mean two simultaneous closes.
+    await openPosition('1001', RSI_MAGIC_RETEST, 'BUY');
+    await openPosition('1002', RSI_MAGIC_EXTREME, 'SELL');
+
+    const result = await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
+
+    expect(result.closeRequestsCreated).toHaveLength(2);
+    const requests = await prisma.goldCloseRequest.findMany({ orderBy: { positionTicket: 'asc' } });
+    expect(requests.map((r) => r.positionTicket)).toEqual(['1001', '1002']);
+    // Each close carries its own position's real side.
+    expect(requests[0].side).toBe('BUY');
+    expect(requests[1].side).toBe('SELL');
+    expect(result.outstanding.map((o) => o.ownership).join(' ')).toMatch(/RETEST/);
+    expect(result.outstanding.map((o) => o.ownership).join(' ')).toMatch(/EXTREME/);
+  });
+
+  it('reports a deadline miss naming BOTH remaining slots', async () => {
+    await openPosition('1001', RSI_MAGIC_RETEST);
+    await openPosition('1002', RSI_MAGIC_EXTREME);
+    await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
+
+    const missed = await service.runCycle(accountId, FRIDAY_PAST_DEADLINE_T);
+    expect(missed.phase).toBe('DEADLINE_MISSED');
+    expect(missed.criticalIncident).toMatch(/1001/);
+    expect(missed.criticalIncident).toMatch(/1002/);
+  });
+
   it('handles several owned positions independently', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER, 'BUY');
+    await openPosition('1001', RSI_MAGIC_RETEST, 'BUY');
     await openPosition('1002', ARCHIVED_H4_CONFIRMED_RETEST_OWNER.magicNumber, 'SELL');
     await openPosition('9999', 777777); // foreign, must be untouched
 
@@ -211,7 +240,7 @@ describe('Friday liquidation', () => {
   });
 
   it('carries the position’s real side and volume into the close request', async () => {
-    await openPosition('1001', RSI_MAGIC_NUMBER, 'SELL');
+    await openPosition('1001', RSI_MAGIC_RETEST, 'SELL');
     await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
 
     const req = await prisma.goldCloseRequest.findFirstOrThrow();
@@ -222,7 +251,7 @@ describe('Friday liquidation', () => {
   it('reconciles a cleared item even when liquidation is not due', async () => {
     // A position closed by its own take-profit during the week must not leave
     // a stale OUTSTANDING row behind for the next Friday to trip over.
-    await openPosition('1001', RSI_MAGIC_NUMBER);
+    await openPosition('1001', RSI_MAGIC_RETEST);
     await service.runCycle(accountId, FRIDAY_LIQUIDATION_T);
     await prisma.position.updateMany({ where: { externalPositionId: '1001' }, data: { status: 'CLOSED' } });
 

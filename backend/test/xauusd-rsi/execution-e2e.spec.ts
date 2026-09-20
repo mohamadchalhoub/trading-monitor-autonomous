@@ -16,7 +16,7 @@ import { createTestApp } from '../helpers/app';
 import { resetDatabase } from '../helpers/db';
 import { setupAccountWithToken } from '../helpers/factories';
 import { request } from '../helpers/http';
-import { RSI_MAGIC_NUMBER } from '../../src/xauusd-rsi/safety-constants';
+import { RSI_MAGIC_EXTREME, RSI_MAGIC_RETEST } from '../../src/xauusd-rsi/safety-constants';
 import { getRsiKillSwitchPath, getRsiStopNewEntriesPath } from '../../src/xauusd-rsi/controls';
 import { SPEC, SPEC_HASH } from '../../src/xauusd-rsi/spec';
 
@@ -84,7 +84,10 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
     });
   }
 
+  let eventSeq = 0;
+
   async function queueDecision(accountId: string, overrides: Record<string, unknown> = {}) {
+    eventSeq += 1;
     return prisma.xauusdRsiDecision.create({
       data: {
         strategyVersion: SPEC.strategyVersion,
@@ -93,6 +96,8 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
         symbol: 'XAUUSD',
         observedAt: new Date(ELIGIBLE_T),
         direction: 'SELL',
+        ruleFamily: 'RETEST',
+        eventId: `test-event-${eventSeq}`,
         setupKinds: ['SELL_PEAK_RETEST'],
         rsiValue: 92.5,
         previousRsi: 90.1,
@@ -107,7 +112,7 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
         evidence: {},
         approved: true,
         orderStatus: 'PENDING',
-        magicNumber: RSI_MAGIC_NUMBER,
+        magicNumber: RSI_MAGIC_RETEST,
         ...overrides,
       },
     });
@@ -133,7 +138,11 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
     expect(order.decisionId).toBe(decision.id);
     expect(order.side).toBe('SELL');
     expect(order.symbol).toBe('XAUUSD');
-    expect(order.magic).toBe(RSI_MAGIC_NUMBER);
+    // The RETEST family's own magic, so the resulting ticket is attributable
+    // to one slot rather than merely to this strategy.
+    expect(order.magic).toBe(RSI_MAGIC_RETEST);
+    expect(order.ruleFamily).toBe('RETEST');
+    expect(order.magic).not.toBe(RSI_MAGIC_EXTREME);
     // Never the retired strategies' numbers.
     expect(order.magic).not.toBe(262610181);
     expect(order.magic).not.toBe(262610180);
@@ -276,21 +285,64 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
       expect(res.body.order).toBeNull();
     });
 
-    it('when exposure appeared since queuing', async () => {
+    it("when a position took this decision's OWN family slot since queuing", async () => {
       const { account, token } = await setupAccountWithToken(prisma);
       await seedPrerequisites(account.id);
-      await queueDecision(account.id);
+      await queueDecision(account.id); // RETEST
 
       await prisma.position.create({
         data: {
           accountId: account.id, platform: 'MT5', externalPositionId: '5001', symbol: 'XAUUSD',
           side: 'BUY', volume: 0.1, openPrice: 4340, profit: 0, swap: 0,
           openedAt: new Date(ELIGIBLE_T), status: 'OPEN',
+          rawPayload: { magic: RSI_MAGIC_RETEST },
         },
       });
 
       const res = await poll(account.id, token);
       expect(res.body.order).toBeNull();
+    });
+
+    it('when UNATTRIBUTABLE foreign exposure appeared since queuing', async () => {
+      // The two-slot change relaxed same-symbol occupancy for this strategy's
+      // OWN slots. It did not relax the refusal to trade alongside exposure
+      // whose size and management this application does not control.
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      await queueDecision(account.id);
+
+      await prisma.position.create({
+        data: {
+          accountId: account.id, platform: 'MT5', externalPositionId: '9001', symbol: 'XAUUSD',
+          side: 'BUY', volume: 0.1, openPrice: 4340, profit: 0, swap: 0,
+          openedAt: new Date(ELIGIBLE_T), status: 'OPEN',
+          rawPayload: { magic: 777777 },
+        },
+      });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+    });
+
+    it('but NOT when the OTHER family holds a position', async () => {
+      // This is the behaviour the two-slot change exists for: an open EXTREME
+      // position must not block a RETEST entry.
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      await queueDecision(account.id); // RETEST
+
+      await prisma.position.create({
+        data: {
+          accountId: account.id, platform: 'MT5', externalPositionId: '5002', symbol: 'XAUUSD',
+          side: 'BUY', volume: 0.5, openPrice: 4340, profit: 0, swap: 0,
+          openedAt: new Date(ELIGIBLE_T), status: 'OPEN',
+          rawPayload: { magic: RSI_MAGIC_EXTREME },
+        },
+      });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).not.toBeNull();
+      expect(res.body.order.ruleFamily).toBe('RETEST');
     });
 
     it('when there is no live quote at all — refusing to send blind', async () => {
@@ -375,7 +427,7 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
       expect(after.filledAt).toBeNull();
     });
 
-    it('an UNKNOWN decision still occupies the one-position slot', async () => {
+    it("an UNKNOWN decision still occupies its OWN family's slot", async () => {
       const { account, token } = await setupAccountWithToken(prisma);
       const decision = await claimed(account.id, token);
       await request(app, {
@@ -385,10 +437,29 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
         payload: { ok: false, uncertain: true, errorMessage: 'lost' },
       });
 
-      // A second decision queued afterwards must not be served.
-      await queueDecision(account.id);
+      // A second slot-holding RETEST row cannot even be CREATED: the partial
+      // unique index rejects it, which is the atomic half of the reservation.
+      await expect(queueDecision(account.id)).rejects.toThrow();
+
+      // And nothing is served.
       const res = await poll(account.id, token);
       expect(res.body.order).toBeNull();
+    });
+
+    it('but the OTHER family can still be served while one is UNKNOWN', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      const decision = await claimed(account.id, token); // RETEST
+      await request(app, {
+        method: 'POST',
+        url: `/collector/${account.id}/xauusd-rsi/pending-order/${decision.id}/result`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ok: false, uncertain: true, errorMessage: 'lost' },
+      });
+
+      await queueDecision(account.id, { ruleFamily: 'EXTREME', magicNumber: RSI_MAGIC_EXTREME, setupKinds: ['EXTREME_SELL'] });
+      const res = await poll(account.id, token);
+      expect(res.body.order).not.toBeNull();
+      expect(res.body.order.magic).toBe(RSI_MAGIC_EXTREME);
     });
   });
 

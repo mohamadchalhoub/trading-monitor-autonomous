@@ -19,6 +19,25 @@ import { SPEC } from './spec';
 export type SetupKind = 'SELL_PEAK_RETEST' | 'BUY_TROUGH_RETEST' | 'EXTREME_SELL' | 'EXTREME_BUY';
 export type Direction = 'BUY' | 'SELL';
 
+/**
+ * The two independent execution slots (spec `ruleFamilies`).
+ *
+ * The four setups group into two families, and each family holds at most one
+ * active, pending or uncertain entry of its own — so a retest position and an
+ * extreme position may be open simultaneously, and the strategy's maximum
+ * concurrency is two.
+ *
+ * Note what this is NOT: it is not one slot per directional setup. SELL and
+ * BUY retests share the RETEST slot, and both extremes share the EXTREME slot.
+ */
+export type RuleFamily = 'RETEST' | 'EXTREME';
+
+export const RULE_FAMILIES: readonly RuleFamily[] = ['RETEST', 'EXTREME'];
+
+export function ruleFamilyFor(kind: SetupKind): RuleFamily {
+  return kind === 'SELL_PEAK_RETEST' || kind === 'BUY_TROUGH_RETEST' ? 'RETEST' : 'EXTREME';
+}
+
 export interface TriggeredSetup {
   kind: SetupKind;
   direction: Direction;
@@ -342,33 +361,51 @@ function stepExtremeBuy(
 }
 
 /**
- * Collapses same-observation triggers into ONE decision per direction
- * (spec §6): "If multiple same-direction setups trigger on one observation,
- * create one decision with all applicable reasons and consume those events."
+ * Splits one observation's triggers into AT MOST ONE decision per rule
+ * family.
  *
- * Opposite-direction triggers on a single observation are arithmetically
- * impossible (no RSI value is simultaneously >= 98 and <= 1.5, nor both
- * above a >91 peak and below a <8.9 trough), so encountering one means the
- * state machine is broken — it throws rather than guessing a direction.
+ * This replaces the earlier behaviour, which merged every same-direction
+ * trigger into a single order. Under the two-slot model a retest and an
+ * extreme are separate trades against separate slots, so an observation that
+ * satisfies both must produce two separately identified decisions — the
+ * execution layer then reserves each family's slot independently and may
+ * accept one, both, or neither depending on occupancy and risk capacity.
+ *
+ * Within a family the merge still applies: SELL and BUY cannot both fire in
+ * one family on one observation (no RSI value is simultaneously above a >91
+ * peak and below a <8.9 trough, nor >= 98.5 and <= 1.5), so encountering that
+ * means the state machine is broken and it throws rather than guessing.
  */
-export function collapseToSingleDecision(triggered: readonly TriggeredSetup[]): {
+export interface FamilyDecision {
+  family: RuleFamily;
   direction: Direction;
   kinds: SetupKind[];
   reason: string;
-} | null {
-  if (triggered.length === 0) return null;
-  const directions = new Set(triggered.map((s) => s.direction));
-  if (directions.size > 1) {
-    throw new Error(
-      `xauusd-rsi: opposite-direction setups fired on one observation (${triggered.map((s) => `${s.kind}:${s.direction}`).join(', ')}) — this is arithmetically impossible under the spec and indicates a state-machine defect.`,
-    );
+}
+
+export function splitByRuleFamily(triggered: readonly TriggeredSetup[]): FamilyDecision[] {
+  const out: FamilyDecision[] = [];
+  for (const family of RULE_FAMILIES) {
+    const inFamily = triggered.filter((t) => ruleFamilyFor(t.kind) === family);
+    if (inFamily.length === 0) continue;
+
+    const directions = new Set(inFamily.map((t) => t.direction));
+    if (directions.size > 1) {
+      throw new Error(
+        `xauusd-rsi: opposite-direction setups fired in the ${family} family on one observation ` +
+          `(${inFamily.map((t) => `${t.kind}:${t.direction}`).join(', ')}) — this is arithmetically ` +
+          'impossible under the spec and indicates a state-machine defect.',
+      );
+    }
+
+    out.push({
+      family,
+      direction: inFamily[0].direction,
+      kinds: inFamily.map((t) => t.kind),
+      reason: inFamily.map((t) => `[${t.kind}] ${t.reason}`).join(' | '),
+    });
   }
-  const direction = triggered[0].direction;
-  return {
-    direction,
-    kinds: triggered.map((s) => s.kind),
-    reason: triggered.map((s) => `[${s.kind}] ${s.reason}`).join(' | '),
-  };
+  return out;
 }
 
 function fmt(n: number): string {

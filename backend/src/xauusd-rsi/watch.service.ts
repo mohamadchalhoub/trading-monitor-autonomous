@@ -25,6 +25,8 @@ import { applyClosedBar, applyTick, createEngineState, EmittedSignal, engineRsiN
 import { RsiCoordinatorService } from './coordinator.service';
 import { RsiAccountStateService } from './account-state.service';
 import { RsiLiquidationService, LiquidationCycleResult } from './liquidation.service';
+import { RsiDecisionService } from './decision.service';
+import { RSI_OBSERVATION_INTERVAL_MS } from './safety-constants';
 import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 import { RsiWatchState, RsiWatchStore } from './state-store';
 import { SPEC } from './spec';
@@ -49,6 +51,14 @@ export interface WatchCycleResult {
   notes: string[];
   entriesAllowed: boolean;
   entryBlockReason: string | null;
+  /** Per-family occupancy after this cycle. */
+  slots: { RETEST: { occupied: boolean; reason: string | null }; EXTREME: { occupied: boolean; reason: string | null } };
+  /** Slots released this cycle because their positions are confirmed gone. */
+  slotsReleased: string[];
+  /** Measured gap since the previous cycle, against the one-second target. */
+  cadence: { targetMs: number; measuredMs: number | null; withinTarget: boolean | null };
+  /** Age of the newest observation consumed, measured at evaluation time. */
+  newestObservationAgeMs: number | null;
 }
 
 @Injectable()
@@ -60,6 +70,7 @@ export class RsiWatchService {
     private readonly coordinator: RsiCoordinatorService,
     private readonly accountState: RsiAccountStateService,
     private readonly liquidation: RsiLiquidationService,
+    private readonly decisions: RsiDecisionService,
     /**
      * The gold Telegram channel, reused unchanged: its own bot and chat, its
      * own durable per-key deduplication, and plain factual template strings
@@ -75,7 +86,20 @@ export class RsiWatchService {
     let state = params.state;
     const notes: string[] = [];
 
-    // 1. Protective work first, always.
+    // Measured, not assumed: the gap since the previous completed cycle is
+    // what actually determines how quickly a crossing can be acted on.
+    const previousCycleAtT = state.recovery.lastCycleAtUtc ? Date.parse(state.recovery.lastCycleAtUtc) : null;
+    const measuredCadenceMs = previousCycleAtT === null ? null : nowT - previousCycleAtT;
+
+    // 0. Release any slot whose position the broker no longer reports. This
+    //    runs FIRST so the rest of the cycle sees accurate occupancy: a trade
+    //    closed by its own take-profit must free its family immediately, not
+    //    on the next cycle.
+    const exposureNow = await this.accountState.resolveExposure(params.accountId);
+    const liveTickets = new Set(exposureNow.items.filter((i) => i.kind === 'POSITION').map((i) => i.ticket));
+    const slotsReleased = await this.decisions.releaseSlotsForClosedPositions(params.accountId, liveTickets);
+
+    // 1. Protective work, before anything that opens exposure.
     const liquidation = await this.liquidation.runCycle(params.accountId, nowT);
     this.notifyLiquidation(liquidation);
 
@@ -172,11 +196,26 @@ export class RsiWatchService {
       otherBlock: null,
     });
 
+    const slots = await this.accountState.resolveSlotStates(params.accountId);
+    const newestObservationT = ticks.length > 0 ? ticks[ticks.length - 1].timestampMs : state.cursor.lastTimestampMs;
+
     return {
       state,
       result: {
         nowT,
         liquidation,
+        slots: {
+          RETEST: { occupied: slots.RETEST.occupied, reason: slots.RETEST.reason },
+          EXTREME: { occupied: slots.EXTREME.occupied, reason: slots.EXTREME.reason },
+        },
+        slotsReleased,
+        cadence: {
+          targetMs: RSI_OBSERVATION_INTERVAL_MS,
+          measuredMs: measuredCadenceMs,
+          withinTarget:
+            measuredCadenceMs === null ? null : measuredCadenceMs <= RSI_OBSERVATION_INTERVAL_MS + 2_000,
+        },
+        newestObservationAgeMs: newestObservationT === null ? null : nowT - newestObservationT,
         recoveryComplete: state.recovery.recoveryComplete,
         recoveryDetail: state.recovery.lastRecoveryDetail,
         reseeded,
@@ -255,20 +294,21 @@ export class RsiWatchService {
       void this.telegram.notify(
         'SIGNAL_QUEUED',
         `rsi-queued:${decisionId}`,
-        `XAUUSD RSI — ${signal.direction} signal queued for the broker. setups=${signal.kinds.join('+')} ` +
-          `rsi=${signal.rsi.toFixed(2)} decision=${decisionId}. A fill is only reported once the broker confirms it.`,
+        `XAUUSD RSI — ${signal.family} ${signal.direction} queued for the broker. setups=${signal.kinds.join('+')} ` +
+          `rsi=${signal.rsi.toFixed(2)} decision=${decisionId}. The ${signal.family} slot is now reserved. ` +
+          'A fill is only reported once the broker confirms it.',
       );
       return;
     }
 
     if (!skipReason) return;
-    const routine = /DAILY_PAUSE|FRIDAY_ENTRY_CUTOFF|Occupancy|one-position slot|Execution mode is OFF|SHADOW mode/i;
+    const routine = /DAILY_PAUSE|FRIDAY_ENTRY_CUTOFF|slot is already held|Execution mode is OFF|SHADOW mode/i;
     if (routine.test(skipReason)) return;
 
     void this.telegram.notify(
       'SIGNAL_SKIPPED',
       `rsi-skipped:${decisionId}`,
-      `XAUUSD RSI — ${signal.direction} signal NOT taken. setups=${signal.kinds.join('+')} ` +
+      `XAUUSD RSI — ${signal.family} ${signal.direction} NOT taken. setups=${signal.kinds.join('+')} ` +
         `rsi=${signal.rsi.toFixed(2)} reason=${skipReason}`,
     );
   }

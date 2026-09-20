@@ -86,6 +86,15 @@ model TradingAccount {
 // doesn't push it for) simply don't have an opinion, never defaulted to
 // either value — a risk-manager caller reading a null here must treat it
 // as "unknown, not verified," never as "assumed demo."
+// Mirrors MT5's ACCOUNT_MARGIN_MODE_* enum. RETAIL_HEDGING is the only mode
+// in which this strategy's two execution slots can hold genuinely independent
+// positions with independent brackets.
+enum AccountMarginMode {
+  RETAIL_NETTING
+  EXCHANGE
+  RETAIL_HEDGING
+}
+
 enum AccountTradeMode {
   REAL
   DEMO
@@ -105,6 +114,19 @@ model AccountSnapshot {
   // single most safety-critical input, pushed by the collector from MT5's
   // own account_info().trade_mode (mt5_client.py) on every snapshot cycle.
   tradeMode   AccountTradeMode? @map("trade_mode")
+  // The broker's position-accounting mode, from MT5's own
+  // account_info().margin_mode.
+  //
+  // This matters to the two-slot execution model specifically: independent
+  // positions on one symbol, each with its own stop and target, only exist on
+  // a HEDGING account. On a NETTING account a second order merges with,
+  // reduces or reverses the first, so the second slot could not be honoured
+  // faithfully and must be refused rather than emulated.
+  //
+  // Nullable because an older collector does not push it, and "unknown" must
+  // stay distinguishable from "netting" — the risk gate fails closed on both,
+  // but only one of them is an assertion about the broker.
+  marginMode  AccountMarginMode? @map("margin_mode")
   capturedAt  DateTime          @map("captured_at")
 
   account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -425,7 +447,17 @@ enum GoldTelegramNotificationStatus {
 
 model GoldTelegramNotification {
   id         String                         @id @default(uuid())
+  // Per RECIPIENT, not per event: the sender appends the destination chat to
+  // the caller's logical key, so one event fanned out to several recipients
+  // produces one row each. That is what lets a retry re-send only the
+  // recipient that failed, without duplicating one that already succeeded,
+  // and stops one recipient's success from hiding another's failure.
   dedupKey   String                         @unique @map("dedup_key")
+  // The destination this row's result belongs to. Nullable because rows
+  // written before multi-recipient support existed have no recipient
+  // recorded, and inventing one retroactively would misattribute history.
+  chatId         String?                    @map("chat_id")
+  recipientLabel String?                    @map("recipient_label")
   eventType  String                         @map("event_type")
   status     GoldTelegramNotificationStatus @default(PENDING)
   messageId  Int?                           @map("message_id")
@@ -435,6 +467,7 @@ model GoldTelegramNotification {
   sentAt     DateTime?                      @map("sent_at")
 
   @@index([status, createdAt])
+  @@index([chatId, createdAt])
   @@map("gold_telegram_notifications")
 }
 
@@ -1440,6 +1473,16 @@ enum XauusdRsiDirection {
   SELL
 }
 
+// The two independent execution slots. Each holds at most one active,
+// pending or uncertain entry of its own, so a retest position and an extreme
+// position may be open simultaneously and the strategy's maximum concurrency
+// is two. Deliberately NOT one slot per directional setup: SELL and BUY
+// retests share RETEST, and both extremes share EXTREME.
+enum XauusdRsiRuleFamily {
+  RETEST
+  EXTREME
+}
+
 model XauusdRsiDecision {
   id String @id @default(uuid())
 
@@ -1464,9 +1507,18 @@ model XauusdRsiDecision {
   evaluatedAt DateTime @default(now()) @map("evaluated_at")
 
   direction  XauusdRsiDirection
-  // All setups that fired on the one observation (spec §6 collapses
-  // same-direction simultaneous triggers into a single decision).
+  // Which slot this decision competes for. Persisted rather than derived
+  // from `setupKinds` so a historical row's family is a recorded fact that
+  // survives any later change to the grouping.
+  ruleFamily XauusdRsiRuleFamily  @map("rule_family")
+  // The setups of THIS FAMILY that fired on the one observation. An
+  // observation that triggers both families produces two rows, each carrying
+  // only its own family's setups.
   setupKinds XauusdRsiSetupKind[] @map("setup_kinds")
+  // Stable identity of the observation-plus-family that produced this row.
+  // Lets a replayed or retried evaluation be recognised as the same event
+  // rather than becoming a second decision.
+  eventId    String               @map("event_id")
 
   // Full-precision RSI either side of the crossing, plus the bid the RSI was
   // computed from — the three numbers needed to re-derive the trigger.
@@ -1496,9 +1548,23 @@ model XauusdRsiDecision {
   skipReason String? @map("skip_reason")
 
   orderStatus XauusdRsiOrderStatus @default(NONE) @map("order_status")
-  // This strategy's own magic number, recorded per row so ownership is
-  // provable from the data and not only from a constant in code.
+  // This family's own magic number, recorded per row so ownership is
+  // provable from the data and not only from a constant in code. The two
+  // families use DIFFERENT magic numbers, which is what makes an open broker
+  // position attributable to one slot rather than merely to this strategy.
   magicNumber Int                  @map("magic_number")
+
+  // When this decision stopped occupying its family's slot.
+  //
+  // A slot is held from the moment a decision is queued until its position is
+  // confirmed gone from broker data — so a FILLED decision whose position is
+  // still open continues to hold the slot, and only reconciliation against
+  // real broker state releases it. Null means "still holding".
+  //
+  // This column is what the partial unique index below keys on, giving the
+  // slot reservation its atomicity: two concurrent submissions for the same
+  // family cannot both insert, because the second violates the index.
+  slotReleasedAt DateTime? @map("slot_released_at")
 
   mt5Ticket      Int?      @map("mt5_ticket")
   // Requested vs. actual, so slippage is recorded rather than inferred.
@@ -1517,6 +1583,13 @@ model XauusdRsiDecision {
   @@index([evaluatedAt(sort: Desc)])
   @@index([accountId, orderStatus])
   @@index([observedAt(sort: Desc)])
+  @@index([accountId, ruleFamily, slotReleasedAt])
+  @@index([eventId])
+  // NOTE: the actual slot-reservation constraint is a PARTIAL unique index
+  // created by raw SQL in this model's migration (Prisma cannot express a
+  // WHERE clause on a unique index). It enforces at most one slot-holding
+  // decision per account per rule family. Do not rely on this ordinary index
+  // for correctness.
   @@map("xauusd_rsi_decisions")
 }
 

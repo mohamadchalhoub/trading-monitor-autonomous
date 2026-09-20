@@ -192,47 +192,156 @@ def test_protection_readback_never_attributes_another_positions_levels():
     payload = api.post_rsi_execution_result.call_args.args[2]
     assert "brokerStopLoss" not in payload
 
-# --- Live tick stream ---------------------------------------------------
+# --- One-second XAUUSD observation loop ---------------------------------
+#
+# The requirement is an observation every second that yields REAL new market
+# information. These cases therefore concentrate on what must NOT happen: the
+# same tick counted twice, a synthetic observation manufactured because a poll
+# happened, or a cursor advanced past data that was never successfully pushed.
 
-def test_tick_stream_pushes_what_mt5_returned():
+
+def _tick(msc, bid=4345.1, ask=4345.3, seq=0):
+    from datetime import datetime, timezone
+
+    return {
+        "timestamp": datetime.fromtimestamp(msc / 1000, tz=timezone.utc).isoformat(),
+        "time_msc": msc,
+        "bid": bid,
+        "ask": ask,
+        "last": None,
+        "volume": None,
+        "volume_real": None,
+        "flags": 6,
+        "batch_seq": seq,
+    }
+
+
+def test_one_observation_pushes_incremental_ticks():
     app, client, api, _executor = _app()
-    client.get_ticks.return_value = [
-        {"timestamp": "2026-09-16T10:00:00.123+00:00", "bid": 4345.1, "ask": 4345.3, "last": None,
-         "volume": None, "volume_real": None, "flags": 6, "batch_seq": 0},
-    ]
-    api.post_ticks.return_value = {"inserted": 1}
+    client.is_connected.return_value = True
+    client.get_ticks_from.return_value = [_tick(1_789_000_000_000), _tick(1_789_000_000_500, seq=1)]
+    api.post_ticks.return_value = {"inserted": 2}
 
-    app._stream_rsi_ticks()
+    app._observe_rsi_once()
 
-    assert client.get_ticks.call_args.args[0] == "XAUUSD"
+    assert client.get_ticks_from.call_args.args[0] == "XAUUSD"
     payload = api.post_ticks.call_args.args[0]
     assert payload["symbol"] == "XAUUSD"
-    assert len(payload["ticks"]) == 1
+    assert len(payload["ticks"]) == 2
+    # The internal cursor field must not leak into the wire payload.
+    assert "time_msc" not in payload["ticks"][0]
+    assert app._rsi_cursor_msc == 1_789_000_000_500
 
-def test_tick_stream_is_quiet_and_harmless_when_there_are_no_ticks():
+
+def test_the_cursor_boundary_tick_is_never_pushed_twice():
     app, client, api, _executor = _app()
-    client.get_ticks.return_value = []
+    client.is_connected.return_value = True
 
-    app._stream_rsi_ticks()
+    client.get_ticks_from.return_value = [_tick(1_789_000_000_000)]
+    api.post_ticks.return_value = {"inserted": 1}
+    app._observe_rsi_once()
+    assert api.post_ticks.call_count == 1
+
+    # copy_ticks_from is inclusive of its start, so the next call returns the
+    # boundary tick again plus one genuinely new one. Only the new one may go.
+    client.get_ticks_from.return_value = [_tick(1_789_000_000_000), _tick(1_789_000_000_250, seq=1)]
+    app._observe_rsi_once()
+
+    assert api.post_ticks.call_count == 2
+    second = api.post_ticks.call_args.args[0]
+    assert len(second["ticks"]) == 1
+    assert app._rsi_duplicate_skips == 1
+
+
+def test_no_new_ticks_pushes_nothing_at_all():
+    # A poll having happened is not itself market information.
+    app, client, api, _executor = _app()
+    client.is_connected.return_value = True
+    client.get_ticks_from.return_value = []
+
+    app._observe_rsi_once()
 
     api.post_ticks.assert_not_called()
+    assert app._rsi_cursor_msc is None
 
-def test_tick_stream_never_raises_when_mt5_fails():
+
+def test_an_unchanged_quote_produces_no_synthetic_observation():
     app, client, api, _executor = _app()
-    client.get_ticks.side_effect = RuntimeError("copy_ticks_range failed")
+    client.is_connected.return_value = True
+    client.get_ticks_from.return_value = [_tick(1_789_000_000_000)]
+    api.post_ticks.return_value = {"inserted": 1}
+    app._observe_rsi_once()
 
-    app._stream_rsi_ticks()  # must not raise
+    # Same tick, nothing newer: the loop must stay silent rather than
+    # re-reporting the last known price as if it were fresh.
+    client.get_ticks_from.return_value = [_tick(1_789_000_000_000)]
+    app._observe_rsi_once()
 
-    api.post_ticks.assert_not_called()
+    assert api.post_ticks.call_count == 1
 
-def test_tick_stream_never_raises_when_the_push_fails():
+
+def test_the_cursor_does_not_advance_when_the_push_fails():
     from app.api_client import ApiClientError
 
     app, client, api, _executor = _app()
-    client.get_ticks.return_value = [
-        {"timestamp": "2026-09-16T10:00:00.123+00:00", "bid": 4345.1, "ask": 4345.3, "last": None,
-         "volume": None, "volume_real": None, "flags": 6, "batch_seq": 0},
-    ]
+    client.is_connected.return_value = True
+    client.get_ticks_from.return_value = [_tick(1_789_000_000_000)]
     api.post_ticks.side_effect = ApiClientError("backend down")
 
-    app._stream_rsi_ticks()  # must not raise
+    app._observe_rsi_once()  # must not raise
+
+    # Retried next second rather than silently lost.
+    assert app._rsi_cursor_msc is None
+
+
+def test_observation_never_raises_when_mt5_fails():
+    app, client, api, _executor = _app()
+    client.is_connected.return_value = True
+    client.get_ticks_from.side_effect = RuntimeError("copy_ticks_from failed")
+
+    app._observe_rsi_once()  # must not raise
+
+    api.post_ticks.assert_not_called()
+
+
+def test_observation_is_skipped_rather_than_queued_when_mt5_is_busy():
+    app, client, api, _executor = _app()
+    client.is_connected.return_value = True
+    app._mt5_call_lock.acquire()
+    try:
+        app._observe_rsi_once()
+    finally:
+        app._mt5_call_lock.release()
+
+    # Nothing read, nothing pushed: the next observation is one second away
+    # and picks up everything since the cursor regardless.
+    client.get_ticks_from.assert_not_called()
+    api.post_ticks.assert_not_called()
+
+
+def test_observation_does_nothing_while_disconnected():
+    app, client, api, _executor = _app()
+    client.is_connected.return_value = False
+
+    app._observe_rsi_once()
+
+    client.get_ticks_from.assert_not_called()
+    api.post_ticks.assert_not_called()
+
+
+def test_cadence_is_measured_across_observations():
+    app, client, api, _executor = _app()
+    client.is_connected.return_value = True
+    client.get_ticks_from.return_value = []
+
+    for _ in range(3):
+        app._observe_rsi_once()
+
+    assert app._rsi_observations == 3
+    # Two intervals between three observations.
+    assert len(app._rsi_cadence_samples) == 2
+
+
+def test_the_observation_loop_is_only_started_when_the_strategy_is_enabled():
+    app, _client, _api, _executor = _app(rsi_execution_enabled=False)
+    assert app._rsi_observation_thread is None

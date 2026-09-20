@@ -24,6 +24,7 @@ export class TradingDataService {
         marginLevel: dto.marginLevel ?? null,
         profit: dto.profit,
         tradeMode: dto.tradeMode ?? null,
+        marginMode: dto.marginMode ?? null,
         capturedAt: new Date(dto.capturedAt),
       },
       update: {
@@ -34,6 +35,7 @@ export class TradingDataService {
         marginLevel: dto.marginLevel ?? null,
         profit: dto.profit,
         tradeMode: dto.tradeMode ?? null,
+        marginMode: dto.marginMode ?? null,
       },
     });
   }

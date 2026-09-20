@@ -29,6 +29,15 @@ import {
 /** Mirrors MT5's own ACCOUNT_TRADE_MODE_* enum — a closed set, not a boolean. */
 export type RsiAccountTradeMode = 'DEMO' | 'REAL' | 'CONTEST';
 
+/**
+ * Mirrors MT5's ACCOUNT_MARGIN_MODE_*, plus an explicit UNKNOWN.
+ *
+ * UNKNOWN is kept distinct from RETAIL_NETTING on purpose. Both block a
+ * second concurrent position, but only one of them is an assertion about the
+ * broker, and the rejection text says which.
+ */
+export type RsiAccountMarginMode = 'RETAIL_NETTING' | 'EXCHANGE' | 'RETAIL_HEDGING' | 'UNKNOWN';
+
 export interface RsiCandidateOrder {
   action: 'OPEN_BUY' | 'OPEN_SELL';
   entryPrice: number;
@@ -61,11 +70,16 @@ export interface RsiBrokerConstraints {
 
 export interface RsiOccupancyState {
   /**
-   * True if ANY XAUUSD exposure exists: this strategy's positions, an older
-   * strategy's, a manual trade, a pending order, or an unreconciled
-   * submission. Spec §10's "at most one active/pending/uncertain XAUUSD
-   * exposure at a time" is enforced across all of these, not just this
-   * strategy's own magic number.
+   * True when THIS family's slot is unavailable.
+   *
+   * Two distinct situations set it, and the description says which:
+   *
+   *   1. This family already holds a position or an in-flight submission.
+   *      Note the other family holding one does NOT set this — that is the
+   *      whole point of the two-slot model.
+   *   2. XAUUSD exposure exists that cannot be attributed to a slot at all:
+   *      a foreign or manual position, or an unresolved submission from a
+   *      retired strategy. That protection is deliberately retained.
    */
   hasExistingXauusdExposure: boolean;
   exposureDescription: string | null;
@@ -73,6 +87,8 @@ export interface RsiOccupancyState {
 
 export interface RsiAccountRiskInfo {
   tradeMode: RsiAccountTradeMode;
+  /** How the broker accounts for positions — see `RsiAccountMarginMode`. */
+  marginMode: RsiAccountMarginMode;
   /** Live-queried equity in the ACCOUNT's own currency — never assumed. */
   equity: number;
   accountCurrency: string;
@@ -98,6 +114,15 @@ export interface RsiRiskManagerInput {
   maxEntryDeviationPoints: number;
   requestedVolumeLots: number;
   pointSize: number;
+  /**
+   * True when the OTHER rule family already holds a position or an in-flight
+   * submission, so accepting this candidate would mean two concurrent
+   * positions on one symbol.
+   *
+   * That is only faithfully possible on a hedging account; see the check in
+   * `evaluateRsiRiskManager`.
+   */
+  otherFamilySlotHeld: boolean;
 }
 
 export interface RsiRiskManagerVerdict {
@@ -145,9 +170,22 @@ export function evaluateRsiRiskManager(input: RsiRiskManagerInput): RsiRiskManag
     );
   }
 
+  // Two concurrent positions on one symbol, each with its own stop and
+  // target, only exist on a HEDGING account. On a netting account a second
+  // order merges with, reduces or reverses the first — so the second slot
+  // would not be what the rules describe, and the honest response is to
+  // refuse it rather than emulate it with one net position.
+  if (input.otherFamilySlotHeld && accountInfo.marginMode !== 'RETAIL_HEDGING') {
+    return reject(
+      accountInfo.marginMode === 'UNKNOWN'
+        ? 'The other rule family already holds a position, and the broker\'s margin mode could not be established. Refusing a second concurrent position rather than assuming the account supports independent positions.'
+        : `The other rule family already holds a position, and this account's margin mode is ${accountInfo.marginMode}, not RETAIL_HEDGING. A second order would merge with, reduce or reverse the existing position instead of opening an independent one, so it is refused rather than emulated.`,
+    );
+  }
+
   if (occupancy.hasExistingXauusdExposure) {
     return reject(
-      `Refusing to open a new XAUUSD order — existing exposure already occupies the one-position slot (${occupancy.exposureDescription ?? 'unspecified'}).`,
+      `Refusing to open a new XAUUSD order — ${occupancy.exposureDescription ?? "this family's slot is unavailable"}.`,
     );
   }
 

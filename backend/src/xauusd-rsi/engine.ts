@@ -32,7 +32,7 @@
  */
 import { SPEC, SPEC_HASH } from './spec';
 import { commitClosedBar, createRsiState, currentRsi, isWarmedUp, projectRsi, WilderRsiState } from './rsi';
-import { collapseToSingleDecision, createPatternState, Direction, observe, PatternState, SetupKind, TriggeredSetup } from './pattern';
+import { createPatternState, Direction, observe, PatternState, RuleFamily, SetupKind, splitByRuleFamily, TriggeredSetup } from './pattern';
 
 export const M1_MS = 60_000;
 
@@ -98,6 +98,11 @@ export function minuteBucket(t: number): number {
 }
 
 export interface EmittedSignal {
+  /**
+   * Which execution slot this signal competes for. One observation can emit
+   * one signal per family, and each is reserved and risk-checked separately.
+   */
+  family: RuleFamily;
   direction: Direction;
   kinds: SetupKind[];
   reason: string;
@@ -317,31 +322,33 @@ export function applyTick(state: EngineState, input: TickInput): StepResult {
   next = { ...next, pattern: observed.state };
   notes.push(...observed.notes);
 
-  const collapsed = collapseToSingleDecision(observed.triggered);
-  const signals: EmittedSignal[] = collapsed
-    ? [
-        {
-          direction: collapsed.direction,
-          kinds: collapsed.kinds,
-          reason: collapsed.reason,
-          rsi: rsiValue,
-          atT,
-          basisPrice: bid,
-          evidence: {
-            specHash: next.specHash,
-            strategyVersion: SPEC.strategyVersion,
-            observationMode: next.observationMode,
-            previousRsi: previousRsiForEvidence,
-            currentRsi: rsiValue,
-            formingMinuteT: next.formingMinuteT,
-            lastClosedBarT: next.lastClosedBarT,
-            closedBarsApplied: next.closedBarsApplied,
-            triggered: observed.triggered,
-            thresholds: SPEC.thresholds,
-          },
-        },
-      ]
-    : [];
+  // One signal PER FAMILY, not one merged signal. A retest and an extreme
+  // firing on the same observation are two separate trades against two
+  // separate slots, so they must stay separately identified all the way
+  // through the execution layer.
+  const signals: EmittedSignal[] = splitByRuleFamily(observed.triggered).map((decision) => ({
+    family: decision.family,
+    direction: decision.direction,
+    kinds: decision.kinds,
+    reason: decision.reason,
+    rsi: rsiValue,
+    atT,
+    basisPrice: bid,
+    evidence: {
+      specHash: next.specHash,
+      strategyVersion: SPEC.strategyVersion,
+      observationMode: next.observationMode,
+      previousRsi: previousRsiForEvidence,
+      currentRsi: rsiValue,
+      formingMinuteT: next.formingMinuteT,
+      lastClosedBarT: next.lastClosedBarT,
+      closedBarsApplied: next.closedBarsApplied,
+      // Only this family's own triggers, so a decision's evidence never
+      // contains the reasons belonging to the other family's trade.
+      triggered: observed.triggered.filter((t) => decision.kinds.includes(t.kind)),
+      thresholds: SPEC.thresholds,
+    },
+  }));
 
   return { state: next, signals, notes, didReset };
 }

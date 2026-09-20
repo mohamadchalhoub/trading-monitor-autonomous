@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RsiAccountStateService } from './account-state.service';
 import { entriesBlockedByControls } from './controls';
 import { evaluateEntryEligibility } from './schedule';
+import type { RuleFamily } from './pattern';
 import {
   RSI_GOLD_POINT_SIZE,
   RSI_MAX_ENTRY_DEVIATION_POINTS,
@@ -85,6 +86,16 @@ export class RsiDecisionService {
 
     const orderStatus = result.uncertain ? 'UNKNOWN' : result.ok ? 'FILLED' : 'FAILED';
 
+    // Slot handling, by outcome:
+    //   FAILED  — the broker definitely refused, so nothing was opened and the
+    //             family's slot is free again immediately.
+    //   UNKNOWN — the outcome is genuinely unknown, so the slot STAYS held.
+    //             Releasing it would let a second position open while the
+    //             first may well be live at the broker.
+    //   FILLED  — a position now exists; the slot stays held until
+    //             reconciliation observes that position is gone.
+    const slotReleasedAt = orderStatus === 'FAILED' ? new Date() : null;
+
     await this.prisma.xauusdRsiDecision.update({
       where: { id: decisionId },
       data: {
@@ -96,16 +107,47 @@ export class RsiDecisionService {
         brokerTakeProfit: result.brokerTakeProfit ?? null,
         filledAt: result.ok && !result.uncertain ? new Date() : null,
         executionError: result.errorMessage ?? null,
+        slotReleasedAt,
       },
     });
     this.logger.log(`decision ${decisionId}: ${orderStatus}${result.errorMessage ? ` — ${result.errorMessage}` : ''}`);
+  }
+
+  /**
+   * Releases the slots of decisions whose positions are confirmed gone.
+   *
+   * `liveTickets` must come from real broker-derived position data. A ticket
+   * that is no longer there is closed as far as the broker is concerned, and
+   * that — not a close request having been submitted — is what frees a slot.
+   *
+   * An UNKNOWN decision with no ticket is deliberately NOT released: there is
+   * no ticket to check, so its outcome remains genuinely unresolved.
+   */
+  async releaseSlotsForClosedPositions(accountId: string, liveTickets: ReadonlySet<string>): Promise<string[]> {
+    const holders = await this.prisma.xauusdRsiDecision.findMany({
+      where: { accountId, slotReleasedAt: null, orderStatus: 'FILLED' },
+      select: { id: true, mt5Ticket: true, ruleFamily: true },
+    });
+    const released: string[] = [];
+    for (const h of holders) {
+      if (h.mt5Ticket === null) continue;
+      if (liveTickets.has(String(h.mt5Ticket))) continue;
+      await this.prisma.xauusdRsiDecision.update({
+        where: { id: h.id },
+        data: { slotReleasedAt: new Date() },
+      });
+      released.push(`${h.ruleFamily}:${h.mt5Ticket}`);
+      this.logger.log(`released the ${h.ruleFamily} slot: position ${h.mt5Ticket} is no longer present in broker data`);
+    }
+    return released;
   }
 
   /** Marks a claimed decision as never-sent, with the reason it was cancelled. */
   async cancelClaimed(decisionId: string, reason: string): Promise<void> {
     await this.prisma.xauusdRsiDecision.update({
       where: { id: decisionId },
-      data: { orderStatus: 'NONE', approved: false, skipReason: reason, executionError: null },
+      // Never sent, so the family's slot is released along with the cancel.
+      data: { orderStatus: 'NONE', approved: false, skipReason: reason, executionError: null, slotReleasedAt: new Date() },
     });
     this.logger.warn(`decision ${decisionId} cancelled at pre-send: ${reason}`);
   }
@@ -130,8 +172,10 @@ export class RsiDecisionService {
     action: 'OPEN_BUY' | 'OPEN_SELL';
     entryPrice: number;
     observedAtT: number;
+    /** Which slot this decision holds — occupancy is rechecked for that family only. */
+    family: RuleFamily;
   }): Promise<RsiPreSendCheckResult> {
-    const { decisionId, accountId, action, entryPrice, observedAtT } = params;
+    const { decisionId, accountId, action, entryPrice, observedAtT, family } = params;
 
     const controlBlock = entriesBlockedByControls();
     if (controlBlock) {
@@ -173,9 +217,9 @@ export class RsiDecisionService {
       return { ok: false, reason: `Executable price moved ${deviationPoints.toFixed(1)}pt since queuing (limit ${RSI_MAX_ENTRY_DEVIATION_POINTS}pt) — refusing to send, not chasing.` };
     }
 
-    const occupancy = await this.accountState.resolveOccupancy(accountId, decisionId);
+    const occupancy = await this.accountState.resolveOccupancy(accountId, family, decisionId);
     if (occupancy.hasExistingXauusdExposure) {
-      return { ok: false, reason: `XAUUSD exposure appeared since queuing (${occupancy.exposureDescription}) — refusing to send a second position.` };
+      return { ok: false, reason: `Occupancy changed since queuing (${occupancy.exposureDescription}) — refusing to send.` };
     }
 
     const riskInfo = await this.accountState.resolveAccountRiskInfo(accountId);

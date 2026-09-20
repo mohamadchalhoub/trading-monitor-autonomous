@@ -14,9 +14,11 @@
  */
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { RsiAccountRiskInfo, RsiAccountTradeMode, RsiBrokerConstraints, RsiOccupancyState } from './risk-manager';
+import { RsiAccountMarginMode, RsiAccountRiskInfo, RsiAccountTradeMode, RsiBrokerConstraints, RsiOccupancyState } from './risk-manager';
 import { RSI_QUOTE_MAX_STALENESS_SECONDS, RSI_SYMBOL } from './safety-constants';
-import { describeOwnership, isOwnedByThisApplication } from './ownership';
+import { describeOwnership, isOwnedByThisApplication, ruleFamilyForMagic } from './ownership';
+import type { RuleFamily } from './pattern';
+import { RULE_FAMILIES } from './pattern';
 
 /** How old symbol metadata may be before it is treated as unusable. */
 const SYMBOL_METADATA_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -32,7 +34,31 @@ export interface GoldExposureItem {
   magicNumber: number | null;
   /** True when this application opened it and may manage/close it. */
   owned: boolean;
+  /**
+   * Which execution slot this exposure occupies, if any. Null for a retired
+   * strategy's position and for foreign exposure: both are managed or
+   * displayed, but neither competes for a slot.
+   */
+  ruleFamily: RuleFamily | null;
+  /** Entry price and brackets, where known, so each ticket is manageable individually. */
+  openPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
   description: string;
+}
+
+/** Per-family occupancy: what holds each slot, and whether it is free. */
+export interface SlotState {
+  family: RuleFamily;
+  occupied: boolean;
+  /** Everything currently holding this slot. At most one under normal operation. */
+  holders: GoldExposureItem[];
+  reason: string | null;
+}
+
+export interface SlotStates {
+  RETEST: SlotState;
+  EXTREME: SlotState;
 }
 
 export interface GoldExposureSnapshot {
@@ -70,6 +96,10 @@ export class RsiAccountStateService {
         volume: p.volume.toNumber(),
         magicNumber: magic,
         owned: isOwnedByThisApplication(magic),
+        ruleFamily: ruleFamilyForMagic(magic),
+        openPrice: p.openPrice.toNumber(),
+        stopLoss: p.stopLoss ? p.stopLoss.toNumber() : null,
+        takeProfit: p.takeProfit ? p.takeProfit.toNumber() : null,
         description: `open position ticket=${p.externalPositionId} side=${p.side} volume=${p.volume.toNumber()} — ${describeOwnership(magic)}`,
       };
     });
@@ -77,16 +107,23 @@ export class RsiAccountStateService {
     // A decision that is queued, claimed, or whose broker outcome is unknown
     // occupies the slot too: an ambiguous in-flight submission must never let
     // a second order through.
+    // Slot-HOLDING decisions: queued, claimed, uncertain, or filled with a
+    // position that reconciliation has not yet seen disappear. A FILLED row
+    // whose ticket is already represented by a Position row above is skipped,
+    // so one open trade is not counted twice.
+    const openTickets = new Set(positions.map((p) => p.externalPositionId));
     const inFlight = await this.prisma.xauusdRsiDecision.findMany({
       where: {
         accountId,
         symbol: RSI_SYMBOL,
-        orderStatus: { in: ['PENDING', 'SENT', 'UNKNOWN'] },
+        orderStatus: { in: ['PENDING', 'SENT', 'UNKNOWN', 'FILLED'] },
+        slotReleasedAt: null,
         ...(excludeDecisionId ? { id: { not: excludeDecisionId } } : {}),
       },
       orderBy: { evaluatedAt: 'desc' },
     });
     for (const d of inFlight) {
+      if (d.mt5Ticket !== null && openTickets.has(String(d.mt5Ticket))) continue;
       items.push({
         kind: 'IN_FLIGHT_DECISION',
         ticket: d.mt5Ticket !== null ? String(d.mt5Ticket) : d.id,
@@ -94,7 +131,11 @@ export class RsiAccountStateService {
         volume: d.volumeLots?.toNumber() ?? 0,
         magicNumber: d.magicNumber,
         owned: true,
-        description: `in-flight decision ${d.id} (orderStatus=${d.orderStatus})`,
+        ruleFamily: d.ruleFamily,
+        openPrice: d.entryPrice?.toNumber() ?? null,
+        stopLoss: d.stopLoss?.toNumber() ?? null,
+        takeProfit: d.takeProfit?.toNumber() ?? null,
+        description: `in-flight ${d.ruleFamily} decision ${d.id} (orderStatus=${d.orderStatus})`,
       });
     }
 
@@ -112,6 +153,12 @@ export class RsiAccountStateService {
         volume: d.volumeLots?.toNumber() ?? 0,
         magicNumber: null,
         owned: true,
+        // A retired strategy's submission competes for no slot of this
+        // strategy's, but it is still owned exposure that must be reconciled.
+        ruleFamily: null,
+        openPrice: d.entryPrice?.toNumber() ?? null,
+        stopLoss: d.stopLoss?.toNumber() ?? null,
+        takeProfit: d.takeProfit?.toNumber() ?? null,
         description: `in-flight decision ${d.id} from a RETIRED strategy (orderStatus=${d.orderStatus}) — must be reconciled, never re-sent`,
       });
     }
@@ -127,15 +174,117 @@ export class RsiAccountStateService {
     };
   }
 
-  async resolveOccupancy(accountId: string, excludeDecisionId?: string): Promise<RsiOccupancyState> {
+  /**
+   * Per-family slot occupancy.
+   *
+   * This REPLACES the former one-XAUUSD-position-total rule for this
+   * strategy's own two slots: a retest position and an extreme position may
+   * now be open at once. What it does NOT relax is the protection against
+   * exposure this application cannot account for — see `resolveOccupancy`.
+   */
+  async resolveSlotStates(accountId: string, excludeDecisionId?: string): Promise<SlotStates> {
     const exposure = await this.resolveExposure(accountId, excludeDecisionId);
-    if (!exposure.anyExposure) {
-      return { hasExistingXauusdExposure: false, exposureDescription: null };
-    }
-    return {
-      hasExistingXauusdExposure: true,
-      exposureDescription: exposure.items.map((i) => i.description).join('; '),
+    const build = (family: RuleFamily): SlotState => {
+      const holders = exposure.items.filter((i) => i.ruleFamily === family);
+      return {
+        family,
+        occupied: holders.length > 0,
+        holders,
+        reason: holders.length > 0 ? holders.map((h) => h.description).join('; ') : null,
+      };
     };
+    return { RETEST: build('RETEST'), EXTREME: build('EXTREME') };
+  }
+
+  /**
+   * Occupancy as the risk gate sees it, for ONE family.
+   *
+   * Two separate things block an entry here, and only the first was relaxed
+   * by the two-slot change:
+   *
+   *   1. This family's own slot already being held.
+   *   2. Exposure this application cannot attribute to a slot at all —
+   *      foreign or manual positions, and any unresolved submission left by a
+   *      retired strategy. That protection is deliberately retained: the
+   *      application still refuses to trade alongside exposure whose size,
+   *      direction and management it does not control.
+   */
+  async resolveOccupancy(accountId: string, family: RuleFamily, excludeDecisionId?: string): Promise<RsiOccupancyState> {
+    const exposure = await this.resolveExposure(accountId, excludeDecisionId);
+
+    const ownSlot = exposure.items.filter((i) => i.ruleFamily === family);
+    if (ownSlot.length > 0) {
+      return {
+        hasExistingXauusdExposure: true,
+        exposureDescription: `${family} slot is already held — ${ownSlot.map((i) => i.description).join('; ')}`,
+      };
+    }
+
+    const unattributable = exposure.items.filter((i) => i.ruleFamily === null);
+    if (unattributable.length > 0) {
+      return {
+        hasExistingXauusdExposure: true,
+        exposureDescription:
+          'XAUUSD exposure exists that this application cannot attribute to an execution slot, so its size and management are outside this strategy\'s control — ' +
+          unattributable.map((i) => i.description).join('; '),
+      };
+    }
+
+    return { hasExistingXauusdExposure: false, exposureDescription: null };
+  }
+
+  /**
+   * Stop risk already committed by decisions that currently hold a slot,
+   * converted to account currency.
+   *
+   * This exists so the combined-risk cap accounts for a trade that has been
+   * reserved but has no floating loss yet. Because a slot is reserved by
+   * inserting the decision row, an entry accepted moments earlier in the SAME
+   * observation is already visible here — which is what prevents two
+   * simultaneous family signals from jointly exceeding the cap.
+   *
+   * Returns zero with an explicit note when conversion is impossible, and the
+   * caller's own risk gate independently refuses to size against a missing
+   * rate, so an unavailable rate can never quietly understate committed risk.
+   */
+  async resolveReservedStopRisk(accountId: string): Promise<{ amount: number; count: number; note: string }> {
+    const holders = await this.prisma.xauusdRsiDecision.findMany({
+      where: {
+        accountId,
+        symbol: RSI_SYMBOL,
+        slotReleasedAt: null,
+        orderStatus: { in: ['PENDING', 'SENT', 'UNKNOWN', 'FILLED'] },
+      },
+      select: { id: true, entryPrice: true, stopLoss: true, volumeLots: true },
+    });
+    if (holders.length === 0) return { amount: 0, count: 0, note: 'No slot-holding decisions.' };
+
+    const [account, meta] = await Promise.all([
+      this.prisma.tradingAccount.findUnique({ where: { id: accountId } }),
+      this.prisma.symbolMetadata.findUnique({ where: { symbol: RSI_SYMBOL } }),
+    ]);
+    const contractSize = meta ? meta.contractSize.toNumber() : null;
+    const profitCurrency = meta?.profitCurrency ?? 'USD';
+    const accountCurrency = account?.currency ?? 'EUR';
+    const rate = await this.resolveConversionRate(profitCurrency, accountCurrency);
+
+    if (contractSize === null || rate === null) {
+      return {
+        amount: 0,
+        count: holders.length,
+        note: `${holders.length} slot-holding decision(s) exist but their risk could not be converted (contractSize=${contractSize}, rate=${rate}). The risk gate refuses to size against a missing rate independently.`,
+      };
+    }
+
+    let amount = 0;
+    for (const h of holders) {
+      const entry = h.entryPrice?.toNumber();
+      const stop = h.stopLoss?.toNumber();
+      const volume = h.volumeLots?.toNumber();
+      if (entry === undefined || stop === undefined || volume === undefined) continue;
+      amount += Math.abs(entry - stop) * contractSize * volume * rate;
+    }
+    return { amount, count: holders.length, note: `${holders.length} slot-holding decision(s) committing ${amount.toFixed(2)} ${accountCurrency} of stop risk.` };
   }
 
   async resolveAccountRiskInfo(accountId: string): Promise<RsiAccountRiskInfo> {
@@ -148,6 +297,9 @@ export class RsiAccountStateService {
     // Fails closed: a missing snapshot, or one that never recorded a trade
     // mode, is reported as REAL so the DEMO gate rejects it.
     const tradeMode: RsiAccountTradeMode = (snapshot?.tradeMode as RsiAccountTradeMode | undefined) ?? 'REAL';
+    // Fails closed to UNKNOWN, never to a mode: an older collector that does
+    // not push this must not be read as an assertion that the account hedges.
+    const marginMode: RsiAccountMarginMode = (snapshot?.marginMode as RsiAccountMarginMode | undefined) ?? 'UNKNOWN';
     const equity = snapshot ? snapshot.equity.toNumber() : 0;
     const accountCurrency = account?.currency ?? 'EUR';
     const profitCurrency = symbolMeta?.profitCurrency ?? 'USD';
@@ -185,6 +337,7 @@ export class RsiAccountStateService {
 
     return {
       tradeMode,
+      marginMode,
       equity,
       accountCurrency,
       profitCurrency,

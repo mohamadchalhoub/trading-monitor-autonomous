@@ -10,12 +10,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  collapseToSingleDecision,
   createPatternState,
   Direction,
   observe,
   PatternState,
+  ruleFamilyFor,
   SetupKind,
+  splitByRuleFamily,
   TriggeredSetup,
 } from '../../src/xauusd-rsi/pattern';
 
@@ -145,6 +146,17 @@ describe('BUY — RSI trough retest (spec §3.2)', () => {
 });
 
 describe('Extreme setups (spec §3.3, §3.4)', () => {
+  it('does NOT fire at 98.4, just below the 98.5 threshold', () => {
+    const { firings } = drive([50, 98.4]);
+    expect(firings).toHaveLength(0);
+  });
+
+  it('fires at exactly 98.5, the stated threshold', () => {
+    const { firings } = drive([50, 98.5]);
+    expect(firings).toHaveLength(1);
+    expect(firings[0].kinds).toEqual(['EXTREME_SELL']);
+  });
+
   it('fires an extreme SELL on a fresh crossing, with no retest pattern', () => {
     const { firings } = drive([50, 99]);
     expect(firings).toHaveLength(1);
@@ -160,7 +172,7 @@ describe('Extreme setups (spec §3.3, §3.4)', () => {
   });
 
   it('does not fire merely because the FIRST reading is already extreme (spec §7 start-up rule)', () => {
-    const { firings } = drive([99, 99.5, 98.2]);
+    const { firings } = drive([99, 99.5, 98.6]);
     expect(firings).toHaveLength(0);
   });
 
@@ -199,31 +211,65 @@ describe('Duplicate prevention and rearming (spec §6)', () => {
     expect(firings.map((f) => f.index)).toEqual([3, 9]);
   });
 
-  it('collapses two same-direction setups firing on one observation into a single decision', () => {
+  it('splits two families firing on one observation into TWO separate decisions', () => {
     // 99 fires the extreme; 97 re-arms the extreme AND freezes the peak at 99;
-    // the return to 99 satisfies both the peak retest and a fresh extreme crossing.
+    // the return to 99 satisfies both the peak retest and a fresh extreme
+    // crossing. Under the two-slot model these are two different trades
+    // against two different slots, so they must NOT be merged.
     const { firings } = drive([50, 99, 97, 99]);
     expect(firings).toHaveLength(2);
     const both = firings[1];
-    expect(both.index).toBe(3);
     expect(both.kinds.sort()).toEqual(['EXTREME_SELL', 'SELL_PEAK_RETEST']);
 
-    const collapsed = collapseToSingleDecision(both.triggered);
-    expect(collapsed).not.toBeNull();
-    expect(collapsed?.direction).toBe('SELL');
-    expect(collapsed?.kinds).toHaveLength(2);
-    // Both reasons are carried, so the audit record explains the whole event.
-    expect(collapsed?.reason).toContain('SELL_PEAK_RETEST');
-    expect(collapsed?.reason).toContain('EXTREME_SELL');
+    const split = splitByRuleFamily(both.triggered);
+    expect(split).toHaveLength(2);
+
+    const retest = split.find((d) => d.family === 'RETEST');
+    const extreme = split.find((d) => d.family === 'EXTREME');
+    expect(retest?.kinds).toEqual(['SELL_PEAK_RETEST']);
+    expect(extreme?.kinds).toEqual(['EXTREME_SELL']);
+    // Each decision carries only its own family's reasoning.
+    expect(retest?.reason).toContain('SELL_PEAK_RETEST');
+    expect(retest?.reason).not.toContain('EXTREME_SELL');
+    expect(extreme?.reason).toContain('EXTREME_SELL');
+    expect(extreme?.reason).not.toContain('SELL_PEAK_RETEST');
   });
 
-  it('refuses to invent a direction if opposite setups ever fired together', () => {
+  it('produces one decision when only one family fires', () => {
+    const split = splitByRuleFamily([
+      { kind: 'BUY_TROUGH_RETEST', direction: 'BUY', reason: 'x', keyLevel: 7 },
+    ]);
+    expect(split).toHaveLength(1);
+    expect(split[0].family).toBe('RETEST');
+    expect(split[0].direction).toBe('BUY');
+  });
+
+  it('maps every setup to exactly one family', () => {
+    expect(ruleFamilyFor('SELL_PEAK_RETEST')).toBe('RETEST');
+    expect(ruleFamilyFor('BUY_TROUGH_RETEST')).toBe('RETEST');
+    expect(ruleFamilyFor('EXTREME_SELL')).toBe('EXTREME');
+    expect(ruleFamilyFor('EXTREME_BUY')).toBe('EXTREME');
+  });
+
+  it('refuses to invent a direction if opposite setups ever fired within ONE family', () => {
     expect(() =>
-      collapseToSingleDecision([
-        { kind: 'EXTREME_SELL', direction: 'SELL', reason: 'x', keyLevel: 98 },
+      splitByRuleFamily([
+        { kind: 'EXTREME_SELL', direction: 'SELL', reason: 'x', keyLevel: 98.5 },
         { kind: 'EXTREME_BUY', direction: 'BUY', reason: 'y', keyLevel: 1.5 },
       ]),
     ).toThrow(/arithmetically impossible/);
+  });
+
+  it('allows opposite directions ACROSS families, since they are separate trades', () => {
+    // Not reachable from real RSI, but the splitter must not conflate the two
+    // families' directions if it ever were.
+    const split = splitByRuleFamily([
+      { kind: 'SELL_PEAK_RETEST', direction: 'SELL', reason: 'x', keyLevel: 92 },
+      { kind: 'EXTREME_BUY', direction: 'BUY', reason: 'y', keyLevel: 1.5 },
+    ]);
+    expect(split).toHaveLength(2);
+    expect(split.find((d) => d.family === 'RETEST')?.direction).toBe('SELL');
+    expect(split.find((d) => d.family === 'EXTREME')?.direction).toBe('BUY');
   });
 });
 

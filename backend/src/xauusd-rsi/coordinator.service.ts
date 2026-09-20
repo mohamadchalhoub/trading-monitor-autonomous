@@ -20,9 +20,10 @@ import { RsiAccountStateService } from './account-state.service';
 import { buildRsiBracket, evaluateRsiRiskManager } from './risk-manager';
 import { evaluateEntryEligibility } from './schedule';
 import { SPEC, SPEC_HASH } from './spec';
+import { Prisma } from '@prisma/client';
 import {
   RSI_GOLD_POINT_SIZE,
-  RSI_MAGIC_NUMBER,
+  rsiMagicForFamily,
   RSI_MAX_ENTRY_DEVIATION_POINTS,
   RSI_MAX_SIGNAL_AGE_SECONDS,
   RSI_SL_POINTS,
@@ -64,6 +65,11 @@ export class RsiCoordinatorService {
   async evaluate(signal: EmittedSignal, context: RsiCoordinatorContext): Promise<RsiCoordinatorResult> {
     const mode = getRsiExecutionMode();
     const action = signal.direction === 'BUY' ? 'OPEN_BUY' : 'OPEN_SELL';
+    const family = signal.family;
+    // Stable identity of this observation-plus-family. A replayed or retried
+    // evaluation of the same event is recognisable as the same event rather
+    // than becoming a second decision.
+    const eventId = `${SPEC_HASH}:${family}:${signal.atT}:${[...signal.kinds].sort().join('+')}`;
 
     const record = async (params: {
       approved: boolean;
@@ -83,6 +89,8 @@ export class RsiCoordinatorService {
           symbol: RSI_SYMBOL,
           observedAt: new Date(signal.atT),
           direction: signal.direction,
+          ruleFamily: family,
+          eventId,
           setupKinds: signal.kinds,
           rsiValue: signal.rsi,
           previousRsi: signal.evidence.previousRsi,
@@ -111,7 +119,12 @@ export class RsiCoordinatorService {
           approved: params.approved,
           skipReason: params.skipReason,
           orderStatus: params.queued ? 'PENDING' : 'NONE',
-          magicNumber: RSI_MAGIC_NUMBER,
+          magicNumber: rsiMagicForFamily(family),
+          // A row that never became an order never holds a slot. Setting the
+          // release timestamp at creation keeps it out of the partial unique
+          // index entirely, so a long history of skipped signals can never
+          // block a family.
+          slotReleasedAt: params.queued ? null : new Date(),
         },
       });
       return row.id;
@@ -183,11 +196,25 @@ export class RsiCoordinatorService {
     // it could have changed.
     const resolvedVolume = this.runtimeSettings.resolveVolume();
 
-    const [accountInfo, occupancy, constraints] = await Promise.all([
+    const [baseAccountInfo, occupancy, constraints, reservedRisk] = await Promise.all([
       this.accountState.resolveAccountRiskInfo(context.accountId),
-      this.accountState.resolveOccupancy(context.accountId),
+      this.accountState.resolveOccupancy(context.accountId, family),
       this.accountState.resolveBrokerConstraints(new Date(context.nowT)),
+      // Stop risk already committed by slot-holding decisions. Because a slot
+      // is reserved by INSERTING the decision, a first entry evaluated moments
+      // earlier in this same observation is ALREADY counted here — which is
+      // exactly what stops two simultaneous family signals from jointly
+      // exceeding the combined cap.
+      this.accountState.resolveReservedStopRisk(context.accountId),
     ]);
+    // Whether the OTHER family is holding, which determines if accepting this
+    // candidate would mean two concurrent positions on one symbol.
+    const slots = await this.accountState.resolveSlotStates(context.accountId);
+    const otherFamilySlotHeld = family === 'RETEST' ? slots.EXTREME.occupied : slots.RETEST.occupied;
+    const accountInfo = {
+      ...baseAccountInfo,
+      existingCombinedRiskAmount: baseAccountInfo.existingCombinedRiskAmount + reservedRisk.amount,
+    };
 
     const verdict = evaluateRsiRiskManager({
       candidate: {
@@ -207,10 +234,16 @@ export class RsiCoordinatorService {
       maxEntryDeviationPoints: RSI_MAX_ENTRY_DEVIATION_POINTS,
       requestedVolumeLots: resolvedVolume.volumeLots,
       pointSize: RSI_GOLD_POINT_SIZE,
+      otherFamilySlotHeld,
     });
 
     const riskEvidence = {
+      family,
+      eventId,
       eligibility,
+      reservedStopRisk: reservedRisk,
+      otherFamilySlotHeld,
+      slots: { RETEST: slots.RETEST.occupied, EXTREME: slots.EXTREME.occupied },
       entryDeviationPoints,
       requestedVolume: resolvedVolume,
       accountInfo,
@@ -271,17 +304,44 @@ export class RsiCoordinatorService {
       return { mode, decisionId: id, queued: false, skipReason: reason };
     }
 
-    const id = await record({
-      approved: true,
-      skipReason: null,
-      queued: true,
-      entryPrice,
-      stopLoss,
-      takeProfit,
-      volumeLots: verdict.volumeLots,
-      extraEvidence: riskEvidence,
-    });
-    this.logger.log(`DEMO: queued XAUUSD RSI order ${id} (${action} @ ${entryPrice}, SL ${stopLoss}, TP ${takeProfit}, ${verdict.volumeLots} lots)`);
-    return { mode, decisionId: id, queued: true, skipReason: null };
+    // The INSERT itself is the slot reservation. A partial unique index
+    // permits only one slot-holding decision per account per family, so two
+    // concurrent evaluations cannot both succeed here — the loser is rejected
+    // by the database rather than by a check that could interleave with it.
+    try {
+      const id = await record({
+        approved: true,
+        skipReason: null,
+        queued: true,
+        entryPrice,
+        stopLoss,
+        takeProfit,
+        volumeLots: verdict.volumeLots,
+        extraEvidence: riskEvidence,
+      });
+      this.logger.log(
+        `DEMO: reserved the ${family} slot and queued order ${id} (${action} @ ${entryPrice}, SL ${stopLoss}, TP ${takeProfit}, ${verdict.volumeLots} lots)`,
+      );
+      return { mode, decisionId: id, queued: true, skipReason: null };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const reason =
+          `The ${family} slot was taken by a concurrent submission between this evaluation's occupancy check and its write. ` +
+          'Refusing rather than opening a second position for the same family.';
+        const id = await record({
+          approved: true,
+          skipReason: reason,
+          queued: false,
+          entryPrice,
+          stopLoss,
+          takeProfit,
+          volumeLots: verdict.volumeLots,
+          extraEvidence: { ...riskEvidence, slotReservationLost: true },
+        });
+        this.logger.warn(`${family} slot reservation lost to a concurrent submission — decision ${id} not queued`);
+        return { mode, decisionId: id, queued: false, skipReason: reason };
+      }
+      throw err;
+    }
   }
 }

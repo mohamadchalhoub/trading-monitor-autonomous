@@ -25,6 +25,7 @@ function baseInput(overrides: Partial<RsiRiskManagerInput> = {}): RsiRiskManager
     },
     accountInfo: {
       tradeMode: 'DEMO',
+      marginMode: 'RETAIL_HEDGING',
       equity: 49998.54,
       accountCurrency: 'EUR',
       profitCurrency: 'USD',
@@ -42,6 +43,7 @@ function baseInput(overrides: Partial<RsiRiskManagerInput> = {}): RsiRiskManager
     maxEntryDeviationPoints: 100,
     requestedVolumeLots: 0.5,
     pointSize: RSI_GOLD_POINT_SIZE,
+    otherFamilySlotHeld: false,
     ...overrides,
   };
 }
@@ -95,12 +97,46 @@ describe('Controls and occupancy', () => {
     expect(v.rejectionReason).toMatch(/STOP NEW ENTRIES/);
   });
 
-  it('refuses a second position when ANY XAUUSD exposure exists, including a foreign one', () => {
+  it('refuses when the occupancy resolver reports this family’s slot unavailable', () => {
     const v = evaluateRsiRiskManager(
       baseInput({ occupancy: { hasExistingXauusdExposure: true, exposureDescription: 'foreign position (magic 999)' } }),
     );
     expect(v.approved).toBe(false);
     expect(v.rejectionReason).toMatch(/foreign position/);
+  });
+});
+
+describe('Hedging vs netting — the second concurrent position', () => {
+  it('allows a second concurrent position on a RETAIL_HEDGING account', () => {
+    const v = evaluateRsiRiskManager(baseInput({ otherFamilySlotHeld: true }));
+    expect(v.approved).toBe(true);
+  });
+
+  it('refuses a second concurrent position on a NETTING account, rather than emulating it', () => {
+    const v = evaluateRsiRiskManager(
+      baseInput({ otherFamilySlotHeld: true, accountInfo: { ...baseInput().accountInfo, marginMode: 'RETAIL_NETTING' } }),
+    );
+    expect(v.approved).toBe(false);
+    expect(v.rejectionReason).toMatch(/RETAIL_NETTING/);
+    expect(v.rejectionReason).toMatch(/merge with, reduce or reverse/);
+  });
+
+  it('refuses when the margin mode could not be established, and says so distinctly', () => {
+    const v = evaluateRsiRiskManager(
+      baseInput({ otherFamilySlotHeld: true, accountInfo: { ...baseInput().accountInfo, marginMode: 'UNKNOWN' } }),
+    );
+    expect(v.approved).toBe(false);
+    expect(v.rejectionReason).toMatch(/could not be established/);
+    expect(v.rejectionReason).not.toMatch(/RETAIL_NETTING/);
+  });
+
+  it('does not apply the hedging requirement to the FIRST position', () => {
+    // With no other slot held, a netting account is perfectly able to open one
+    // position, so the check must not fire.
+    const v = evaluateRsiRiskManager(
+      baseInput({ otherFamilySlotHeld: false, accountInfo: { ...baseInput().accountInfo, marginMode: 'RETAIL_NETTING' } }),
+    );
+    expect(v.approved).toBe(true);
   });
 });
 

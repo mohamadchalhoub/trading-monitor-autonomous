@@ -19,7 +19,7 @@ import { CollectorTokenGuard } from '../auth/collector-token.guard';
 import { RsiDecisionService } from './decision.service';
 import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 import { GoldAiSummaryService } from '../gold-execution/gold-ai-summary.service';
-import { RSI_DEFAULT_VOLUME_LOTS, RSI_GOLD_POINT_SIZE, RSI_MAGIC_NUMBER, RSI_SYMBOL } from './safety-constants';
+import { RSI_DEFAULT_VOLUME_LOTS, RSI_GOLD_POINT_SIZE, rsiMagicForFamily, RSI_SYMBOL } from './safety-constants';
 
 class RsiExecutionResultDto {
   @IsBoolean() ok!: boolean;
@@ -74,6 +74,7 @@ export class RsiExecutionController {
       action: decision.direction === 'BUY' ? 'OPEN_BUY' : 'OPEN_SELL',
       entryPrice,
       observedAtT: decision.observedAt.getTime(),
+      family: decision.ruleFamily,
     });
     if (!preSend.ok) {
       this.logger.warn(`decision ${decision.id}: failed pre-send re-verification, cancelling instead of sending — ${preSend.reason}`);
@@ -81,7 +82,7 @@ export class RsiExecutionController {
       void this.telegram.notify(
         'SUBMISSION_REJECTED',
         `rsi-presend:${decision.id}`,
-        `XAUUSD RSI DEMO — entry cancelled at the pre-send check and never sent to the broker. decision=${decision.id} reason=${preSend.reason}`,
+        `XAUUSD RSI DEMO — ${decision.ruleFamily} ${decision.direction} entry cancelled at the pre-send check and never sent to the broker. decision=${decision.id} reason=${preSend.reason}`,
       );
       return { order: null };
     }
@@ -100,7 +101,10 @@ export class RsiExecutionController {
         takeProfit,
         stopLossPoints: priceDistanceInPoints(entryPrice, stopLoss),
         takeProfitPoints: priceDistanceInPoints(entryPrice, takeProfit),
-        magic: RSI_MAGIC_NUMBER,
+        // This FAMILY's own magic number, so the resulting broker ticket is
+        // attributable to one execution slot rather than merely to this strategy.
+        magic: rsiMagicForFamily(decision.ruleFamily),
+        ruleFamily: decision.ruleFamily,
         symbol: RSI_SYMBOL,
         pointSize: RSI_GOLD_POINT_SIZE,
         comment: `rsi-${decision.id.slice(0, 8)}`,

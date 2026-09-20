@@ -55,19 +55,39 @@ export const SPEC = {
     buy2: 8.9,
 
     /**
-     * USER RULE §3.3 states the extreme SELL threshold as 98.5, but the
-     * user's own crossing definition (§6.2) and rearm rule (§6.4) both use
-     * 98. See the spec document's §5 note: the crossing/rearm number is
-     * what actually defines live detection, so 98 is what fires, and 98.5
-     * is retained below purely for the dashboard's threshold display.
-     * Deliberately NOT reconciled silently — surfaced to the user instead.
+     * USER RULE — extreme SELL is 98.5, used consistently for triggering,
+     * rearming, configuration, the dashboard, the specification and the
+     * tests. An earlier revision fired at 98 because the user's original
+     * text stated 98.5 as the threshold while its crossing and rearm
+     * examples said 98; the user has since confirmed those 98 references
+     * were stale, so a single value is now used everywhere.
      */
-    extremeSellCross: 98,
-    extremeSellDisplayThreshold: 98.5,
+    extremeSellCross: 98.5,
 
-    /** USER RULE — 1.5 is consistent across the threshold, the crossing and the rearm. */
+    /** USER RULE — extreme BUY is 1.5, likewise used everywhere. */
     extremeBuyCross: 1.5,
-    extremeBuyDisplayThreshold: 1.5,
+  },
+
+  /**
+   * USER RULE — the two independent execution slots.
+   *
+   * The four setups group into two rule FAMILIES, and each family may hold
+   * at most one active, pending or uncertain entry of its own. A retest
+   * position and an extreme position may therefore be open at the same
+   * time, giving this strategy a maximum concurrency of two.
+   *
+   * This is deliberately NOT one slot per directional setup: SELL and BUY
+   * retests share the RETEST slot, and both extremes share the EXTREME slot.
+   */
+  ruleFamilies: {
+    RETEST: {
+      setups: ['SELL_PEAK_RETEST', 'BUY_TROUGH_RETEST'] as const,
+      maxConcurrentEntries: 1,
+    },
+    EXTREME: {
+      setups: ['EXTREME_SELL', 'EXTREME_BUY'] as const,
+      maxConcurrentEntries: 1,
+    },
   },
 
   brackets: {
