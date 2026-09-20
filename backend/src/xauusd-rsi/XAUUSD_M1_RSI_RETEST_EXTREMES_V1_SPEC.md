@@ -1,8 +1,9 @@
 # XAUUSD M1 RSI Retest / Extremes — Frozen Specification
 
 **Strategy identifier:** `xauusd-m1-rsi-retest-extremes-v1`
-**Status:** FROZEN, revision 2. Committed before the aggregate historical
-evaluation of this configuration was run.
+**Status:** FROZEN, revision 3. The rules are unchanged from revision 2.
+Revision 3 records a scope change only: the strategy is implemented and
+operated on **live DEMO data**, and historical evaluation is out of scope.
 **Scope:** The single enabled entry strategy of this application. DEMO accounts only.
 
 **Revision 2 changed three things**, all at the user's explicit instruction:
@@ -14,8 +15,14 @@ evaluation of this configuration was run.
    slots** (§6A), so a retest and an extreme position may be open at once.
 3. XAUUSD is observed **once per second** (§8.2).
 
-Revision 1's evaluation results do not describe this configuration and are
-retained as historical results only.
+**Revision 3 changed no rule.** At the user's explicit instruction,
+historical evaluation, backtesting, trade simulation and historical
+win-rate or profitability analysis are removed from scope. No simulated
+figure is an activation criterion, and no rule here is adjusted on the basis
+of one. Earlier simulation output is retained, clearly labelled as archived
+research, in `backend/research-archive/xauusd-rsi/`. Historical broker
+queries remain permitted where reconciliation of real orders, positions and
+executions requires them.
 
 This document is the authority for the rules below. Code must match it, and
 `spec.ts` carries a hash of the machine-readable half of it so a runtime state

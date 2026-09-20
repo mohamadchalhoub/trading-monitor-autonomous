@@ -1,10 +1,15 @@
 /**
+ * ARCHIVED RESEARCH — NOT PART OF LIVE OPERATION.
+ *
+ * This script is retained for the record only. It is deliberately no longer
+ * exposed as an npm script and is not run during normal operation. Its output
+ * is SIMULATION, never live DEMO account performance, and it must not be used
+ * to approve, reject, tune or change the strategy. See the README beside it.
+ *
  * Historical evaluation of `xauusd-m1-rsi-retest-extremes-v1`.
  *
- * Usage:
- *   npm run xauusd-rsi:evaluate
- *   npm run xauusd-rsi:evaluate -- --from 2024-03-01 --to 2026-09-16
- *   npm run xauusd-rsi:evaluate -- --json report.json
+ * Usage (archived):
+ *   cd backend && npx tsx research-archive/xauusd-rsi/xauusd-rsi-evaluate.ts
  *
  * ## What this can and cannot establish
  *
@@ -40,11 +45,11 @@
  */
 import { writeFileSync } from 'node:fs';
 import { PrismaClient } from '@prisma/client';
-import { applyClosedBar, applyTick, createEngineState, EmittedSignal, EngineState, engineWarmedUp, M1_MS } from '../src/xauusd-rsi/engine';
-import { SPEC, SPEC_HASH } from '../src/xauusd-rsi/spec';
-import { evaluateClockSchedule, evaluateEntryEligibility } from '../src/xauusd-rsi/schedule';
-import { beirutLabel } from '../src/xauusd-rsi/time';
-import { RuleFamily, RULE_FAMILIES, SetupKind } from '../src/xauusd-rsi/pattern';
+import { applyClosedBar, applyTick, createEngineState, EmittedSignal, EngineState, engineWarmedUp, M1_MS } from '../../src/xauusd-rsi/engine';
+import { SPEC, SPEC_HASH } from '../../src/xauusd-rsi/spec';
+import { evaluateClockSchedule, evaluateEntryEligibility } from '../../src/xauusd-rsi/schedule';
+import { beirutLabel } from '../../src/xauusd-rsi/time';
+import { RuleFamily, RULE_FAMILIES, SetupKind } from '../../src/xauusd-rsi/pattern';
 
 const RSI_SYMBOL = SPEC.symbol;
 

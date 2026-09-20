@@ -342,20 +342,47 @@ anyone read it.
 
 ---
 
-## 7. Evaluating the strategy
+## 7. Historical evaluation is archived, not operational
 
-```bash
-cd backend && npm run xauusd-rsi:evaluate
-```
+Historical evaluation, backtesting, trade simulation and historical
+win-rate or profitability analysis are **out of scope**. Nothing in normal
+operation runs them, and no simulated figure is an activation criterion.
 
-Read the output's own caveats carefully. The long-horizon numbers come from a
-**closed-bar approximation**, which is a different strategy from the one that
-trades: over the *same* 1.54 days of tick coverage the approximation produced
-1 signal and the faithful replay produced 39. The faithful replay is limited
-to whatever ordered tick history exists, and 11 trades is far too few to
-conclude anything. Running the collector with the observation thread enabled
-accumulates that history going forward.
+The material produced before the scope narrowed now lives in
+`backend/research-archive/xauusd-rsi/`, with a README stating plainly what it
+is. The evaluation script there is no longer exposed as an npm script.
 
-The spread is **not** deducted from P&L — the entry and exit prices already
-express it. A resolved trade realises exactly ±$250 at 0.5 lots, and the
-spread instead affects how often a target is reached at all.
+Two figures have circulated and must not be misread: **+$513.50** and a
+**$4,500** maximum drawdown. Both are simulation output over stored candles.
+Neither is a DEMO result, a realised P&L, or a broker balance. Real
+performance is whatever the live account and the recorded decision, fill and
+closure rows say it is.
+
+The strategy's rules are fixed by
+`backend/src/xauusd-rsi/XAUUSD_M1_RSI_RETEST_EXTREMES_V1_SPEC.md` and are not
+adjusted on the basis of any simulated result.
+
+Broker-history queries remain in use where reconciliation needs them —
+matching recorded decisions against actual orders, positions, fills and
+closures. That is operational reconciliation, not evaluation, and it stays.
+
+---
+
+## 8. Warm-up history
+
+RSI(5) cannot be computed from nothing, so the watch loop seeds the indicator
+from stored closed M1 bars before it observes anything live. The amount is
+fixed by the specification: **period 5 + 1 + 250 warm-up bars = 256**
+contiguous closed M1 bars, and only the most recent *contiguous* run is used,
+so a gap is never bridged.
+
+That history initialises the indicator and nothing else:
+
+- The seeding path applies closed bars only. `applyClosedBar` emits no
+  signals at all, so no historical bar can become a live entry.
+- Pattern state is not built from the seed. `previousRsi` is still `null`
+  when live observation begins, and every crossing and retest test requires a
+  previous *live* reading. An already-extreme first reading therefore cannot
+  produce a startup order; the strategy must watch an actual live crossing.
+- Until the full 256 bars are in place, signals are suppressed and logged
+  rather than queued.
