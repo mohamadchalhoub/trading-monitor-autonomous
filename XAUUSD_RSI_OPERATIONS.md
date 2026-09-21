@@ -492,10 +492,23 @@ XAUUSD RSI suites; and a full run has completed with 1613/1613 passing and
 zero failures, so it is not deterministic. The container reports `restarts=0`
 and `OOMKilled=false`.
 
+Observed frequency across four full runs of the same commit range: one run
+clean at 1613/1613; one with a single failure; one with two. Affected files
+so far: `health-check-resilience`, `rules/technical-analysis-integration`,
+`rules/rule-engine`, `ai/ai-pipeline`.
+
 **What is NOT established: the cause.** It has not been reproduced
-deliberately, and no mechanism has been confirmed. Connection-pool exhaustion
-under sequential load, a Docker port-forward hiccup and a client-side timeout
-all remain open possibilities.
+deliberately, and no mechanism has been confirmed. Connection-pool
+exhaustion under load, a Docker port-forward hiccup and a client-side
+timeout all remain open possibilities.
+
+Measured at idle, which neither confirms nor rules anything out:
+`max_connections` is 100 with 6 in use, and the container has no memory
+limit, no restarts and no OOM kill. The untested hypothesis worth trying
+first is connection accumulation across the run — the suite has 175 files
+and each creates its own `PrismaClient`, so the interesting measurement is
+`pg_stat_activity` sampled *during* a full run rather than at rest. Nobody
+has taken that measurement yet.
 
 **A separate finding does NOT explain it.** The test container's Docker
 healthcheck runs `pg_isready -U autonomous_trading` without `-d`, so it
