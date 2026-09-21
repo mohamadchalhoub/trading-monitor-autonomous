@@ -833,7 +833,7 @@ export interface XauusdRsiStatus {
     approved: boolean;
     skipReason: string | null;
     reasoning: string;
-    ticket: number | null;
+    ticket: string | null;
     filledPrice: number | null;
     slippagePoints: number | null;
     brokerStopLoss: number | null;
@@ -844,7 +844,7 @@ export interface XauusdRsiStatus {
     count: number;
     items: Array<{
       id: string;
-      ticket: number | null;
+      ticket: string | null;
       filledAt: string | null;
       filledPrice: number | null;
       requestedPrice: number | null;

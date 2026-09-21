@@ -1566,7 +1566,12 @@ model XauusdRsiDecision {
   // family cannot both insert, because the second violates the index.
   slotReleasedAt DateTime? @map("slot_released_at")
 
-  mt5Ticket      Int?      @map("mt5_ticket")
+  // BigInt, not Int. MT5 position tickets are now 11 digits (observed live:
+  // 58537207521), which overflows a 32-bit integer. While this was Int, a
+  // real fill could not be recorded at all: recordExecutionResult threw
+  // "Unable to fit integer value into an INT4", the decision stayed SENT,
+  // and its slot was never released.
+  mt5Ticket      BigInt?   @map("mt5_ticket")
   // Requested vs. actual, so slippage is recorded rather than inferred.
   requestedPrice Decimal?  @map("requested_price") @db.Decimal(18, 6)
   filledPrice    Decimal?  @map("filled_price") @db.Decimal(18, 6)

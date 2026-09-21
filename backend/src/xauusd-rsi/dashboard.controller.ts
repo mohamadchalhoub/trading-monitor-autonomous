@@ -330,7 +330,8 @@ export class RsiDashboardController {
         approved: d.approved,
         skipReason: d.skipReason,
         reasoning: d.reasoning,
-        ticket: d.mt5Ticket,
+        // BigInt: serialised as a string, since JSON has no bigint.
+        ticket: d.mt5Ticket === null ? null : String(d.mt5Ticket),
         filledPrice: d.filledPrice?.toNumber() ?? null,
         slippagePoints: d.slippagePoints?.toNumber() ?? null,
         brokerStopLoss: d.brokerStopLoss?.toNumber() ?? null,
@@ -344,7 +345,8 @@ export class RsiDashboardController {
         // requested — a mismatch is shown, not smoothed over.
         items: filled.map((d) => ({
           id: d.id,
-          ticket: d.mt5Ticket,
+          // BigInt: serialised as a string, since JSON has no bigint.
+        ticket: d.mt5Ticket === null ? null : String(d.mt5Ticket),
           filledAt: d.filledAt?.toISOString() ?? null,
           filledPrice: d.filledPrice?.toNumber() ?? null,
           requestedPrice: d.requestedPrice?.toNumber() ?? null,

@@ -423,12 +423,36 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
 
       const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
       expect(after.orderStatus).toBe('FILLED');
-      expect(after.mt5Ticket).toBe(7777);
+      expect(String(after.mt5Ticket)).toBe('7777');
       expect(after.filledPrice?.toNumber()).toBeCloseTo(4345.5, 6);
       // |4345.5 - 4345.45| / 0.01 = 5 points
       expect(after.slippagePoints?.toNumber()).toBeCloseTo(5, 3);
       expect(after.brokerStopLoss?.toNumber()).toBeCloseTo(4350.5, 6);
       expect(after.filledAt).not.toBeNull();
+    });
+
+    it('records an 11-digit MT5 ticket, which used to overflow the column', async () => {
+      // Found in live operation: the broker returned ticket 58537207521 for a
+      // real filled position. The column was INT4, so recordExecutionResult
+      // threw, the fill was never recorded, the decision stayed SENT and its
+      // slot was never released — blocking every further entry in that family.
+      const { account, token } = await setupAccountWithToken(prisma);
+      const decision = await claimed(account.id, token);
+
+      const bigTicket = 58537207521;
+      expect(bigTicket).toBeGreaterThan(2_147_483_647); // beyond INT4
+
+      const res = await request(app, {
+        method: 'POST',
+        url: `/collector/${account.id}/xauusd-rsi/pending-order/${decision.id}/result`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { ok: true, ticket: bigTicket, filledPrice: 4345.7, brokerStopLoss: 4340.7, brokerTakeProfit: 4350.7 },
+      });
+      expect(res.statusCode).toBeLessThan(300);
+
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
+      expect(after.orderStatus).toBe('FILLED');
+      expect(String(after.mt5Ticket)).toBe('58537207521');
     });
 
     it('records a clear rejection as FAILED', async () => {
