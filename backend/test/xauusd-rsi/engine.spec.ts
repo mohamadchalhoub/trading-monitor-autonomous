@@ -123,9 +123,16 @@ describe('Gaps and continuity (spec §8.6)', () => {
     expect(r.state.needsRsiReseed).toBe(false);
     expect(r.state.rsi.seeded).toBe(true);
 
-    // Pattern progress does not survive.
+    // Pattern PROGRESS does not survive: no tracked or frozen level, and no
+    // previous tick reading. The bar that triggered the reset is then
+    // observed like any other close, so the resting phase may be IDLE rather
+    // than AWAITING_ARM_RESET — what matters is that nothing is part-formed.
     expect(r.state.pattern.previousRsi).toBeNull();
-    expect(r.state.pattern.sellRetest.phase).toBe('AWAITING_ARM_RESET');
+    expect(['AWAITING_ARM_RESET', 'IDLE']).toContain(r.state.pattern.sellRetest.phase);
+    expect(r.state.pattern.sellRetest.runningExtreme).toBeNull();
+    expect(r.state.pattern.sellRetest.frozenExtreme).toBeNull();
+    expect(r.state.pattern.buyRetest.runningExtreme).toBeNull();
+    expect(r.state.pattern.buyRetest.frozenExtreme).toBeNull();
     expect(r.state.gapResets).toBe(1);
   });
 

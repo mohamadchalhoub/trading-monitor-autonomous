@@ -546,7 +546,9 @@ export class RsiWatchService {
 
     let engine = createEngineState(state.engine.observationMode);
     for (const row of contiguous) {
-      engine = applyClosedBar(engine, row.t, row.close.toNumber()).state;
+      // advancePattern = false: seeding makes RSI computable, and must not
+      // leave a frozen trough or peak that a live tick could retest.
+      engine = applyClosedBar(engine, row.t, row.close.toNumber(), false).state;
     }
 
     const warmed = engineWarmedUp(engine);

@@ -121,6 +121,37 @@ export interface ObserveResult {
  * correct) but no setup is allowed to fire. This is what makes warm-up and
  * stale data safe: they suppress signals without corrupting pattern state.
  */
+/**
+ * Advances the retest patterns on a CLOSED M1 bar. Never emits a signal.
+ *
+ * This is the half of the pattern the user reads off the chart: the trough
+ * or peak, the confirming candle, and the invalidation. Ticks cannot move
+ * any of it — that is what stops intrabar noise from manufacturing a
+ * rebound, which is exactly how an entry was wrongly opened on 2026-09-21
+ * from 0.045 of RSI movement across three ticks.
+ *
+ * The extremes (98.5 / 1.5) are deliberately untouched here: those are
+ * crossings, detected intrabar, and the user has not asked for them to
+ * change.
+ */
+export function observeClosedBar(params: { state: PatternState; closeRsi: number }): { state: PatternState; notes: string[] } {
+  const { state, closeRsi } = params;
+  const notes: string[] = [];
+
+  if (!Number.isFinite(closeRsi)) {
+    return { state, notes: [`ignored non-finite closed-bar RSI ${closeRsi}`] };
+  }
+
+  return {
+    state: {
+      ...state,
+      sellRetest: advanceSellRetestOnClose(state.sellRetest, closeRsi, notes),
+      buyRetest: advanceBuyRetestOnClose(state.buyRetest, closeRsi, notes),
+    },
+    notes,
+  };
+}
+
 export function observe(params: {
   state: PatternState;
   rsi: number;
@@ -137,8 +168,10 @@ export function observe(params: {
 
   const prev = state.previousRsi;
 
-  const sellRetest = stepSellRetest(state.sellRetest, prev, rsi, triggered, notes, canEmit);
-  const buyRetest = stepBuyRetest(state.buyRetest, prev, rsi, triggered, notes, canEmit);
+  // Retest PROGRESSION happens on bar closes (see observeClosedBar); a tick
+  // can only fire the entry against an already-frozen level.
+  const sellRetest = checkSellRetestTrigger(state.sellRetest, prev, rsi, triggered, notes, canEmit);
+  const buyRetest = checkBuyRetestTrigger(state.buyRetest, prev, rsi, triggered, notes, canEmit);
   const extremeSell = stepExtremeSell(state.extremeSell, prev, rsi, triggered, notes, canEmit);
   const extremeBuy = stepExtremeBuy(state.extremeBuy, prev, rsi, triggered, notes, canEmit);
 
@@ -158,90 +191,66 @@ export function observe(params: {
   };
 }
 
-function stepSellRetest(
-  s: RetestState,
-  prev: number | null,
-  rsi: number,
-  triggered: TriggeredSetup[],
-  notes: string[],
-  canEmit: boolean,
-): RetestState {
+/**
+ * SELL peak tracking, advanced ONLY on a closed M1 bar.
+ *
+ * USER RULE (revision 5): the peak, the pullback and the invalidation are all
+ * read off the closed-bar RSI line — the line drawn on the chart — not off
+ * individual ticks. Two consequences the user stated directly:
+ *
+ *   - "at least one candle should be rising" confirms the reversal. The size
+ *     of that candle does not matter; a close of 92.21 after a peak of 92.25
+ *     counts exactly as much as a close of 88 does.
+ *   - An intrabar spike through Sell 1 does NOT invalidate. Only a bar that
+ *     CLOSES beyond Sell 1 kills the peak.
+ *
+ * Nothing here ever emits a signal; the entry is triggered intrabar by
+ * `checkSellRetestTrigger`.
+ */
+function advanceSellRetestOnClose(s: RetestState, closeRsi: number, notes: string[]): RetestState {
   const t = SPEC.thresholds;
 
   switch (s.phase) {
     case 'AWAITING_ARM_RESET':
-      // Must be seen at or below Sell 2 before a fresh pattern may arm, so
-      // the running maximum is one this engine actually watched from the start.
-      if (rsi <= t.sell2) return { phase: 'IDLE', runningExtreme: null, frozenExtreme: null };
-      return s;
+      return closeRsi <= t.sell2 ? { phase: 'IDLE', runningExtreme: null, frozenExtreme: null } : s;
 
     case 'IDLE':
-      if (rsi > t.sell2) {
-        notes.push(`SELL retest armed: RSI ${fmt(rsi)} rose above Sell 2 (${t.sell2})`);
-        return { phase: 'TRACKING_EXTREME', runningExtreme: rsi, frozenExtreme: null };
+      if (closeRsi > t.sell2) {
+        notes.push(`SELL retest armed: bar closed at RSI ${fmt(closeRsi)}, above Sell 2 (${t.sell2})`);
+        return { phase: 'TRACKING_EXTREME', runningExtreme: closeRsi, frozenExtreme: null };
       }
       return s;
 
     case 'TRACKING_EXTREME': {
-      // Invalidation is checked FIRST: a drop straight through Sell 1 kills
-      // the pattern rather than freezing a peak on the way down.
-      if (rsi < t.sell1) {
-        notes.push(`SELL retest invalidated while tracking: RSI ${fmt(rsi)} fell below Sell 1 (${t.sell1})`);
+      if (closeRsi < t.sell1) {
+        notes.push(`SELL retest invalidated: bar closed at ${fmt(closeRsi)}, below Sell 1 (${t.sell1})`);
         return { phase: 'IDLE', runningExtreme: null, frozenExtreme: null };
       }
-      const runningMax = s.runningExtreme ?? rsi;
-      if (rsi > runningMax) return { ...s, runningExtreme: rsi };
-
-      // The peak freezes only when RSI PULLS BACK OUT of the arming zone,
-      // never on the first slightly lower tick.
-      //
-      // USER RULE, stated after a wrongly-opened entry on 2026-09-21: the
-      // pullback has to actually happen. Freezing on any lower reading
-      // treated 0.035 of RSI movement as a pullback and fired an entry on
-      // three ticks of noise at the top of one continuous rise. It also made
-      // Sell 1 unreachable in practice, so the invalidation threshold could
-      // never do its job.
-      //
-      // Below Sell 2 the peak is confirmed and the pattern waits for the
-      // return to it; at or above Sell 2 the move is still forming.
-      if (rsi >= t.sell2) return s;
-      notes.push(`SELL peak frozen at ${fmt(runningMax)} — RSI pulled back to ${fmt(rsi)}, below Sell 2 (${t.sell2})`);
+      const runningMax = s.runningExtreme ?? closeRsi;
+      if (closeRsi > runningMax) return { ...s, runningExtreme: closeRsi };
+      if (closeRsi === runningMax) return s;
+      notes.push(`SELL peak frozen at ${fmt(runningMax)} — a falling candle closed at ${fmt(closeRsi)}`);
       return { phase: 'EXTREME_FROZEN', runningExtreme: null, frozenExtreme: runningMax };
     }
 
-    case 'EXTREME_FROZEN': {
-      if (rsi < t.sell1) {
-        notes.push(`SELL retest invalidated: RSI ${fmt(rsi)} fell below Sell 1 (${t.sell1}) before returning to the peak`);
+    case 'EXTREME_FROZEN':
+      if (closeRsi < t.sell1) {
+        notes.push(`SELL retest invalidated: bar closed at ${fmt(closeRsi)}, below Sell 1 (${t.sell1}) before the peak was retested`);
         return { phase: 'IDLE', runningExtreme: null, frozenExtreme: null };
       }
-      const peak = s.frozenExtreme as number;
-      if (prev !== null && prev < peak && rsi >= peak) {
-        if (canEmit) {
-          triggered.push({
-            kind: 'SELL_PEAK_RETEST',
-            direction: 'SELL',
-            keyLevel: peak,
-            reason: `RSI returned to its frozen peak ${fmt(peak)} (previous ${fmt(prev)}, current ${fmt(rsi)}) without having fallen below Sell 1 (${t.sell1})`,
-          });
-        } else {
-          notes.push(`SELL retest condition met at peak ${fmt(peak)} but emission is suppressed (warm-up or stale data); consumed, not queued`);
-        }
-        // Consumed either way — a suppressed signal is never replayed later.
-        return { phase: 'AWAITING_REARM', runningExtreme: null, frozenExtreme: null };
-      }
       return s;
-    }
 
     case 'AWAITING_REARM':
-      if (rsi < t.sell1) {
-        notes.push(`SELL retest rearmed: RSI ${fmt(rsi)} fell below Sell 1 (${t.sell1})`);
+      if (closeRsi < t.sell1) {
+        notes.push(`SELL retest rearmed: bar closed at ${fmt(closeRsi)}, below Sell 1 (${t.sell1})`);
         return { phase: 'IDLE', runningExtreme: null, frozenExtreme: null };
       }
       return s;
   }
 }
 
-function stepBuyRetest(
+/** The entry itself: intrabar, the moment RSI returns to the frozen peak. */
+function checkSellRetestTrigger(
   s: RetestState,
   prev: number | null,
   rsi: number,
@@ -249,68 +258,90 @@ function stepBuyRetest(
   notes: string[],
   canEmit: boolean,
 ): RetestState {
+  if (s.phase !== 'EXTREME_FROZEN') return s;
+  const peak = s.frozenExtreme as number;
+  if (prev === null || !(prev < peak) || !(rsi >= peak)) return s;
+
+  if (canEmit) {
+    triggered.push({
+      kind: 'SELL_PEAK_RETEST',
+      direction: 'SELL',
+      keyLevel: peak,
+      reason: `RSI returned to its frozen peak ${fmt(peak)} (previous ${fmt(prev)}, current ${fmt(rsi)}) after a confirmed pullback, without any bar closing below Sell 1 (${SPEC.thresholds.sell1})`,
+    });
+  } else {
+    notes.push(`SELL retest condition met at peak ${fmt(peak)} but emission is suppressed (warm-up or stale data); consumed, not queued`);
+  }
+  return { phase: 'AWAITING_REARM', runningExtreme: null, frozenExtreme: null };
+}
+
+/** BUY trough tracking, advanced ONLY on a closed M1 bar. Mirror of the above. */
+function advanceBuyRetestOnClose(s: RetestState, closeRsi: number, notes: string[]): RetestState {
   const t = SPEC.thresholds;
 
   switch (s.phase) {
     case 'AWAITING_ARM_RESET':
-      if (rsi >= t.buy2) return { phase: 'IDLE', runningExtreme: null, frozenExtreme: null };
-      return s;
+      return closeRsi >= t.buy2 ? { phase: 'IDLE', runningExtreme: null, frozenExtreme: null } : s;
 
     case 'IDLE':
-      if (rsi < t.buy2) {
-        notes.push(`BUY retest armed: RSI ${fmt(rsi)} fell below Buy 2 (${t.buy2})`);
-        return { phase: 'TRACKING_EXTREME', runningExtreme: rsi, frozenExtreme: null };
+      if (closeRsi < t.buy2) {
+        notes.push(`BUY retest armed: bar closed at RSI ${fmt(closeRsi)}, below Buy 2 (${t.buy2})`);
+        return { phase: 'TRACKING_EXTREME', runningExtreme: closeRsi, frozenExtreme: null };
       }
       return s;
 
     case 'TRACKING_EXTREME': {
-      if (rsi > t.buy1) {
-        notes.push(`BUY retest invalidated while tracking: RSI ${fmt(rsi)} rose above Buy 1 (${t.buy1})`);
+      if (closeRsi > t.buy1) {
+        notes.push(`BUY retest invalidated: bar closed at ${fmt(closeRsi)}, above Buy 1 (${t.buy1})`);
         return { phase: 'IDLE', runningExtreme: null, frozenExtreme: null };
       }
-      const runningMin = s.runningExtreme ?? rsi;
-      if (rsi < runningMin) return { ...s, runningExtreme: rsi };
-
-      // Mirror of the SELL side: the trough freezes only when RSI REBOUNDS
-      // out of the arming zone, never on the first slightly higher tick.
-      //
-      // The entry this rule exists to prevent: trough 8.0752, uptick to
-      // 8.1199, back to 8.0752 — 0.045 of movement, no rebound, no second
-      // trough, and an order opened anyway.
-      if (rsi <= t.buy2) return s;
-      notes.push(`BUY trough frozen at ${fmt(runningMin)} — RSI rebounded to ${fmt(rsi)}, above Buy 2 (${t.buy2})`);
+      const runningMin = s.runningExtreme ?? closeRsi;
+      if (closeRsi < runningMin) return { ...s, runningExtreme: closeRsi };
+      if (closeRsi === runningMin) return s;
+      notes.push(`BUY trough frozen at ${fmt(runningMin)} — a rising candle closed at ${fmt(closeRsi)}`);
       return { phase: 'EXTREME_FROZEN', runningExtreme: null, frozenExtreme: runningMin };
     }
 
-    case 'EXTREME_FROZEN': {
-      if (rsi > t.buy1) {
-        notes.push(`BUY retest invalidated: RSI ${fmt(rsi)} rose above Buy 1 (${t.buy1}) before returning to the trough`);
+    case 'EXTREME_FROZEN':
+      if (closeRsi > t.buy1) {
+        notes.push(`BUY retest invalidated: bar closed at ${fmt(closeRsi)}, above Buy 1 (${t.buy1}) before the trough was retested`);
         return { phase: 'IDLE', runningExtreme: null, frozenExtreme: null };
       }
-      const trough = s.frozenExtreme as number;
-      if (prev !== null && prev > trough && rsi <= trough) {
-        if (canEmit) {
-          triggered.push({
-            kind: 'BUY_TROUGH_RETEST',
-            direction: 'BUY',
-            keyLevel: trough,
-            reason: `RSI returned to its frozen trough ${fmt(trough)} (previous ${fmt(prev)}, current ${fmt(rsi)}) without having risen above Buy 1 (${t.buy1})`,
-          });
-        } else {
-          notes.push(`BUY retest condition met at trough ${fmt(trough)} but emission is suppressed (warm-up or stale data); consumed, not queued`);
-        }
-        return { phase: 'AWAITING_REARM', runningExtreme: null, frozenExtreme: null };
-      }
       return s;
-    }
 
     case 'AWAITING_REARM':
-      if (rsi > t.buy1) {
-        notes.push(`BUY retest rearmed: RSI ${fmt(rsi)} rose above Buy 1 (${t.buy1})`);
+      if (closeRsi > t.buy1) {
+        notes.push(`BUY retest rearmed: bar closed at ${fmt(closeRsi)}, above Buy 1 (${t.buy1})`);
         return { phase: 'IDLE', runningExtreme: null, frozenExtreme: null };
       }
       return s;
   }
+}
+
+/** The entry itself: intrabar, the moment RSI returns to the frozen trough. */
+function checkBuyRetestTrigger(
+  s: RetestState,
+  prev: number | null,
+  rsi: number,
+  triggered: TriggeredSetup[],
+  notes: string[],
+  canEmit: boolean,
+): RetestState {
+  if (s.phase !== 'EXTREME_FROZEN') return s;
+  const trough = s.frozenExtreme as number;
+  if (prev === null || !(prev > trough) || !(rsi <= trough)) return s;
+
+  if (canEmit) {
+    triggered.push({
+      kind: 'BUY_TROUGH_RETEST',
+      direction: 'BUY',
+      keyLevel: trough,
+      reason: `RSI returned to its frozen trough ${fmt(trough)} (previous ${fmt(prev)}, current ${fmt(rsi)}) after a confirmed rebound, without any bar closing above Buy 1 (${SPEC.thresholds.buy1})`,
+    });
+  } else {
+    notes.push(`BUY retest condition met at trough ${fmt(trough)} but emission is suppressed (warm-up or stale data); consumed, not queued`);
+  }
+  return { phase: 'AWAITING_REARM', runningExtreme: null, frozenExtreme: null };
 }
 
 function stepExtremeSell(

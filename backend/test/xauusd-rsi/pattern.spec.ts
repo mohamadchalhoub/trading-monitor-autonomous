@@ -13,6 +13,7 @@ import {
   createPatternState,
   Direction,
   observe,
+  observeClosedBar,
   PatternState,
   ruleFamilyFor,
   SetupKind,
@@ -35,10 +36,20 @@ interface Firing {
  * first. That is the real start-up behaviour (spec §7: never enter merely
  * because the first reading is already extreme), not a test artefact.
  */
+/**
+ * Each value is one M1 BAR: the bar closes at that RSI, then a tick arrives
+ * at the same value.
+ *
+ * That ordering matters and mirrors production. Retest progression — the
+ * trough or peak, the confirming candle, the invalidation — happens only on
+ * the close; the entry fires only on a tick. Feeding ticks alone, as this
+ * helper used to, could no longer arm anything.
+ */
 function drive(values: number[], canEmitAt: (index: number) => boolean = () => true): { state: PatternState; firings: Firing[] } {
   let state = createPatternState('test-spec-hash');
   const firings: Firing[] = [];
   values.forEach((rsi, index) => {
+    state = observeClosedBar({ state, closeRsi: rsi }).state;
     const result = observe({ state, rsi, atT: index * 1_000, canEmit: canEmitAt(index) });
     state = result.state;
     if (result.triggered.length > 0) {
@@ -320,58 +331,94 @@ describe('Start-up and reset behaviour', () => {
   });
 });
 
-describe('A retest needs a REAL rebound — the 2026-09-21 defect', () => {
+describe('Closed-bar progression, intrabar entry (user rules, revision 5)', () => {
   /**
-   * The entry that should never have been opened.
-   *
-   * Recorded live: frozen trough 8.0752, previous 8.1199, current 8.0752 —
-   * 0.045 of RSI movement across three ticks at the bottom of one continuous
-   * dip. The trough froze on the first slightly higher reading, so a wiggle
-   * counted as the rebound.
-   *
-   * As the user put it: the system "did not wait to make a trough below 8.9"
-   * and "did not wait to go down to it to make the same rsi of the trough".
+   * Drives TICKS only — no bar ever closes. Models what really happened on
+   * 2026-09-21: three readings inside bars, 0.045 apart.
    */
-  it('does NOT fire on the exact tick sequence that produced the bad entry', () => {
-    const { firings } = drive([50, 8.0752, 8.1199, 8.0752]);
-    expect(firings).toHaveLength(0);
+  function ticksOnly(values: number[]) {
+    let state = createPatternState('test-spec-hash');
+    const all: TriggeredSetup[] = [];
+    values.forEach((rsi, i) => {
+      const r = observe({ state, rsi, atT: i * 1_000, canEmit: true });
+      state = r.state;
+      all.push(...r.triggered);
+    });
+    return { state, triggered: all };
+  }
+
+  it('THE DEFECT: ticks alone never arm, freeze or fire a retest', () => {
+    // The exact recorded sequence that opened ticket 58555388969.
+    const { triggered } = ticksOnly([50, 8.0752, 8.1199, 8.0752]);
+    expect(triggered).toHaveLength(0);
   });
 
-  it('does not fire on a one-tick wiggle at a SELL peak either', () => {
-    // The mirror, also seen live: peak 92.2464, prev 92.2114, then 92.5632.
-    const { firings } = drive([50, 92.2464, 92.2114, 92.5632]);
-    expect(firings.filter((f) => f.kinds.includes('SELL_PEAK_RETEST'))).toHaveLength(0);
+  it('ticks alone cannot arm the SELL side either', () => {
+    const { triggered } = ticksOnly([50, 92.2464, 92.2114, 92.5632]);
+    expect(triggered).toHaveLength(0);
   });
 
-  it('DOES fire when the rebound genuinely leaves the zone and returns', () => {
-    // trough 8.07 → rebound to 12 (above Buy 2, below Buy 1) → back to 8.07.
-    const { firings } = drive([50, 8.07, 12, 8.07]);
+  it('a rising candle of ANY size confirms the trough — 8.00 -> 8.12 -> 8.00 fires', () => {
+    // The user's own answer: size is irrelevant, it need only be a rising
+    // candle that closes below Buy 1.
+    const { firings } = drive([50, 8.0, 8.12, 8.0]);
     expect(firings).toHaveLength(1);
     expect(firings[0].kinds).toEqual(['BUY_TROUGH_RETEST']);
-    expect(firings[0].triggered[0].keyLevel).toBeCloseTo(8.07, 4);
+    expect(firings[0].triggered[0].keyLevel).toBeCloseTo(8.0, 6);
   });
 
-  it('DOES fire on the SELL side with a genuine pullback', () => {
-    const { firings } = drive([50, 92.5, 88, 92.5]);
+  it.each([
+    ['8.12', 8.12],
+    ['12.0', 12.0],
+    ['17.9', 17.9],
+  ])('rebound closing at %s (below Buy 1) still fires', (_label, rebound) => {
+    const { firings } = drive([50, 8.0, rebound, 8.0]);
     expect(firings).toHaveLength(1);
-    expect(firings[0].kinds).toEqual(['SELL_PEAK_RETEST']);
   });
 
-  it('still invalidates when the rebound goes above Buy 1', () => {
-    const { firings } = drive([50, 8.07, 19, 8.07]);
+  it('a bar CLOSING above Buy 1 kills the trough — 8.00 -> 50 -> 8.00 does not fire', () => {
+    const { firings } = drive([50, 8.0, 50, 8.0]);
     expect(firings).toHaveLength(0);
   });
 
-  it('keeps tracking a deeper trough while RSI stays in the zone', () => {
-    // 8.5 then 8.07 is still one descent: the deeper value becomes the trough.
-    const { firings } = drive([50, 8.5, 8.07, 12, 8.07]);
-    expect(firings).toHaveLength(1);
-    expect(firings[0].triggered[0].keyLevel).toBeCloseTo(8.07, 4);
+  it('an INTRABAR spike above Buy 1 does NOT invalidate, if the bar closes below it', () => {
+    // User rule: "if rsi rise above 18 and the candle closed when rsi was
+    // below 18 --> keep testing to see if it will reach the trough".
+    let state = createPatternState('test-spec-hash');
+    for (const close of [50, 8.0, 12.0]) state = observeClosedBar({ state, closeRsi: close }).state;
+    expect(state.buyRetest.phase).toBe('EXTREME_FROZEN');
+
+    // A tick spikes to 25, well above Buy 1 — no close, so no invalidation.
+    state = observe({ state, rsi: 25, atT: 1_000, canEmit: true }).state;
+    expect(state.buyRetest.phase).toBe('EXTREME_FROZEN');
+
+    // The bar then closes at 17, below Buy 1: the trough survives.
+    state = observeClosedBar({ state, closeRsi: 17 }).state;
+    expect(state.buyRetest.phase).toBe('EXTREME_FROZEN');
+
+    // And the return to the trough still buys.
+    const r = observe({ state, rsi: 8.0, atT: 2_000, canEmit: true });
+    expect(r.triggered.map((t) => t.kind)).toEqual(['BUY_TROUGH_RETEST']);
   });
 
-  it('requires the return to reach the trough, not merely approach it', () => {
-    // Rebound is real, but the return stops short of the frozen trough.
-    const { firings } = drive([50, 8.07, 12, 8.5]);
-    expect(firings).toHaveLength(0);
+  it('the entry fires INTRABAR, without waiting for the bar to close', () => {
+    let state = createPatternState('test-spec-hash');
+    for (const close of [50, 8.0, 12.0]) state = observeClosedBar({ state, closeRsi: close }).state;
+
+    // Ticks descending toward the trough; the one that reaches it fires.
+    state = observe({ state, rsi: 10, atT: 1_000, canEmit: true }).state;
+    const r = observe({ state, rsi: 7.95, atT: 2_000, canEmit: true });
+    expect(r.triggered.map((t) => t.kind)).toEqual(['BUY_TROUGH_RETEST']);
+  });
+
+  it('tracks a deeper trough across bars before any rising candle appears', () => {
+    const { firings } = drive([50, 8.5, 8.0, 12.0, 8.0]);
+    expect(firings).toHaveLength(1);
+    expect(firings[0].triggered[0].keyLevel).toBeCloseTo(8.0, 6);
+  });
+
+  it('SELL mirrors it: a falling candle confirms, a close below Sell 1 kills it', () => {
+    expect(drive([50, 92.5, 92.2, 92.5]).firings).toHaveLength(1);
+    expect(drive([50, 92.5, 80, 92.5]).firings).toHaveLength(0);
   });
 });
