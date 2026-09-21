@@ -111,13 +111,30 @@ export class RsiWatchService {
     // hours ahead of what the same tick now yields. Kept, it would sit in
     // the future and filter out every new observation — the strategy would
     // look healthy and see nothing. Dropping it costs one reseed.
-    if (state.cursor.lastTimestampMs !== null && state.cursor.timeBasis !== RSI_CURSOR_TIME_BASIS) {
+    if (state.cursor.timeBasis !== RSI_CURSOR_TIME_BASIS) {
+      // The ENGINE's clock has to go too, not just the cursor.
+      //
+      // Resetting the cursor alone was not enough, and the gap was visible
+      // in the running system: a persisted engine keeps `lastObservationT`
+      // and `lastClosedBarT` on the OLD timeline, three hours ahead. Since
+      // it also restores as already warmed up, the corrected reseed never
+      // runs, and every corrected tick is three hours "older" than the
+      // engine's own clock and is rejected as out-of-order. RSI freezes at
+      // whatever value it held while the loop looks healthy — observed live
+      // at a frozen 42.78 with out-of-order rejections climbing.
+      //
+      // Rebuilding the engine forces `reseedFromCandles`, which now converts
+      // candle times the same way, so indicator and observations land on one
+      // timeline. The indicator is rebuilt from history rather than carried,
+      // and pattern state is deliberately dropped: a pattern half-formed on
+      // a different timeline is not one this engine may trade.
       notes.push(
-        `observation cursor was recorded on an older time basis (${state.cursor.timeBasis ?? 'untagged'}) — discarded and rebuilt, ` +
-          'because a pre-correction cursor sits in the future and would silently reject every new tick',
+        `observation cursor and engine clock were on an older time basis (${state.cursor.timeBasis ?? 'untagged'}) — ` +
+          'both discarded and rebuilt from history, because a pre-correction clock sits in the future and silently rejects every new tick',
       );
       state = {
         ...state,
+        engine: createEngineState(state.engine.observationMode),
         cursor: { lastTimestampMs: null, lastTickKey: null, lastTimestampKeys: [], timeBasis: RSI_CURSOR_TIME_BASIS },
       };
     }

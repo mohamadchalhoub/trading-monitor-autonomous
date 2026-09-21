@@ -24,7 +24,7 @@ import { RsiDecisionService } from '../../src/xauusd-rsi/decision.service';
 import { createWatchState, RsiWatchStore } from '../../src/xauusd-rsi/state-store';
 import { SPEC } from '../../src/xauusd-rsi/spec';
 import { M1_MS } from '../../src/xauusd-rsi/engine';
-import { RSI_BROKER_SERVER_TIMEZONE } from '../../src/xauusd-rsi/tick-time';
+import { RSI_BROKER_SERVER_TIMEZONE, RSI_CURSOR_TIME_BASIS } from '../../src/xauusd-rsi/tick-time';
 import { utcToWallClockMs } from '../../src/research/confirmed-retest/time';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -229,5 +229,122 @@ describe('Watch cycle — cold start', () => {
     expect(result.result.recoveryComplete).toBe(false);
     expect(result.result.recoveryDetail).toMatch(/UNKNOWN/);
     expect(result.result.entriesAllowed).toBe(false);
+  });
+});
+
+describe('Watch cycle — migrating off the pre-correction time basis', () => {
+  let prisma: PrismaClient;
+  let watch: RsiWatchService;
+  let accountId: string;
+  let store: RsiWatchStore;
+
+  beforeAll(() => {
+    prisma = new PrismaClient();
+    const accountState = new RsiAccountStateService(prisma as never);
+    const runtimeSettings = new RsiRuntimeSettingsService();
+    const coordinator = new RsiCoordinatorService(prisma as never, runtimeSettings, accountState);
+    const liquidation = new RsiLiquidationService(prisma as never, accountState);
+    const decisions = new RsiDecisionService(prisma as never, accountState);
+    const telegram = { notify: async () => undefined } as never;
+    watch = new RsiWatchService(prisma as never, coordinator, accountState, liquidation, decisions, telegram);
+  });
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+  beforeEach(async () => {
+    await resetDatabase(prisma);
+    const user = await createUser(prisma);
+    const account = await createTradingAccount(prisma, user.id);
+    accountId = account.id;
+    store = new RsiWatchStore(mkdtempSync(join(tmpdir(), 'rsi-watch-state-')));
+  });
+
+  async function seedCandlesAndTicks(endT: number) {
+    const candles = [];
+    for (let i = BARS; i >= 1; i -= 1) {
+      const base = 4300 + Math.sin(i / 7) * 3;
+      candles.push({
+        symbol: 'XAUUSD', timeframe: 'M1' as const, openTime: stored(endT - i * M1_MS),
+        open: base, high: base + 0.5, low: base - 0.5, close: base, volume: 10,
+      });
+    }
+    await prisma.historicalCandle.createMany({ data: candles });
+    const ticks = [];
+    for (let i = 0; i < 20; i += 1) {
+      ticks.push({
+        symbol: 'XAUUSD', timestamp: stored(endT + i * 1_000),
+        bid: 4302 + i * 0.05, ask: 4302.18 + i * 0.05, flags: 6, batchSeq: i,
+      });
+    }
+    await prisma.historicalTick.createMany({ data: ticks });
+  }
+
+  it('rebuilds the ENGINE as well as the cursor, so corrected ticks are not all rejected', async () => {
+    await seedCandlesAndTicks(NOW_T);
+
+    // A state persisted by the pre-correction build: warmed up, with its
+    // clock three hours ahead on the broker's wall-clock timeline, and an
+    // untagged cursor. Resetting only the cursor leaves this engine in
+    // place, and every corrected tick then looks three hours out of order.
+    const stale = createWatchState(SPEC.strategyVersion, 'TICK');
+    const staleEngineT = utcToWallClockMs(RSI_BROKER_SERVER_TIMEZONE, NOW_T);
+    const poisoned = {
+      ...stale,
+      engine: {
+        ...stale.engine,
+        lastObservationT: staleEngineT,
+        lastClosedBarT: staleEngineT - M1_MS,
+        closedBarsApplied: 600,
+      },
+      cursor: { lastTimestampMs: staleEngineT, lastTickKey: null, lastTimestampKeys: [] },
+    } as typeof stale;
+
+    const result = await watch.runCycle({ accountId, store, state: poisoned, nowT: NOW_T + 25_000 });
+
+    expect(result.result.notes.join(' ')).toMatch(/older time basis/);
+    // The engine was rebuilt from history on the corrected timeline...
+    expect(result.result.reseeded).toBe(true);
+    expect(result.state.cursor.timeBasis).toBe(RSI_CURSOR_TIME_BASIS);
+    // ...and its clock is no longer three hours in the future.
+    expect(result.state.engine.lastObservationT).toBeLessThan(NOW_T + 60_000);
+    // The frozen-RSI symptom: with the old engine kept, nothing is applied.
+    expect(result.state.engine.closedBarsApplied).toBeGreaterThan(0);
+  });
+
+  it('a second cycle then consumes new ticks normally instead of rejecting them', async () => {
+    await seedCandlesAndTicks(NOW_T);
+    const stale = createWatchState(SPEC.strategyVersion, 'TICK');
+    const staleEngineT = utcToWallClockMs(RSI_BROKER_SERVER_TIMEZONE, NOW_T);
+    const poisoned = {
+      ...stale,
+      engine: { ...stale.engine, lastObservationT: staleEngineT, lastClosedBarT: staleEngineT - M1_MS, closedBarsApplied: 600 },
+      cursor: { lastTimestampMs: staleEngineT, lastTickKey: null, lastTimestampKeys: [] },
+    } as typeof stale;
+
+    const first = await watch.runCycle({ accountId, store, state: poisoned, nowT: NOW_T + 25_000 });
+    const oooAfterFirst = first.state.engine.ticksRejectedOutOfOrder;
+
+    // More ticks arrive after the migration cycle.
+    await prisma.historicalTick.createMany({
+      data: Array.from({ length: 5 }, (_, i) => ({
+        symbol: 'XAUUSD', timestamp: stored(NOW_T + 30_000 + i * 1_000),
+        bid: 4305 + i * 0.05, ask: 4305.18 + i * 0.05, flags: 6, batchSeq: 100 + i,
+      })),
+    });
+
+    const second = await watch.runCycle({ accountId, store, state: first.state, nowT: NOW_T + 36_000 });
+
+    expect(second.result.ticksConsumed).toBeGreaterThan(0);
+    // No NEW out-of-order rejections: the timelines agree now.
+    expect(second.state.engine.ticksRejectedOutOfOrder).toBe(oooAfterFirst);
+  });
+
+  it('a cursor already on the current basis is left alone', async () => {
+    await seedCandlesAndTicks(NOW_T);
+    const fresh = createWatchState(SPEC.strategyVersion, 'TICK');
+    expect(fresh.cursor.timeBasis).toBe(RSI_CURSOR_TIME_BASIS);
+
+    const result = await watch.runCycle({ accountId, store, state: fresh, nowT: NOW_T + 25_000 });
+    expect(result.result.notes.join(' ')).not.toMatch(/older time basis/);
   });
 });
