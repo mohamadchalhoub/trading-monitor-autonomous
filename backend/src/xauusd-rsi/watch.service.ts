@@ -29,6 +29,7 @@ import { RsiAccountStateService } from './account-state.service';
 import { RsiLiquidationService, LiquidationCycleResult } from './liquidation.service';
 import { RsiDecisionService } from './decision.service';
 import { RSI_ENGINE_CLOCK_FUTURE_LIMIT_MS, RSI_OBSERVATION_INTERVAL_MS } from './safety-constants';
+import { entriesBlockedByControls } from './controls';
 import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 import { RsiWatchState, RsiWatchStore } from './state-store';
 import { SPEC } from './spec';
@@ -259,12 +260,22 @@ export class RsiWatchService {
       },
     };
 
+    // The CONTROLS belong in this answer, not just the clock.
+    //
+    // This passed `otherBlock: null`, so the cycle line reported
+    // "entries=allowed" while the kill switch was engaged and the execution
+    // mode was OFF. The controls were still enforced - the coordinator and
+    // the pre-send check both call entriesBlockedByControls() and refuse -
+    // so nothing could actually trade. But an operator reading the log saw
+    // "allowed" on a system that was fully blocked, which is exactly the
+    // kind of readout that gets someone to act on a wrong belief. Observed
+    // on the first server deployment.
     const eligibility = evaluateEntryEligibility({
       utcMs: nowT,
       brokerSessionOpen: session.open,
       dataFresh: session.open === true,
       recoveryComplete: state.recovery.recoveryComplete,
-      otherBlock: null,
+      otherBlock: entriesBlockedByControls(),
     });
 
     const slots = await this.accountState.resolveSlotStates(params.accountId);
