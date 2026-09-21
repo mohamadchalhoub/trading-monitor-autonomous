@@ -107,6 +107,13 @@ services:
     volumes:
       - gold_runtime_data:/app/gold-execution-runtime
       - trend_breakout_runtime_data:/app/trend-breakout-execution-runtime
+      # The active strategy's runtime state, shared with xauusd-rsi-scheduler.
+      # The api container is what writes the kill switch, the stop-new-entries
+      # file and the recorded volume when an operator uses the dashboard, so
+      # without this mount those writes land in this container's own /app and
+      # the scheduler never sees them — the kill switch would appear to do
+      # nothing.
+      - xauusd_rsi_runtime_data:/app/xauusd-rsi-runtime
     depends_on:
       postgres:
         condition: service_healthy
