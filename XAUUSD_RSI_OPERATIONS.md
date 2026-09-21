@@ -520,6 +520,20 @@ those connections are rejected at authentication and hold no resources, and
 nothing links them to the dropped connections. Do not treat the healthcheck
 as the explanation.
 
+**Strongest lead so far (2026-09-21): Docker Desktop on the Windows
+development machine.** A full-suite run failed with this error while
+`docker ps` reported the daemon itself unreachable, and both test containers
+were found `Exited (0)` — a clean stop, not a crash, consistent with Docker
+Desktop shutting down or restarting underneath the run rather than with
+anything Postgres did. Starting the containers again made the same tests pass
+immediately. That fits every observation recorded above: a connection failure
+rather than an assertion failure, striking whichever file happened to be
+running, with no pattern in the code. It is a lead, not a conclusion — nobody
+has yet correlated a failure with a Docker Desktop restart in its logs.
+
+This affects the development machine only. The server runs Docker Engine on
+Linux, where this failure mode has not been seen.
+
 Anyone touching this should reproduce it deliberately before claiming a fix.
 
 ---

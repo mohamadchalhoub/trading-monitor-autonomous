@@ -16,6 +16,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RsiAccountMarginMode, RsiAccountRiskInfo, RsiAccountTradeMode, RsiBrokerConstraints, RsiOccupancyState } from './risk-manager';
 import { RSI_QUOTE_MAX_STALENESS_SECONDS, RSI_SYMBOL } from './safety-constants';
+import { storedBrokerTimeToUtcMs } from './tick-time';
 import { describeOwnership, isOwnedByThisApplication, ruleFamilyForMagic } from './ownership';
 import type { RuleFamily } from './pattern';
 import { RULE_FAMILIES } from './pattern';
@@ -408,15 +409,48 @@ export class RsiAccountStateService {
    * Friday close would make any such calendar wrong.
    */
   async resolveBrokerSessionOpen(now: Date = new Date()): Promise<{ open: boolean | null; detail: string; quoteAgeSeconds: number | null }> {
-    const [tick, meta] = await Promise.all([
+    // Freshness is judged on the FRESHEST XAUUSD data that exists, which
+    // means considering both streams the collector writes.
+    //
+    // `live_ticks` is written once per SNAPSHOT cycle, and that cycle also
+    // syncs candles across six timeframes and two symbols, so in practice it
+    // lands every 25-45 seconds rather than every 10. `historical_ticks` is
+    // written by the dedicated one-second XAUUSD observation thread and is
+    // the stream the strategy actually observes.
+    //
+    // Reading only `live_ticks` therefore measured the wrong thing: with
+    // ticks arriving every second and the indicator a second old, this gate
+    // still reported "quote is 43s old" and blocked entries whenever the
+    // snapshot cycle ran long. Observed on both the local machine and the
+    // VPS, oscillating between blocked and allowed with no change in the
+    // market. Signals landing in those windows were consumed and skipped.
+    //
+    // Note the stored timestamps of the two streams differ: `live_ticks`
+    // carries true UTC (the collector corrects it on the way in) while
+    // `historical_ticks` holds broker wall clock, so it is converted here.
+    const [tick, meta, newestObservation] = await Promise.all([
       this.prisma.liveTick.findUnique({ where: { symbol: RSI_SYMBOL } }),
       this.prisma.symbolMetadata.findUnique({ where: { symbol: RSI_SYMBOL } }),
+      this.prisma.historicalTick.findFirst({
+        where: { symbol: RSI_SYMBOL },
+        orderBy: { timestamp: 'desc' },
+        select: { timestamp: true },
+      }),
     ]);
 
-    if (!tick) {
+    const observationUtcMs =
+      newestObservation === null ? null : storedBrokerTimeToUtcMs(newestObservation.timestamp.getTime());
+
+    if (!tick && observationUtcMs === null) {
       return { open: null, detail: 'No live XAUUSD quote has ever been recorded — broker session availability cannot be established.', quoteAgeSeconds: null };
     }
-    const ageSeconds = (now.getTime() - tick.tickAt.getTime()) / 1000;
+
+    const candidates = [
+      tick ? tick.tickAt.getTime() : null,
+      observationUtcMs,
+    ].filter((t): t is number => t !== null);
+    const freshestT = Math.max(...candidates);
+    const ageSeconds = (now.getTime() - freshestT) / 1000;
 
     if (meta?.tradeMode !== undefined && meta?.tradeMode !== null && meta.tradeMode !== SYMBOL_TRADE_MODE_FULL) {
       return {
