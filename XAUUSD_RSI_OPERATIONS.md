@@ -427,3 +427,154 @@ That history initialises the indicator and nothing else:
   produce a startup order; the strategy must watch an actual live crossing.
 - Until the full 256 bars are in place, signals are suppressed and logged
   rather than queued.
+
+### How long warm-up takes, and how to know
+
+**Read the counter, do not predict from a formula.** The dashboard reports
+`indicator.closedBarsApplied` against `indicator.warmupBarsRequired`, and
+that counter is the only authoritative answer. Any stated completion time is
+an **approximation derived from the current counter** — remaining bars times
+one minute — and it drifts whenever the feed gaps, the market is thin, or
+candle sync falls behind. Treat it as an estimate, never as a schedule.
+
+Warm-up is only slow when there genuinely is not enough recent contiguous
+history. The worst case is a weekend or a long outage: the contiguous run
+restarts at the session open, so shortly after a Sunday open there may be
+only a couple of hundred bars and the remainder has to accumulate in real
+time. Mid-session, with history already present, warm-up is effectively
+immediate.
+
+### Starting up elsewhere, including a server deployment
+
+**A new deployment does not automatically owe you a 256-minute wait.** There
+are three initialisation routes, and only the third is slow:
+
+1. **Valid persisted state.** `RsiWatchStore.load` returns the persisted
+   engine untouched — recursive average, bar count and clock intact — and
+   only re-arms recovery. A restart that carries its state directory across
+   resumes warm, with no re-warm at all. State is rebuilt only when it is
+   invalid or incompatible: a different `SPEC_HASH` refuses outright, an
+   unreadable file refuses rather than silently cold-starting, and the watch
+   cycle rebuilds only if the engine clock is more than two minutes ahead of
+   wall clock or the cursor carries an older time basis.
+2. **Available recent bars.** With no usable state file, the indicator seeds
+   from whatever contiguous closed M1 history the database already holds. If
+   256 contiguous bars are present, warm-up completes on the first cycle.
+   This is the ordinary case for a host whose collector has been storing
+   candles, and it is why a fresh process usually starts warm.
+3. **Accumulating live.** Only when neither of the above supplies 256
+   contiguous bars does the strategy wait for the market to produce them.
+
+In every route, the history initialises the indicator and nothing else. No
+historical bar is ever executed: `applyClosedBar` emits no signals, seeding
+leaves `previousRsi` null, and the first live reading cannot itself complete
+a crossing. Warming up is never a source of orders.
+
+
+---
+
+## 9. Known issues
+
+### Intermittent Postgres connection failure during the full test suite — UNRESOLVED
+
+During long full-suite runs, an occasional test fails with:
+
+```
+Can't reach database server at `127.0.0.1:5444`
+```
+
+**This is recorded as an open test-infrastructure failure, not a resolved
+one.** What is established: it is a connection failure rather than an
+assertion failure, so the test never reaches its assertion; it strikes a
+different, unrelated file each time it appears (`health-check-resilience`,
+`rules/technical-analysis-integration`, `rules/rule-engine`), never the
+XAUUSD RSI suites; and a full run has completed with 1613/1613 passing and
+zero failures, so it is not deterministic. The container reports `restarts=0`
+and `OOMKilled=false`.
+
+**What is NOT established: the cause.** It has not been reproduced
+deliberately, and no mechanism has been confirmed. Connection-pool exhaustion
+under sequential load, a Docker port-forward hiccup and a client-side timeout
+all remain open possibilities.
+
+**A separate finding does NOT explain it.** The test container's Docker
+healthcheck runs `pg_isready -U autonomous_trading` without `-d`, so it
+defaults the database name to the username while the actual database is
+`autonomous_trading_test`. That produces a `FATAL: database
+"autonomous_trading" does not exist` line every three seconds. It accounts
+for the **log noise only**. `pg_isready` still finds the server reachable,
+those connections are rejected at authentication and hold no resources, and
+nothing links them to the dropped connections. Do not treat the healthcheck
+as the explanation.
+
+Anyone touching this should reproduce it deliberately before claiming a fix.
+
+---
+
+## 10. Deploying to a server
+
+Nothing here has been pushed or deployed. This section records what a
+deployment actually requires, so the constraints are written down before
+anyone acts on them.
+
+### The MT5 terminal has to be where the collector is
+
+The collector does not talk to a broker API over the network. It imports the
+`MetaTrader5` Python package, which drives a **locally installed, running,
+logged-in MT5 terminal through that terminal's own process on the same
+machine**. There is no remote mode. Consequences:
+
+- The server must run Windows (or a working Wine/MT5 arrangement), with the
+  terminal installed, logged in to the DEMO account, and left running.
+- The terminal must keep XAUUSD selected in Market Watch. `symbol_info_tick`
+  returns a stale cached tick for a symbol the calling session has not kept
+  selected — already investigated and documented in `mt5_client.py`.
+- The MQL5 parity script and its exported reference CSV live under the
+  terminal's own data directory, so a new host produces its own copy rather
+  than inheriting this machine's.
+- If the terminal is closed, sleeps, or logs out, the collector reads
+  nothing. Because a failed position read now refuses rather than reporting
+  an empty list, that degrades into "no snapshot" rather than into positions
+  being wrongly marked closed.
+
+### Exactly one execution against one account
+
+**Two copies of this strategy must never run against the same MT5 account.**
+Both would poll for pending orders, both could claim and submit, and the
+two-slot reservation cannot arbitrate across machines — the partial unique
+index protects one database, not one broker account.
+
+What exists today protects a single host only:
+
+- A lock file at `backend/xauusd-rsi-runtime/xauusd-rsi-watch.lock`, holding
+  the pid and a heartbeat, refuses a second watch process on that machine.
+- `start-xauusd-rsi.ps1` refuses to start when it finds an untracked
+  collector for this repository already running.
+
+Neither of these crosses machines. Before starting on a server, stop the
+local stack (`stop-xauusd-rsi.ps1`, which engages the kill switch first), and
+confirm with `status-xauusd-rsi.ps1` that backend, collector and watch are
+all down. Running both would not be caught automatically.
+
+The separate version 1 VPS deployment is out of scope: do not modify its
+processes, configuration, databases, credentials or Telegram routing. It uses
+its own account and must keep doing so.
+
+### Checklist
+
+1. Apply migrations — `npx prisma migrate deploy`. The 34th,
+   `20260921010000_rsi_ticket_bigint`, is required: without it an 11-digit
+   broker ticket cannot be recorded at all.
+2. Provide the environment: `DATABASE_URL`, `AUTONOMOUS_TRADING_ACCOUNT_ID`,
+   `XAUUSD_RSI_EXECUTION_MODE=DEMO`, `XAUUSD_RSI_SCHEDULER_INTERVAL_SECONDS=1`,
+   `MT5_BROKER_TIMEZONE=EET`, and the Telegram bot token and chat ids. Keep
+   all of them out of the repository.
+3. Carry over `backend/xauusd-rsi-runtime/settings.json` to keep 0.5 lot an
+   explicitly recorded setting rather than a fallback, or re-save it through
+   the volume endpoint so it carries its own audit entry.
+4. Start with `XAUUSD_RSI_KILL_SWITCH` engaged, verify, then remove only
+   that file.
+5. Verify on the server exactly as §0b and §2b describe: DEMO and hedging
+   mode, effective thresholds and volume, measured cadence and quote age
+   reported separately, warm-up counter, slot state against real broker
+   exposure, and schedule enforcement.
