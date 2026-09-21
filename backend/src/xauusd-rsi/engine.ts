@@ -31,6 +31,7 @@
  * engine never treats "no crossing observed" as proof no crossing happened.
  */
 import { SPEC, SPEC_HASH } from './spec';
+import { RSI_FUTURE_OBSERVATION_TOLERANCE_MS } from './safety-constants';
 import { commitClosedBar, createRsiState, currentRsi, isWarmedUp, projectRsi, WilderRsiState } from './rsi';
 import { createPatternState, Direction, observe, PatternState, RuleFamily, SetupKind, splitByRuleFamily, TriggeredSetup } from './pattern';
 
@@ -306,11 +307,32 @@ export function applyTick(state: EngineState, input: TickInput): StepResult {
     return { state: next, signals: [], notes: [...notes, 'RSI not yet available (seeding)'], didReset };
   }
 
-  const fresh = nowT - atT <= SPEC.observation.maxStalenessMs;
+  // Freshness is bounded on BOTH sides.
+  //
+  // `age <= limit` alone accepts every negative age, so an observation dated
+  // in the future passes unconditionally however wrong it is. That was not
+  // hypothetical: while stored tick timestamps carried the broker's
+  // wall clock, every observation was three hours ahead and this test could
+  // never reject anything. The correction removed the cause; this bound
+  // removes the blind spot, so a future-dated observation is reported and
+  // suppressed rather than silently trusted.
+  //
+  // The tolerance absorbs ordinary clock skew between this machine and the
+  // broker. Beyond it, a negative age means a conversion is wrong, not that
+  // the quote is unusually fresh.
+  const ageMs = nowT - atT;
+  const stale = ageMs > SPEC.observation.maxStalenessMs;
+  const futureDated = ageMs < -RSI_FUTURE_OBSERVATION_TOLERANCE_MS;
+  const fresh = !stale && !futureDated;
   const warm = isWarmedUp(next.rsi);
   const canEmit = fresh && warm && !next.needsRsiReseed && !didReset;
 
-  if (!fresh) notes.push(`observation is ${((nowT - atT) / 1000).toFixed(1)}s old (limit ${SPEC.observation.maxStalenessMs / 1000}s) — signals suppressed`);
+  if (stale) notes.push(`observation is ${(ageMs / 1000).toFixed(1)}s old (limit ${SPEC.observation.maxStalenessMs / 1000}s) — signals suppressed`);
+  if (futureDated)
+    notes.push(
+      `observation is dated ${(-ageMs / 1000).toFixed(1)}s in the FUTURE (tolerance ${RSI_FUTURE_OBSERVATION_TOLERANCE_MS / 1000}s) — ` +
+        'the timestamp conversion or a clock is wrong; signals suppressed rather than treated as very fresh',
+    );
   if (!warm) notes.push(`warm-up incomplete (${next.rsi.closedBarCount} closed bars applied, need ${next.rsi.period + 1 + SPEC.rsi.warmupBars}) — signals suppressed`);
   if (next.needsRsiReseed) notes.push('RSI reseed outstanding after a data gap — signals suppressed until the indicator is rebuilt from history');
 

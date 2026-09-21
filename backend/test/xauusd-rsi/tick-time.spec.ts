@@ -17,6 +17,9 @@ import {
 } from '../../src/xauusd-rsi/tick-time';
 import { utcToWallClockMs } from '../../src/research/confirmed-retest/time';
 import { beirutLabel } from '../../src/xauusd-rsi/time';
+import { applyClosedBar, applyTick, createEngineState, M1_MS } from '../../src/xauusd-rsi/engine';
+import { SPEC } from '../../src/xauusd-rsi/spec';
+import { RSI_FUTURE_OBSERVATION_TOLERANCE_MS } from '../../src/xauusd-rsi/safety-constants';
 
 /** The exact decision the defect was demonstrated on. */
 const STORED_OBSERVED_AT = Date.parse('2026-09-21T01:00:01.415Z');
@@ -104,5 +107,72 @@ describe('The cursor time-basis tag', () => {
     const untaggedCursor = STORED_OBSERVED_AT;
     const nextTickCorrected = storedBrokerTimeToUtcMs(STORED_OBSERVED_AT + 1_000, 'EET')!;
     expect(nextTickCorrected).toBeLessThan(untaggedCursor);
+  });
+});
+
+describe('Freshness is bounded on BOTH sides', () => {
+  const REQUIRED_BARS = SPEC.rsi.period + 1 + SPEC.rsi.warmupBars;
+
+  /** A warm engine whose last closed bar sits at `endT`. */
+  function warmEngine(endT: number) {
+    let s = createEngineState('TICK');
+    let t = endT - REQUIRED_BARS * M1_MS;
+    for (let i = 0; i < REQUIRED_BARS; i += 1) {
+      s = applyClosedBar(s, t, 2000 + (i % 2 === 0 ? 0.5 : -0.5)).state;
+      t += M1_MS;
+    }
+    return s;
+  }
+
+  const NOW = Date.UTC(2026, 8, 21, 12, 0, 0);
+
+  it('accepts a genuinely fresh observation', () => {
+    const s = warmEngine(NOW - M1_MS);
+    const step = applyTick(s, { atT: NOW - 1_000, bid: 2001, tickKey: 'k1', nowT: NOW });
+    expect(step.notes.join(' ')).not.toMatch(/suppressed/);
+  });
+
+  it('rejects a stale observation', () => {
+    // The observation must still be NEWER than the engine's clock, or it is
+    // rejected as out-of-order before freshness is ever considered. Age is
+    // therefore created by advancing `nowT`, not by back-dating the tick.
+    const s = warmEngine(NOW - M1_MS);
+    const step = applyTick(s, { atT: NOW, bid: 2001, tickKey: 'k2', nowT: NOW + 120_000 });
+    expect(step.notes.join(' ')).toMatch(/old \(limit 30s\).*suppressed/);
+    expect(step.signals).toHaveLength(0);
+  });
+
+  it('REJECTS a future-dated observation instead of silently passing it', () => {
+    // The exact shape of the old defect: a three-hour-ahead timestamp.
+    const s = warmEngine(NOW - M1_MS);
+    const step = applyTick(s, { atT: NOW + 3 * 60 * 60 * 1000, bid: 2001, tickKey: 'k3', nowT: NOW });
+    expect(step.notes.join(' ')).toMatch(/dated .* in the FUTURE/);
+    expect(step.signals).toHaveLength(0);
+  });
+
+  it('a negative age does not slip through the stale comparison', () => {
+    // `age <= limit` is TRUE for every negative age — that is the blind spot.
+    const ageMs = -(3 * 60 * 60 * 1000);
+    expect(ageMs <= SPEC.observation.maxStalenessMs).toBe(true);
+    // The implementation must not rely on that comparison alone.
+    expect(ageMs < -RSI_FUTURE_OBSERVATION_TOLERANCE_MS).toBe(true);
+  });
+
+  it('tolerates ordinary clock skew just inside the tolerance', () => {
+    const s = warmEngine(NOW - M1_MS);
+    const step = applyTick(s, {
+      atT: NOW + RSI_FUTURE_OBSERVATION_TOLERANCE_MS - 100,
+      bid: 2001, tickKey: 'k4', nowT: NOW,
+    });
+    expect(step.notes.join(' ')).not.toMatch(/FUTURE/);
+  });
+
+  it('rejects just beyond the tolerance', () => {
+    const s = warmEngine(NOW - M1_MS);
+    const step = applyTick(s, {
+      atT: NOW + RSI_FUTURE_OBSERVATION_TOLERANCE_MS + 500,
+      bid: 2001, tickKey: 'k5', nowT: NOW,
+    });
+    expect(step.notes.join(' ')).toMatch(/FUTURE/);
   });
 });

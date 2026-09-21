@@ -34,7 +34,7 @@ from app.formatting import (
     format_deals_table,
     format_positions_table,
 )
-from app.mt5_client import Mt5Client, stored_candle_time_to_true_utc
+from app.mt5_client import Mt5Client, PositionsUnavailable, stored_candle_time_to_true_utc
 
 logger = logging.getLogger("collector.runner")
 
@@ -360,7 +360,24 @@ class CollectorApp:
         mt5_connected = terminal.get("connected") if terminal else None
         last_error = None if mt5_connected else self._client.last_error()[1]
         account = self._client.get_account_info()
-        positions = self._client.get_open_positions()
+        # A failed positions fetch aborts this snapshot rather than sending
+        # an empty list. The backend treats the list as authoritative and
+        # closes anything missing from it, so "we could not ask" must never
+        # be reported as "there is nothing open".
+        try:
+            positions = self._client.get_open_positions()
+        except PositionsUnavailable as exc:
+            logger.error(
+                "skipping this snapshot cycle: open positions could not be read, and an empty "
+                "list would be treated as authoritative by the backend",
+                extra={"error": str(exc)},
+            )
+            print("=" * 72)
+            print("SNAPSHOT SKIPPED - could not read open positions from the broker.")
+            print(f"  {exc}")
+            print("  Nothing was reported, so no position can be wrongly marked closed.")
+            print("=" * 72, flush=True)
+            return
         # Best-effort — a fresh, genuine bid/ask read on every snapshot tick
         # (this method's own 10s cadence) closes the gap between this
         # system's coarsest number (an M5 candle close, up to ~10 minutes

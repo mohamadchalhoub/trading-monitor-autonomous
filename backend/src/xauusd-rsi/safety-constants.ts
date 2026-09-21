@@ -104,6 +104,22 @@ export const RSI_MAX_SIGNAL_AGE_SECONDS = 60;
 export const RSI_QUOTE_MAX_STALENESS_SECONDS = SPEC.observation.maxStalenessMs / 1000;
 
 /**
+ * How far into the future an observation may be dated before it is refused.
+ *
+ * Freshness must be bounded on both sides. `age <= limit` accepts every
+ * negative age, so without this a future-dated observation passes
+ * unconditionally — and that blind spot was live: while stored tick
+ * timestamps carried the broker's wall clock, every observation was three
+ * hours ahead and the staleness test could never reject anything.
+ *
+ * The tolerance covers ordinary clock skew between this machine and the
+ * broker. Beyond it, a negative age is a wrong conversion, not a very fresh
+ * quote. It deliberately matches the collector's own
+ * QUOTE_FUTURE_TOLERANCE_SECONDS so both ends of the pipeline agree.
+ */
+export const RSI_FUTURE_OBSERVATION_TOLERANCE_MS = 2_000;
+
+/**
  * Target observation cadence: read XAUUSD and evaluate once per second.
  *
  * Both halves matter. A one-second collector feeding a sixty-second evaluator

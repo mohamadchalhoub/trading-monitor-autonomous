@@ -68,6 +68,15 @@ class ConnectResult:
     error_message: str | None = None
 
 
+class PositionsUnavailable(RuntimeError):
+    """The broker could not be asked for open positions.
+
+    Deliberately NOT a subclass of anything the snapshot loop swallows into
+    an empty result: the whole point is that "unknown" must never be
+    flattened into "none".
+    """
+
+
 class Mt5Client:
     """Owns the single MT5 terminal connection for this process."""
 
@@ -263,11 +272,36 @@ class Mt5Client:
         }
 
     def get_open_positions(self) -> list[dict[str, Any]]:
+        """Open positions, or PositionsUnavailable when the broker could not
+        be asked.
+
+        The distinction is load-bearing and used to be lost here. The backend
+        treats a positions list as AUTHORITATIVE: `replaceOpenPositions`
+        marks every stored position that is missing from it as CLOSED. So an
+        empty list does not mean "nothing came back", it means "the broker
+        says you have nothing open".
+
+        `positions_get()` returns None both for a genuine zero and for a
+        genuine failure, separated only by `last_error()`. This previously
+        returned `[]` for both, so one dropped trade-server connection could
+        mark a live position closed - and, since a closed position releases
+        its rule-family slot, hand that slot to a new entry while the old
+        one was still open at the broker.
+
+        Raising on failure means the snapshot for that cycle is simply not
+        sent. Nothing is marked closed on the strength of an answer the
+        broker never gave.
+        """
         positions = self._mt5.positions_get()
         if positions is None:
             code, message = self._mt5.last_error()
             if code != 1:  # 1 == RES_S_OK; None can also just mean "zero positions"
-                logger.warning("positions_get returned None", extra={"mt5_error": message})
+                logger.error(
+                    "positions_get failed - refusing to report an empty position list, "
+                    "because the backend would treat it as authoritative and close open positions",
+                    extra={"mt5_error": message, "mt5_code": code},
+                )
+                raise PositionsUnavailable(f"positions_get failed: {message} (code {code})")
             return []
 
         result = []
