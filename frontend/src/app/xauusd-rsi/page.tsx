@@ -49,7 +49,7 @@ export default async function XauusdRsiPage() {
     );
   }
 
-  const { strategy, demo, slots, indicator, thresholds, patternState, quote, observation, schedule, brokerSession, liquidation, exposure, order, risk, controls, heartbeats, recentDecisions, confirmedEntries } = status;
+  const { strategy, demo, slots, indicator, thresholds, patternState, quote, observation, schedule, entryEligibility, brokerSession, liquidation, exposure, order, risk, controls, heartbeats, recentDecisions, confirmedEntries } = status;
 
   return (
     <div className="flex flex-col gap-8">
@@ -241,6 +241,39 @@ export default async function XauusdRsiPage() {
         >
           Measured cadence: {observation.cadence.detail}
         </p>
+      </section>
+
+      {/* ---------------------------------------------------------------- */}
+      <section>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-text-muted mb-3">
+          Entry eligibility — every gate
+        </h2>
+        <div className="rounded-lg border border-border bg-surface px-4 py-3 text-sm flex flex-col gap-2">
+          <p>
+            Can enter now:{" "}
+            <strong className={entryEligibility.canEnterNow ? "text-emerald-400" : "text-amber-400"}>
+              {entryEligibility.canEnterNow ? "yes — no gate is blocking" : `no — blocked by ${entryEligibility.blockingGates.join(", ")}`}
+            </strong>
+          </p>
+          <ul className="flex flex-col gap-1">
+            {entryEligibility.gates.map((g) => (
+              <li key={g.gate} className="flex gap-2 text-xs">
+                <span className={`font-mono w-6 ${g.passed ? "text-emerald-400" : "text-amber-400"}`}>
+                  {g.passed ? "ok" : "no"}
+                </span>
+                <span className="font-mono w-44 shrink-0">{g.gate}</span>
+                <span className="text-text-muted">{g.detail}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-text-muted mt-1">Evaluated later, against an actual candidate order:</p>
+          <ul className="text-xs text-text-muted list-disc pl-5">
+            {entryEligibility.evaluatedLater.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-text-muted">{entryEligibility.note}</p>
+        </div>
       </section>
 
       {/* ---------------------------------------------------------------- */}

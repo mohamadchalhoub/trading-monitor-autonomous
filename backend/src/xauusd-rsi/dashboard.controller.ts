@@ -26,7 +26,7 @@ import { SPEC, SPEC_HASH } from './spec';
 import { engineRsiNow, engineWarmedUp, EngineState } from './engine';
 import { defaultStateDir, RsiWatchState } from './state-store';
 import { describeOwnership } from './ownership';
-import { RSI_OBSERVATION_CADENCE_TOLERANCE_MS, RSI_OBSERVATION_INTERVAL_MS } from './safety-constants';
+import { RSI_OBSERVATION_CADENCE_TOLERANCE_MS, RSI_OBSERVATION_INTERVAL_MS, RSI_QUOTE_MAX_STALENESS_SECONDS } from './safety-constants';
 import {
   RSI_COMBINED_RISK_CAP_PCT,
   RSI_DAILY_LOSS_CAP_PCT,
@@ -235,6 +235,54 @@ export class RsiDashboardController {
         currentFridayDeadline: labelOrNull(clock.fridayDeadlineT),
         inWeekendWindow: clock.inWeekendWindow,
       },
+
+      /**
+       * EVERY gate an entry must clear, not just the schedule.
+       *
+       * `schedule.entriesAllowed` answers one question — does the clock and
+       * the control state permit an entry — and it was being read as though
+       * it answered all of them. It reported ELIGIBLE_FOR_NEW_ENTRIES while
+       * the indicator was only 192 bars into its 256-bar warm-up and no
+       * signal could possibly be emitted. That is a misleading thing for an
+       * operator to see on a live trading dashboard.
+       *
+       * The gates below are the real ones, in the order they are enforced.
+       * Later gates cannot be evaluated here (a risk verdict needs a
+       * candidate order, and the collector's send-boundary quote check needs
+       * an order in flight), so they are named rather than silently omitted.
+       */
+      entryEligibility: (() => {
+        const gates = [
+          { gate: 'EXECUTION_MODE', passed: mode !== 'OFF', detail: `execution mode is ${mode}` },
+          { gate: 'KILL_SWITCH', passed: !kill.active, detail: kill.active ? `engaged (${kill.source})` : 'not engaged' },
+          { gate: 'STOP_NEW_ENTRIES', passed: !stop.active, detail: stop.active ? `engaged (${stop.source})` : 'not engaged' },
+          { gate: 'SCHEDULE', passed: clock.clockAllowsEntries, detail: eligibility.detail },
+          { gate: 'BROKER_SESSION', passed: session.open === true, detail: session.detail },
+          { gate: 'QUOTE_FRESH', passed: session.open === true, detail: session.quoteAgeSeconds === null ? 'no quote recorded' : `quote is ${session.quoteAgeSeconds.toFixed(1)}s old (limit ${RSI_QUOTE_MAX_STALENESS_SECONDS}s)` },
+          { gate: 'RECOVERY_COMPLETE', passed: watch.state?.recovery.recoveryComplete === true, detail: watch.state?.recovery.lastRecoveryDetail ?? 'no watch state' },
+          {
+            gate: 'INDICATOR_WARM',
+            passed: engine ? engineWarmedUp(engine) : false,
+            detail: (engine ? engineWarmedUp(engine) : false)
+              ? `warm (${engine?.closedBarsApplied ?? 0} closed bars applied)`
+              : `warming up: ${engine?.closedBarsApplied ?? 0} of ${SPEC.rsi.period + 1 + SPEC.rsi.warmupBars} contiguous closed M1 bars — signals are suppressed until this completes`,
+          },
+          { gate: 'SLOT_AVAILABLE', passed: slots === null ? false : !slots.RETEST.occupied || !slots.EXTREME.occupied, detail: slots === null ? 'no trading account configured' : `RETEST ${slots.RETEST.occupied ? 'held' : 'free'}, EXTREME ${slots.EXTREME.occupied ? 'held' : 'free'}` },
+        ];
+        const blocking = gates.filter((g) => !g.passed);
+        return {
+          canEnterNow: blocking.length === 0,
+          blockingGates: blocking.map((g) => g.gate),
+          gates,
+          evaluatedLater: [
+            'RISK_MANAGER — per-trade, combined, daily-loss and drawdown caps, evaluated against the actual candidate order',
+            'OCCUPANCY_RECHECK and SIGNAL_AGE — re-evaluated at the pre-send check',
+            'SEND_BOUNDARY_QUOTE_AGE — enforced in the collector against a freshly fetched MT5 tick, immediately before order_send',
+          ],
+          note:
+            'A passing list means no gate blocks an entry RIGHT NOW. It is not a prediction that one will be taken: a setup still has to occur.',
+        };
+      })(),
 
       brokerSession: { open: session.open, detail: session.detail },
 

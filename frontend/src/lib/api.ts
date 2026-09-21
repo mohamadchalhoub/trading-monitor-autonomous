@@ -751,6 +751,13 @@ export interface XauusdRsiStatus {
     currentFridayDeadline: { iso: string; beirut: string } | null;
     inWeekendWindow: boolean;
   };
+  entryEligibility: {
+    canEnterNow: boolean;
+    blockingGates: string[];
+    gates: Array<{ gate: string; passed: boolean; detail: string }>;
+    evaluatedLater: string[];
+    note: string;
+  };
   brokerSession: { open: boolean | null; detail: string };
   liquidation: {
     phase: string;
