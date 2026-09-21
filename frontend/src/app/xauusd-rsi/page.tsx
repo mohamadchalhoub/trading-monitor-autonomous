@@ -49,7 +49,7 @@ export default async function XauusdRsiPage() {
     );
   }
 
-  const { strategy, demo, slots, indicator, thresholds, patternState, quote, observation, schedule, entryEligibility, brokerSession, liquidation, exposure, order, risk, controls, heartbeats, recentDecisions, confirmedEntries } = status;
+  const { strategy, demo, slots, indicator, thresholds, patternState, quote, observation, schedule, entryEligibility, telegramDelivery, brokerSession, liquidation, exposure, order, risk, controls, heartbeats, recentDecisions, confirmedEntries } = status;
 
   return (
     <div className="flex flex-col gap-8">
@@ -287,6 +287,35 @@ export default async function XauusdRsiPage() {
           )}
         </div>
       </section>
+
+      {/* ---------------------------------------------------------------- */}
+      {telegramDelivery && (telegramDelivery.failedPending > 0 || telegramDelivery.gaveUp > 0) && (
+        <section>
+          <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-4 py-3 text-sm flex flex-col gap-1">
+            <p className="font-semibold text-amber-400">Telegram alerts are not being delivered</p>
+            {telegramDelivery.failedPending > 0 && (
+              <p className="text-xs">
+                {telegramDelivery.failedPending} alert(s) failed and are being retried
+                {telegramDelivery.oldestFailedAgeSeconds !== null
+                  ? `; the oldest is ${Math.round(telegramDelivery.oldestFailedAgeSeconds / 60)} minute(s) old`
+                  : ""}
+                .
+              </p>
+            )}
+            {telegramDelivery.gaveUp > 0 && (
+              <p className="text-xs">
+                {telegramDelivery.gaveUp} alert(s) were abandoned after the retry limit and will never arrive.
+              </p>
+            )}
+            {telegramDelivery.lastError && (
+              <p className="text-xs font-mono text-text-muted">{telegramDelivery.lastError}</p>
+            )}
+            <p className="text-xs text-text-muted">
+              Trading is unaffected — this is delivery only. Silence from Telegram does not mean nothing happened.
+            </p>
+          </div>
+        </section>
+      )}
 
       {/* ---------------------------------------------------------------- */}
       <section>

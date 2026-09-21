@@ -58,7 +58,9 @@ describe('Watch cycle — cold start', () => {
     const decisions = new RsiDecisionService(prisma as never, accountState);
     // Telegram is stubbed: this file is about observation, and a real send
     // would be an outbound network call from a unit test.
-    const telegram = { notify: async () => undefined } as never;
+    // Stubbed in full: the cycle also sweeps failed deliveries, and a stub
+    // missing that method would fail for a reason unrelated to this file.
+    const telegram = { notify: async () => undefined, retryFailed: async () => ({ attempted: 0, sent: 0, gaveUp: 0 }) } as never;
     watch = new RsiWatchService(prisma as never, coordinator, accountState, liquidation, decisions, telegram);
   });
   afterAll(async () => {
@@ -245,7 +247,9 @@ describe('Watch cycle — migrating off the pre-correction time basis', () => {
     const coordinator = new RsiCoordinatorService(prisma as never, runtimeSettings, accountState);
     const liquidation = new RsiLiquidationService(prisma as never, accountState);
     const decisions = new RsiDecisionService(prisma as never, accountState);
-    const telegram = { notify: async () => undefined } as never;
+    // Stubbed in full: the cycle also sweeps failed deliveries, and a stub
+    // missing that method would fail for a reason unrelated to this file.
+    const telegram = { notify: async () => undefined, retryFailed: async () => ({ attempted: 0, sent: 0, gaveUp: 0 }) } as never;
     watch = new RsiWatchService(prisma as never, coordinator, accountState, liquidation, decisions, telegram);
   });
   afterAll(async () => {

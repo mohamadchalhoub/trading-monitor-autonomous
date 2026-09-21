@@ -465,6 +465,15 @@ model GoldTelegramNotification {
   text       String
   createdAt  DateTime                       @default(now()) @map("created_at")
   sentAt     DateTime?                      @map("sent_at")
+  // Delivery attempts made for THIS row, and when the last one happened.
+  //
+  // A failed send used to be final: the row was written FAILED and nothing
+  // ever looked at it again, so a transient network problem silently and
+  // permanently lost a trade alert. These two columns are what let a
+  // retry sweep find the row, space its attempts out, and eventually give
+  // up instead of trying forever.
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime? @map("last_attempt_at")
 
   @@index([status, createdAt])
   @@index([chatId, createdAt])

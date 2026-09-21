@@ -194,3 +194,160 @@ describe('Per-recipient delivery, against real Postgres', () => {
     expect(rows.every((r) => r.status === 'FAILED')).toBe(true);
   });
 });
+
+describe('Retrying a failed delivery, against real Postgres', () => {
+  /**
+   * Regression test for a silent, permanent loss of trade alerts.
+   *
+   * On 2026-09-21 both live round trips produced SIGNAL_QUEUED and
+   * FILL_CONFIRMED notifications. Every one failed with "network error
+   * calling Telegram: fetch failed" while api.telegram.org was unreachable
+   * from the host, each was written FAILED, and nothing ever looked at them
+   * again. The operator's only signal was silence.
+   */
+  let prisma: PrismaClient;
+  let configValues: Record<string, string>;
+  let configService: ConfigService;
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const originalFetch = globalThis.fetch;
+
+  beforeAll(() => {
+    prisma = new PrismaClient();
+  });
+  afterAll(async () => {
+    globalThis.fetch = originalFetch;
+    await prisma.$disconnect();
+  });
+  beforeEach(async () => {
+    await prisma.goldTelegramNotification.deleteMany();
+    configValues = {
+      GOLD_TELEGRAM_BOT_TOKEN: 'test-token',
+      GOLD_TELEGRAM_CHAT_ID: '111',
+      GOLD_TELEGRAM_CHAT_IDS: 'Friend:222',
+    };
+    configService = { get: (k: string) => configValues[k] } as unknown as ConfigService;
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const ok = (messageId: number) => ({ ok: true, status: 200, json: async () => ({ ok: true, result: { message_id: messageId } }) });
+  const service = () => new GoldTelegramService(prisma as never, configService);
+
+  /** The live failure: the endpoint is unreachable. */
+  const unreachable = () => { throw new Error('network error calling Telegram: fetch failed'); };
+
+  it('delivers an alert that failed while Telegram was unreachable', async () => {
+    fetchMock.mockImplementation(unreachable);
+    await service().notify('FILL_CONFIRMED', 'fill-1', 'BUY 0.5 filled at 4363.67');
+    expect(await prisma.goldTelegramNotification.count({ where: { status: 'FAILED' } })).toBe(2);
+
+    // The network comes back.
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValueOnce(ok(900)).mockResolvedValueOnce(ok(901));
+    const result = await service().retryFailed(new Date());
+
+    expect(result.attempted).toBe(2);
+    expect(result.sent).toBe(2);
+    const rows = await prisma.goldTelegramNotification.findMany({ orderBy: { chatId: 'asc' } });
+    expect(rows.every((r) => r.status === 'SENT')).toBe(true);
+    expect(rows.map((r) => r.messageId)).toEqual([900, 901]);
+  });
+
+  it('marks the delivery as delayed, and keeps the original message body', async () => {
+    fetchMock.mockImplementation(unreachable);
+    await service().notify('FILL_CONFIRMED', 'fill-2', 'BUY 0.5 filled at 4363.67');
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(ok(902));
+
+    await service().retryFailed(new Date());
+
+    const body = String((fetchMock.mock.calls[0][1] as { body: string }).body);
+    expect(body).toContain('DELAYED DELIVERY');
+    expect(body).toContain('BUY 0.5 filled at 4363.67');
+  });
+
+  it('never re-sends a recipient that already succeeded', async () => {
+    fetchMock.mockResolvedValueOnce(ok(910)).mockImplementationOnce(unreachable);
+    await service().notify('FILL_CONFIRMED', 'fill-3', 'hello');
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(ok(911));
+
+    const result = await service().retryFailed(new Date());
+
+    expect(result.attempted).toBe(1); // only the failed recipient
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const owner = await prisma.goldTelegramNotification.findFirstOrThrow({ where: { chatId: '111' } });
+    expect(owner.messageId).toBe(910); // untouched
+  });
+
+  it('spaces attempts out, so a blocked endpoint is not hammered', async () => {
+    fetchMock.mockImplementation(unreachable);
+    const t0 = new Date();
+    await service().notify('FILL_CONFIRMED', 'fill-4', 'hello');
+    await service().retryFailed(t0);
+    const callsAfterFirst = fetchMock.mock.calls.length;
+
+    // A second sweep a second later must do nothing.
+    const immediate = await service().retryFailed(new Date(t0.getTime() + 1_000));
+    expect(immediate.attempted).toBe(0);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
+
+    // A minute later it tries again.
+    const later = await service().retryFailed(new Date(t0.getTime() + 61_000));
+    expect(later.attempted).toBe(2);
+  });
+
+  it('abandons an alert too old to be useful rather than delivering stale news', async () => {
+    fetchMock.mockImplementation(unreachable);
+    await service().notify('FILL_CONFIRMED', 'fill-5', 'hello');
+    // Backdate the rows beyond the 24h window.
+    await prisma.goldTelegramNotification.updateMany({ data: { createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) } });
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue(ok(920));
+
+    const result = await service().retryFailed(new Date());
+
+    expect(result.attempted).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('gives up after a bounded number of attempts instead of retrying forever', async () => {
+    fetchMock.mockImplementation(unreachable);
+    await service().notify('FILL_CONFIRMED', 'fill-6', 'hello');
+    await prisma.goldTelegramNotification.updateMany({ data: { attempts: 29 } });
+
+    const result = await service().retryFailed(new Date());
+
+    expect(result.gaveUp).toBe(2);
+    const rows = await prisma.goldTelegramNotification.findMany();
+    expect(rows.every((r) => r.attempts === 30)).toBe(true);
+
+    // A further sweep does not touch them again.
+    const again = await service().retryFailed(new Date(Date.now() + 120_000));
+    expect(again.attempted).toBe(0);
+  });
+
+  it('reports delivery health, so a silent outage is visible', async () => {
+    fetchMock.mockImplementation(unreachable);
+    await service().notify('FILL_CONFIRMED', 'fill-7', 'hello');
+
+    const health = await service().deliveryHealth(new Date());
+
+    expect(health.failedPending).toBe(2);
+    expect(health.oldestFailedAgeSeconds).not.toBeNull();
+    expect(health.lastError).toMatch(/fetch failed/);
+  });
+
+  it('reports a clean bill of health when everything delivered', async () => {
+    fetchMock.mockResolvedValue(ok(930));
+    await service().notify('FILL_CONFIRMED', 'fill-8', 'hello');
+
+    const health = await service().deliveryHealth(new Date());
+    expect(health.failedPending).toBe(0);
+    expect(health.gaveUp).toBe(0);
+    expect(health.oldestFailedAgeSeconds).toBeNull();
+  });
+});

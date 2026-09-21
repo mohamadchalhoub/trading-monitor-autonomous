@@ -101,6 +101,20 @@ export class RsiWatchService {
     const liveTickets = new Set(exposureNow.items.filter((i) => i.kind === 'POSITION').map((i) => i.ticket));
     const slotsReleased = await this.decisions.releaseSlotsForClosedPositions(params.accountId, liveTickets);
 
+    // 0b. Re-send notifications that failed earlier.
+    //
+    // Cheap and bounded: the sweep spaces attempts a minute apart and takes a
+    // small batch, so running it every cycle costs one indexed query. It sits
+    // here because a lost fill alert is an operator-visibility failure, and
+    // the operator needs it whether or not the rest of the cycle succeeds.
+    // Wrapped, not just `.catch()`ed: this is a best-effort side task and
+    // must never be able to break the trading cycle, whatever it throws.
+    try {
+      void this.telegram.retryFailed(new Date(nowT)).catch(() => undefined);
+    } catch {
+      /* retry sweep is never allowed to interrupt the cycle */
+    }
+
     // 1. Protective work, before anything that opens exposure.
     const liquidation = await this.liquidation.runCycle(params.accountId, nowT);
     this.notifyLiquidation(liquidation);

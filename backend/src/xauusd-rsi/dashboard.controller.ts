@@ -19,6 +19,7 @@ import { DashboardTokenGuard } from '../auth/dashboard-token.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { RsiAccountStateService } from './account-state.service';
 import { RsiRuntimeSettingsService } from './runtime-settings.service';
+import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 import { getRsiExecutionMode, killSwitchState, stopNewEntriesState } from './controls';
 import { evaluateClockSchedule, evaluateEntryEligibility, evaluateLiquidationPhase, nextClockEligibleAt, nextFridayDeadlineAt } from './schedule';
 import { beirutLabel } from './time';
@@ -51,6 +52,7 @@ export class RsiDashboardController {
     private readonly prisma: PrismaService,
     private readonly accountState: RsiAccountStateService,
     private readonly runtimeSettings: RsiRuntimeSettingsService,
+    private readonly telegram: GoldTelegramService,
   ) {}
 
   @Get()
@@ -283,6 +285,16 @@ export class RsiDashboardController {
             'A passing list means no gate blocks an entry RIGHT NOW. It is not a prediction that one will be taken: a setup still has to occur.',
         };
       })(),
+
+      /**
+       * Telegram delivery health, so a silent outage is VISIBLE.
+       *
+       * Both round trips on 2026-09-21 produced alerts that all failed, and
+       * the only signal the operator got was that no message arrived. A
+       * notification system that fails quietly is worse than none, because
+       * silence reads as "nothing happened".
+       */
+      telegramDelivery: await this.telegram.deliveryHealth(new Date(nowT)),
 
       brokerSession: { open: session.open, detail: session.detail },
 

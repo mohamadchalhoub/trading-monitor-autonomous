@@ -53,6 +53,15 @@ export interface TelegramDeliveryReport {
  * persist `telegramMessageIds`/`status`/`lastError` — kept in Postgres, not
  * memory, so a restart never loses the delivery record.
  */
+/** Spacing between retry attempts for one row — a blocked endpoint must not be hammered. */
+const RETRY_MIN_INTERVAL_MS = 60_000;
+/** Beyond this, a late alert is noise rather than news, and is abandoned. */
+const RETRY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+/** Total attempts per row before giving up, so retries cannot run forever. */
+const RETRY_MAX_ATTEMPTS = 30;
+/** Rows handled per sweep, so one cycle cannot stall on a long backlog. */
+const RETRY_BATCH = 10;
+
 @Injectable()
 export class GoldTelegramService {
   private readonly logger = new Logger(GoldTelegramService.name);
@@ -128,6 +137,106 @@ export class GoldTelegramService {
     }
 
     return { eventType, dedupKey, results, problems };
+  }
+
+  /**
+   * Re-sends notifications that failed earlier and are still worth sending.
+   *
+   * Without this a failed send was final. The row was written FAILED and
+   * nothing ever looked at it again, so a transient network problem lost a
+   * trade alert permanently. That happened live on 2026-09-21: both round
+   * trips produced SIGNAL_QUEUED and FILL_CONFIRMED notifications, every one
+   * failed with "network error calling Telegram: fetch failed" while
+   * api.telegram.org was unreachable from the host, and none was ever
+   * delivered. The operator found out by noticing the silence.
+   *
+   * Deliberate bounds:
+   *
+   * - Attempts are spaced by `RETRY_MIN_INTERVAL_MS`, so a caller that runs
+   *   every second does not hammer a blocked endpoint.
+   * - Rows older than `RETRY_MAX_AGE_MS` are abandoned. A day-old fill alert
+   *   arriving now is noise, not news.
+   * - `RETRY_MAX_ATTEMPTS` bounds the total effort per row.
+   * - Deduplication is untouched: each row is one recipient, and a row that
+   *   reached SENT is never selected, so nobody receives a duplicate.
+   *
+   * The text is prefixed to say the delivery was delayed. The original body
+   * carries the event's own timestamps, so a late alert states plainly both
+   * when it happened and that it is late.
+   */
+  async retryFailed(now: Date = new Date()): Promise<{ attempted: number; sent: number; gaveUp: number }> {
+    const botToken = this.config.get<string>('GOLD_TELEGRAM_BOT_TOKEN');
+    if (!botToken) return { attempted: 0, sent: 0, gaveUp: 0 };
+
+    const due = await this.prisma.goldTelegramNotification.findMany({
+      where: {
+        status: 'FAILED',
+        chatId: { not: null },
+        createdAt: { gte: new Date(now.getTime() - RETRY_MAX_AGE_MS) },
+        attempts: { lt: RETRY_MAX_ATTEMPTS },
+        OR: [{ lastAttemptAt: null }, { lastAttemptAt: { lte: new Date(now.getTime() - RETRY_MIN_INTERVAL_MS) } }],
+      },
+      orderBy: { createdAt: 'asc' },
+      take: RETRY_BATCH,
+    });
+    if (due.length === 0) return { attempted: 0, sent: 0, gaveUp: 0 };
+
+    let sent = 0;
+    let gaveUp = 0;
+    for (const row of due) {
+      const delayedSeconds = Math.round((now.getTime() - row.createdAt.getTime()) / 1000);
+      const text =
+        `DELAYED DELIVERY — this alert could not be sent when it happened ` +
+        `(${delayedSeconds}s ago) and is being delivered now.
+
+${row.text}`;
+      try {
+        const messageId = await this.sendMessage(botToken, row.chatId!, text);
+        await this.prisma.goldTelegramNotification.update({
+          where: { id: row.id },
+          data: { status: 'SENT', messageId, sentAt: now, attempts: row.attempts + 1, lastAttemptAt: now, lastError: null },
+        });
+        this.logger.log(`gold telegram: delivered ${row.eventType} on retry ${row.attempts + 1} (message_id=${messageId}, delayed ${delayedSeconds}s)`);
+        sent += 1;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const attempts = row.attempts + 1;
+        await this.prisma.goldTelegramNotification.update({
+          where: { id: row.id },
+          data: { attempts, lastAttemptAt: now, lastError: message.slice(0, 500) },
+        });
+        if (attempts >= RETRY_MAX_ATTEMPTS) {
+          gaveUp += 1;
+          this.logger.error(`gold telegram: giving up on ${row.eventType} (${row.dedupKey}) after ${attempts} attempts — ${message}`);
+        }
+      }
+    }
+    return { attempted: due.length, sent, gaveUp };
+  }
+
+  /** Counts for the dashboard, so a silent delivery outage is VISIBLE. */
+  async deliveryHealth(now: Date = new Date()): Promise<{
+    failedPending: number;
+    gaveUp: number;
+    oldestFailedAgeSeconds: number | null;
+    lastError: string | null;
+  }> {
+    const cutoff = new Date(now.getTime() - RETRY_MAX_AGE_MS);
+    const [pending, gaveUp, oldest] = await Promise.all([
+      this.prisma.goldTelegramNotification.count({ where: { status: 'FAILED', createdAt: { gte: cutoff }, attempts: { lt: RETRY_MAX_ATTEMPTS } } }),
+      this.prisma.goldTelegramNotification.count({ where: { status: 'FAILED', attempts: { gte: RETRY_MAX_ATTEMPTS } } }),
+      this.prisma.goldTelegramNotification.findFirst({
+        where: { status: 'FAILED', createdAt: { gte: cutoff } },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true, lastError: true },
+      }),
+    ]);
+    return {
+      failedPending: pending,
+      gaveUp,
+      oldestFailedAgeSeconds: oldest ? Math.round((now.getTime() - oldest.createdAt.getTime()) / 1000) : null,
+      lastError: oldest?.lastError ?? null,
+    };
   }
 
   /** The configured audience, as parsed. Exposed so status output can show it. */

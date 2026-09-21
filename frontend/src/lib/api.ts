@@ -757,6 +757,13 @@ export interface XauusdRsiStatus {
    * against an older backend rather than crash, which is exactly what it
    * did when the page hot-reloaded ahead of a backend restart.
    */
+  /** Optional for the same reason as entryEligibility: it postdates the rest. */
+  telegramDelivery?: {
+    failedPending: number;
+    gaveUp: number;
+    oldestFailedAgeSeconds: number | null;
+    lastError: string | null;
+  };
   entryEligibility?: {
     canEnterNow: boolean;
     blockingGates: string[];
