@@ -16,6 +16,7 @@ import {
   RSI_GOLD_POINT_SIZE,
   RSI_MAX_ENTRY_DEVIATION_POINTS,
   RSI_MAX_SIGNAL_AGE_SECONDS,
+  RSI_QUOTE_MAX_STALENESS_SECONDS,
   RSI_SYMBOL,
 } from './safety-constants';
 
@@ -186,6 +187,37 @@ export class RsiDecisionService {
     if (!tick) {
       return { ok: false, reason: 'No live XAUUSD quote at send time — refusing to send blind.' };
     }
+
+    // The quote's own age, measured against WALL CLOCK.
+    //
+    // This check has to come first, and it has to use wall clock, because
+    // everything below uses the quote's timestamp as the market clock. Before
+    // it existed, a frozen feed froze "now" along with it: the same tick could
+    // be re-read indefinitely and a signal would never appear to age, because
+    // it was being compared against its own stopped clock. Re-reading a tick
+    // never refreshes it — `tickAt` carries the broker's timestamp through
+    // ingest unchanged — so the only thing needed to expose a frozen feed is
+    // to compare that timestamp against real time, which is what this does.
+    const quoteAgeSeconds = (Date.now() - tick.tickAt.getTime()) / 1000;
+    if (quoteAgeSeconds > RSI_QUOTE_MAX_STALENESS_SECONDS) {
+      return {
+        ok: false,
+        reason: `XAUUSD quote is ${quoteAgeSeconds.toFixed(1)}s old at the pre-send check (limit ${RSI_QUOTE_MAX_STALENESS_SECONDS}s) — refusing to price an entry off a stale quote.`,
+      };
+    }
+
+    // Having proven the quote is no more than RSI_QUOTE_MAX_STALENESS_SECONDS
+    // old, its timestamp is usable as the market clock for the schedule and
+    // signal-age checks below: the two clocks can now differ by at most that
+    // bound, which is immaterial against a minute-granularity schedule and a
+    // 60s signal limit. This is a bounded, stated approximation rather than an
+    // assumption — and it is only sound BECAUSE of the check above.
+    //
+    // It is still not the final word. The order travels to the collector after
+    // this, which re-reads MT5 directly and applies its own age gate
+    // immediately before order_send (collector/app/executor.py,
+    // QUOTE_MAX_AGE_SECONDS). A one-second polling loop guarantees a
+    // one-second READ, never a one-second-old market price.
     const nowT = tick.tickAt.getTime();
 
     const session = await this.accountState.resolveBrokerSessionOpen(new Date());

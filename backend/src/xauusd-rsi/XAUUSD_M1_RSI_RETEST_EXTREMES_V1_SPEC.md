@@ -269,15 +269,44 @@ tick, and the state is committed exactly once when the minute completes. The
 projection was verified to equal the committed value for the same price, and
 to leave committed state untouched.
 
-**Flat-price behaviour, corrected.** MT5 reports RSI 100 whenever average loss
-is zero, including on a perfectly flat series, and that is reproduced. The
-practical reach of this is narrower than revision 1 stated: Wilder's average
-loss decays geometrically but never reaches zero, so **once any downward move
-exists in the smoothed history, flat closes raise RSI without pinning it to
-100**. A mixed history followed by five flat closes reads ~54.5, not 100. Only
-a history containing no downward change at all reads 100. Across 5,000 live
+**Flat-price behaviour, corrected again (revision 3).** Revisions 1 and 2 both
+described this wrongly, in opposite directions. The correct statement:
+
+**Flat closes leave RSI exactly unchanged. They do not raise it.** A
+zero-change close contributes zero to both the gain and the loss side, so
+Wilder smoothing multiplies the average gain and the average loss by the same
+`(period - 1) / period` factor. Their ratio is therefore preserved, and RSI
+with it. Revision 2's claim that flat closes "raise RSI", and its "~54.5"
+figure, were wrong; verified against this implementation, a mixed history
+reading 64.1616 still reads 64.1616 after eight consecutive flat closes.
+
+The single exception is the degenerate case where average loss is **already**
+zero — a history containing no downward change at all, which includes an
+all-flat series from initialization. MT5 reports 100 there and keeps
+reporting it, and that is reproduced rather than filtered. Across 5,000 live
 M1 bars the longest run of unchanged closes was shorter than the RSI period,
-so the pinned case did not arise. It is still disclosed rather than filtered.
+so this case did not arise.
+
+This correction is to the **explanation only**. The RSI calculation is
+unchanged and remains the MT5-verified one (§8.1).
+
+**Timestamp basis (revision 3).** Stored tick and M1 candle timestamps are
+broker-server wall clock (EET/EEST) wearing a UTC label, not true UTC. The
+strategy converts them once, at the read boundary, via
+`src/xauusd-rsi/tick-time.ts`. Measured on 2026-09-20: the newest stored
+XAUUSD tick read three hours ahead of real time, which put observation
+timestamps in the future, disabled the staleness test (a negative age always
+passes a `<= 30s` comparison) and persisted `observed_at` three hours ahead
+of the event. Stored rows are NOT rewritten; the conversion is applied on
+read, and a watch cursor recorded on the old basis is discarded rather than
+trusted.
+
+**Quote freshness at the send boundary (revision 3).** The 30s limit in
+`observation.maxStalenessMs` is enforced at detection, at the backend
+pre-send check, and — newly — against a freshly fetched MT5 tick immediately
+before `order_send`, on every attempt including the retry. Cadence is not
+freshness: a one-second loop guarantees a one-second read, not a
+one-second-old market price, and the two are reported separately.
 
 ### 8.2 Live timing
 Intrabar detection, per §5. Completed-M1-close detection is never silently

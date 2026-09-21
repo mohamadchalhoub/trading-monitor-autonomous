@@ -22,6 +22,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { applyClosedBar, applyTick, createEngineState, EmittedSignal, engineRsiNow, engineWarmedUp, M1_MS } from './engine';
+import { RSI_BROKER_SERVER_TIMEZONE, RSI_CURSOR_TIME_BASIS, storedBrokerTimeToUtcMs } from './tick-time';
+import { utcToWallClockMs } from '../research/confirmed-retest/time';
 import { RsiCoordinatorService } from './coordinator.service';
 import { RsiAccountStateService } from './account-state.service';
 import { RsiLiquidationService, LiquidationCycleResult } from './liquidation.service';
@@ -103,6 +105,23 @@ export class RsiWatchService {
     const liquidation = await this.liquidation.runCycle(params.accountId, nowT);
     this.notifyLiquidation(liquidation);
 
+    // 1b. Discard a cursor recorded on the pre-correction timeline.
+    //
+    // Before the broker wall-clock correction the cursor held a value three
+    // hours ahead of what the same tick now yields. Kept, it would sit in
+    // the future and filter out every new observation — the strategy would
+    // look healthy and see nothing. Dropping it costs one reseed.
+    if (state.cursor.lastTimestampMs !== null && state.cursor.timeBasis !== RSI_CURSOR_TIME_BASIS) {
+      notes.push(
+        `observation cursor was recorded on an older time basis (${state.cursor.timeBasis ?? 'untagged'}) — discarded and rebuilt, ` +
+          'because a pre-correction cursor sits in the future and would silently reject every new tick',
+      );
+      state = {
+        ...state,
+        cursor: { lastTimestampMs: null, lastTickKey: null, lastTimestampKeys: [], timeBasis: RSI_CURSOR_TIME_BASIS },
+      };
+    }
+
     // 2. Recovery.
     if (!state.recovery.recoveryComplete) {
       const recovery = await this.reconcileOnStartup(params.accountId, nowT);
@@ -125,7 +144,7 @@ export class RsiWatchService {
       const cursorFloor = seed.lastSeededBarEndT;
       const cursor =
         cursorFloor !== null && (state.cursor.lastTimestampMs === null || state.cursor.lastTimestampMs < cursorFloor)
-          ? { lastTimestampMs: cursorFloor, lastTickKey: null, lastTimestampKeys: [] }
+          ? { lastTimestampMs: cursorFloor, lastTickKey: null, lastTimestampKeys: [], timeBasis: RSI_CURSOR_TIME_BASIS }
           : state.cursor;
       state = {
         ...state,
@@ -162,7 +181,7 @@ export class RsiWatchService {
       cursor =
         tick.timestampMs === cursor.lastTimestampMs
           ? { ...cursor, lastTickKey: tick.key, lastTimestampKeys: [...cursor.lastTimestampKeys, tick.key] }
-          : { lastTimestampMs: tick.timestampMs, lastTickKey: tick.key, lastTimestampKeys: [tick.key] };
+          : { lastTimestampMs: tick.timestampMs, lastTickKey: tick.key, lastTimestampKeys: [tick.key], timeBasis: RSI_CURSOR_TIME_BASIS };
 
       for (const signal of step.signals) {
         signalsEmitted.push(signal);
@@ -427,26 +446,44 @@ export class RsiWatchService {
       };
     }
 
-    const ascending = rows.slice().reverse();
+    // Candle `open_time` carries the SAME broker wall-clock mislabeling as
+    // tick timestamps (see tick-time.ts), and is corrected the same way. It
+    // has to be: the engine compares a seeded bar's clock against incoming
+    // tick timestamps, so seeding on one timeline and observing on another
+    // would make every live tick look three hours out of order.
+    const ascending = rows
+      .slice()
+      .reverse()
+      .map((row) => ({ t: storedBrokerTimeToUtcMs(row.openTime.getTime()), close: row.close }))
+      .filter((row): row is { t: number; close: (typeof rows)[number]['close'] } => row.t !== null);
+
+    if (ascending.length === 0) {
+      return {
+        engine: state.engine,
+        detail: 'No usable M1 candle history after timestamp conversion — the indicator cannot be seeded, so signals stay suppressed.',
+        lastSeededBarEndT: null,
+      };
+    }
+
     // Trim to the most recent contiguous run.
     let startIndex = 0;
     for (let i = 1; i < ascending.length; i += 1) {
-      const gap = ascending[i].openTime.getTime() - ascending[i - 1].openTime.getTime();
+      const gap = ascending[i].t - ascending[i - 1].t;
       if (gap !== M1_MS) startIndex = i;
     }
     const contiguous = ascending.slice(startIndex);
 
     let engine = createEngineState(state.engine.observationMode);
     for (const row of contiguous) {
-      engine = applyClosedBar(engine, row.openTime.getTime(), row.close.toNumber()).state;
+      engine = applyClosedBar(engine, row.t, row.close.toNumber()).state;
     }
 
     const warmed = engineWarmedUp(engine);
-    const detail = warmed
-      ? `Indicator seeded from ${contiguous.length} contiguous closed M1 bars ending ${contiguous[contiguous.length - 1].openTime.toISOString()}; warm-up satisfied.`
-      : `Indicator seeded from ${contiguous.length} contiguous closed M1 bars, which is short of the ${required} required — signals stay suppressed until more history is available.`;
     const lastBar = contiguous[contiguous.length - 1];
-    return { engine, detail, lastSeededBarEndT: lastBar.openTime.getTime() + M1_MS };
+    const detail = warmed
+      ? `Indicator seeded from ${contiguous.length} contiguous closed M1 bars ending ${new Date(lastBar.t).toISOString()}; warm-up satisfied.`
+      : `Indicator seeded from ${contiguous.length} contiguous closed M1 bars, which is short of the ${required} required — signals stay suppressed until more history is available.`;
+    return { engine, detail, lastSeededBarEndT: lastBar.t + M1_MS };
   }
 
   /**
@@ -461,10 +498,17 @@ export class RsiWatchService {
     lastTimestampMs: number | null,
     lastTimestampKeys: string[],
   ): Promise<Array<{ timestampMs: number; bid: number; ask: number; key: string }>> {
+    // The cursor is kept in TRUE UTC; the column is stored in broker
+    // wall-clock (see tick-time.ts). The query bound is therefore converted
+    // back into the stored space, so the database still does the filtering
+    // on its own index instead of this process reading everything.
+    const boundWallMs =
+      lastTimestampMs !== null ? utcToWallClockMs(RSI_BROKER_SERVER_TIMEZONE, lastTimestampMs) : null;
+
     const rows = await this.prisma.historicalTick.findMany({
       where: {
         symbol: RSI_SYMBOL,
-        ...(lastTimestampMs !== null ? { timestamp: { gte: new Date(lastTimestampMs) } } : {}),
+        ...(boundWallMs !== null ? { timestamp: { gte: new Date(boundWallMs) } } : {}),
       },
       orderBy: [{ timestamp: 'asc' }, { batchSeq: 'asc' }, { id: 'asc' }],
       take: MAX_TICKS_PER_CYCLE,
@@ -474,8 +518,12 @@ export class RsiWatchService {
     const consumed = new Set(lastTimestampKeys);
     const out: Array<{ timestampMs: number; bid: number; ask: number; key: string }> = [];
     for (const row of rows) {
-      const timestampMs = row.timestamp.getTime();
-      const key = `${timestampMs}:${row.id.toString()}`;
+      const storedMs = row.timestamp.getTime();
+      // Identity stays anchored to the STORED value and the row id, so a
+      // tick's key never changes and re-reading one can never look new.
+      const key = `${storedMs}:${row.id.toString()}`;
+      const timestampMs = storedBrokerTimeToUtcMs(storedMs);
+      if (timestampMs === null) continue;
       if (lastTimestampMs !== null && timestampMs === lastTimestampMs && consumed.has(key)) continue;
       if (lastTimestampMs !== null && timestampMs < lastTimestampMs) continue;
       const bid = row.bid.toNumber();

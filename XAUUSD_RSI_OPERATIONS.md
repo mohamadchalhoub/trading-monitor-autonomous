@@ -342,6 +342,47 @@ anyone read it.
 
 ---
 
+## 6c. Quote freshness, and why cadence is not freshness
+
+**Processing cadence and quote age are different numbers and are reported
+separately.** A one-second loop guarantees a one-second *read*, never a
+one-second-old *market price*. If the broker sends no tick for ten seconds,
+the newest quote is ten seconds old no matter how often it is read. A
+reported quote age larger than the cadence is normal and is not a fault.
+
+The configured limit is **30 seconds** (`observation.maxStalenessMs` in the
+frozen spec). It is enforced at three points, each of which can refuse:
+
+| Point | What it checks |
+|---|---|
+| Detection (`engine.ts`) | The observation's own age against wall clock; a stale one is consumed and logged, never queued |
+| Backend pre-send (`decision.service.ts`) | The quote's age against wall clock, before anything else uses its timestamp |
+| **Send boundary** (`collector/app/executor.py`) | A **newly fetched** MT5 tick's age, immediately before `order_send`, on every attempt including the retry |
+
+The send boundary is the one that cannot be skipped or approximated. The
+backend approves against the quote it was last pushed; the order then travels
+to the collector, which reads MT5 directly. `symbol_info_tick` returns the
+last tick the terminal ever saw, so a halted feed yields a brand-new read of
+a very old price — a fresh read is not a fresh quote. An expired quote there
+drops the order. It is never repriced to make it sendable.
+
+Re-reading or re-ingesting a tick never refreshes it. `live_ticks.tick_at`
+carries the broker's own timestamp through ingest unchanged (only
+`updated_at` moves), and the collector's age is derived from the tick's own
+timestamp rather than from when it was read, so a frozen feed only ever gets
+staler.
+
+**Timestamps use one conversion, applied once.** MT5 reports times as an
+epoch built from the broker server's wall-clock components (EET/EEST), not
+true UTC. The collector converts with `_mt5_time_to_utc`; the backend's RSI
+path converts stored tick and candle times at the read boundary via
+`src/xauusd-rsi/tick-time.ts`, reusing the same conversion the research layer
+uses. A quote that decodes to the future is refused rather than treated as
+very fresh, because that is the signature of the offset being applied twice
+or not at all.
+
+---
+
 ## 7. Historical evaluation is archived, not operational
 
 Historical evaluation, backtesting, trade simulation and historical

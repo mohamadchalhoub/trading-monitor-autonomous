@@ -18,6 +18,7 @@ import {
   rsiSeries,
 } from '../../src/xauusd-rsi/rsi';
 import { SPEC } from '../../src/xauusd-rsi/spec';
+import { applyClosedBar, createEngineState, engineRsiNow, M1_MS } from '../../src/xauusd-rsi/engine';
 
 describe('Wilder seeding', () => {
   it('produces no value until period + 1 closes have been seen', () => {
@@ -130,5 +131,87 @@ describe('Warm-up gating (spec §8.5)', () => {
     expect(isWarmedUp(s)).toBe(false);
     s = commitClosedBar(s, 2001);
     expect(isWarmedUp(s)).toBe(true);
+  });
+});
+
+describe('Flat closes under Wilder smoothing', () => {
+  /**
+   * Regression test for a wrong EXPLANATION, not a wrong calculation.
+   *
+   * The dashboard and the spec both claimed that once any down move exists
+   * in the smoothed history, flat closes "raise RSI", citing ~54.5 for a
+   * mixed history followed by five flat closes. That is false. A zero-change
+   * close contributes zero to both sides, so Wilder multiplies the average
+   * gain and the average loss by the same (period-1)/period factor and their
+   * ratio — hence RSI — is untouched.
+   *
+   * The implementation was always right; only the words were wrong. These
+   * tests pin the behaviour so the wording cannot drift back.
+   */
+  const MIXED = [2000, 2003, 2001, 2006, 2002, 2008, 2004, 2009, 2005, 2011, 2007, 2012];
+
+  function seed(closes: readonly number[]) {
+    let s = createEngineState('TICK');
+    let t = Date.UTC(2026, 0, 1);
+    for (const c of closes) {
+      s = applyClosedBar(s, t, c).state;
+      t += M1_MS;
+    }
+    return { state: s, t };
+  }
+
+  it('leaves RSI EXACTLY unchanged across many consecutive flat closes', () => {
+    let { state, t } = seed(MIXED);
+    const before = engineRsiNow(state)!;
+    expect(before).toBeGreaterThan(0);
+    expect(before).toBeLessThan(100);
+
+    const last = MIXED[MIXED.length - 1];
+    for (let i = 0; i < 20; i += 1) {
+      state = applyClosedBar(state, t, last).state;
+      t += M1_MS;
+      // Exact equality, not approximate: the ratio is preserved identically.
+      expect(engineRsiNow(state)).toBe(before);
+    }
+  });
+
+  it('does not drift toward 100, contradicting the old "flat closes raise RSI" claim', () => {
+    let { state, t } = seed(MIXED);
+    const before = engineRsiNow(state)!;
+    const last = MIXED[MIXED.length - 1];
+    for (let i = 0; i < 50; i += 1) {
+      state = applyClosedBar(state, t, last).state;
+      t += M1_MS;
+    }
+    const after = engineRsiNow(state)!;
+    expect(after).toBe(before);
+    expect(after).toBeLessThan(SPEC.thresholds.extremeSellCross);
+  });
+
+  it('holds from a LOW starting point too — flat closes do not lift it', () => {
+    const falling = Array.from({ length: 12 }, (_, i) => 2100 - i * 2);
+    let { state, t } = seed(falling);
+    const before = engineRsiNow(state)!;
+    const last = falling[falling.length - 1];
+    for (let i = 0; i < 10; i += 1) {
+      state = applyClosedBar(state, t, last).state;
+      t += M1_MS;
+    }
+    expect(engineRsiNow(state)).toBe(before);
+  });
+
+  it('keeps reporting 100 in the degenerate zero-average-loss case, as MT5 does', () => {
+    // A history with NO down move at all: average loss is already zero, so
+    // there is no ratio to preserve and MT5's 100 stands. This is the single
+    // exception, and it is reproduced rather than filtered.
+    const onlyUp = Array.from({ length: 12 }, (_, i) => 2000 + i);
+    let { state, t } = seed(onlyUp);
+    expect(engineRsiNow(state)).toBe(100);
+    const last = onlyUp[onlyUp.length - 1];
+    for (let i = 0; i < 5; i += 1) {
+      state = applyClosedBar(state, t, last).state;
+      t += M1_MS;
+      expect(engineRsiNow(state)).toBe(100);
+    }
   });
 });

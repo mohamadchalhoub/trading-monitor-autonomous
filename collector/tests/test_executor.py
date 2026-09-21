@@ -4,11 +4,26 @@ module convention test_mt5_client.py already uses for read-only calls.
 """
 from __future__ import annotations
 
+import os
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+
+
+def broker_epoch_now(offset_seconds: float = 0.0) -> int:
+    """A broker wall-clock epoch for `now + offset_seconds`.
+
+    Built with the project's own inverse conversion rather than by adding a
+    hardcoded three hours, so the tests stay correct across the EET/EEST
+    changeover and can never encode a guessed offset.
+    """
+    from app.mt5_client import _utc_to_mt5_epoch
+
+    when = datetime.now(timezone.utc) + timedelta(seconds=offset_seconds)
+    return _utc_to_mt5_epoch(when, os.environ.get("MT5_BROKER_TIMEZONE", "").strip() or "EET")
 
 import pytest
 
-from app.executor import DemoAccountRequiredError, Executor, ReconciliationQueryFailed
+from app.executor import QUOTE_MAX_AGE_SECONDS, DemoAccountRequiredError, Executor, ReconciliationQueryFailed
 
 
 ACCOUNT_TRADE_MODE_REAL = 0
@@ -47,6 +62,7 @@ class FakeMt5:
         self._open_positions: list[SimpleNamespace] = []
         self.positions_get_calls: list[dict] = []
         self._positions_get_should_fail = False
+        self._tick_time = None
 
     def last_error(self):
         return (1, "no error") if not self._positions_get_should_fail else (10021, "no connection to trade server")
@@ -63,7 +79,22 @@ class FakeMt5:
         return SimpleNamespace(trade_mode=self._trade_mode)
 
     def symbol_info_tick(self, symbol):
-        return SimpleNamespace(bid=self._tick_bid, ask=self._tick_ask)
+        # `time` is a BROKER wall-clock epoch, which is what MT5 actually
+        # reports and what the executor's quote-age gate converts. Default:
+        # right now, so the ordinary tests exercise a fresh quote.
+        return SimpleNamespace(
+            bid=self._tick_bid,
+            ask=self._tick_ask,
+            time=self._tick_time if self._tick_time is not None else broker_epoch_now(),
+        )
+
+    def set_tick_age_seconds(self, age_seconds: float) -> None:
+        """Test control: make symbol_info_tick report a quote of a given age."""
+        self._tick_time = broker_epoch_now(-age_seconds)
+
+    def set_tick_time_raw(self, epoch_seconds) -> None:
+        """Test control: an arbitrary raw `time`, for malformed-input cases."""
+        self._tick_time = epoch_seconds
 
     def queue_order_send_result(self, result: SimpleNamespace | None) -> None:
         self._order_send_results.append(result)
@@ -181,7 +212,9 @@ class TestSendBracketOrder:
 
         def moving_tick(symbol):
             calls["n"] += 1
-            return SimpleNamespace(bid=1.0995, ask=1.1005) if calls["n"] > 1 else original_tick(symbol)
+            # The retry's quote is fresh in its own right: the gate re-reads the
+            # clock on every attempt, not just the first.
+            return SimpleNamespace(bid=1.0995, ask=1.1005, time=broker_epoch_now()) if calls["n"] > 1 else original_tick(symbol)
 
         fake.symbol_info_tick = moving_tick
 
@@ -608,3 +641,169 @@ class TestFindAnyPosition:
         fake = FakeMt5()
         Executor(fake).find_any_position("XAUUSD")
         assert fake.positions_get_calls[-1]["symbol"] == "XAUUSD"
+
+
+class TestQuoteFreshnessAtTheSendBoundary:
+    """The last gate before `order_send`.
+
+    A one-second polling loop guarantees a one-second READ, not a
+    one-second-old market price: `symbol_info_tick` returns the last tick
+    the terminal ever saw, so a frozen or halted feed yields a brand-new
+    read of a very old quote. Nothing upstream can close this gap, because
+    the backend approves against the quote it was last PUSHED and the order
+    then travels here, where MT5 is read directly.
+    """
+
+    def test_a_fresh_quote_is_accepted_and_priced_off_that_quote(self):
+        fake = FakeMt5(tick_bid=4374.77, tick_ask=4375.28)
+        fake.set_tick_age_seconds(1.0)
+
+        result = Executor(fake).send_bracket_order(
+            side="BUY", volume=0.5, stop_loss_points=500, take_profit_points=500,
+            magic=262610190, comment="x", symbol="XAUUSD", point_size=0.01,
+        )
+
+        assert result.ok is True
+        assert len(fake.order_send_calls) == 1
+        assert fake.order_send_calls[0]["price"] == 4375.28
+
+    def test_a_quote_older_than_the_limit_is_rejected_before_order_send(self):
+        fake = FakeMt5(tick_bid=4374.77, tick_ask=4375.28)
+        fake.set_tick_age_seconds(QUOTE_MAX_AGE_SECONDS + 5)
+
+        result = Executor(fake).send_bracket_order(
+            side="BUY", volume=0.5, stop_loss_points=500, take_profit_points=500,
+            magic=262610190, comment="x", symbol="XAUUSD", point_size=0.01,
+        )
+
+        assert result.ok is False
+        assert result.outcome == "FAILED"
+        # Nothing reached the broker at all: this is a refusal, not a rejection.
+        assert fake.order_send_calls == []
+        assert "old at the send boundary" in result.error_message
+        assert "not repriced" in result.error_message
+
+    def test_a_quote_just_inside_the_limit_is_still_accepted(self):
+        # The limit must not be silently tightened either.
+        fake = FakeMt5(tick_bid=4374.77, tick_ask=4375.28)
+        fake.set_tick_age_seconds(QUOTE_MAX_AGE_SECONDS - 1)
+
+        result = Executor(fake).send_bracket_order(
+            side="SELL", volume=0.5, stop_loss_points=500, take_profit_points=500,
+            magic=262610191, comment="x", symbol="XAUUSD", point_size=0.01,
+        )
+
+        assert result.ok is True
+
+    def test_re_reading_the_same_old_tick_does_not_make_it_fresh(self):
+        """Repeated reads of one unchanged tick must keep ageing.
+
+        The age comes from the tick's OWN timestamp, never from when it was
+        read, so a frozen feed gets staler on every attempt instead of being
+        renewed by the act of looking at it.
+        """
+        fake = FakeMt5(tick_bid=4374.77, tick_ask=4375.28)
+        fake.set_tick_time_raw(broker_epoch_now(-(QUOTE_MAX_AGE_SECONDS + 60)))
+
+        executor = Executor(fake)
+        ages = []
+        for _ in range(3):
+            age, problem = executor._quote_age_seconds(fake.symbol_info_tick("XAUUSD"))
+            assert problem is None
+            ages.append(age)
+            result = executor.send_bracket_order(
+                side="BUY", volume=0.5, stop_loss_points=500, take_profit_points=500,
+                magic=262610190, comment="x", symbol="XAUUSD", point_size=0.01,
+            )
+            assert result.ok is False
+
+        # Same tick, same original timestamp: it only ever gets older.
+        assert ages[0] >= QUOTE_MAX_AGE_SECONDS
+        assert ages[1] >= ages[0]
+        assert ages[2] >= ages[1]
+        assert fake.order_send_calls == []
+
+    def test_a_quote_that_expires_after_an_earlier_approval_is_rejected_at_submission(self):
+        """Approved while fresh, expired by the time it is sent.
+
+        This is the ordering the gate exists for: the decision was allowed
+        through upstream against a quote that was fine at the time, and the
+        send boundary is the only place left that can notice it no longer is.
+        """
+        fake = FakeMt5(tick_bid=4374.77, tick_ask=4375.28)
+        executor = Executor(fake)
+
+        # Approval moment: the quote is fresh and would have been accepted.
+        fake.set_tick_age_seconds(2.0)
+        age_at_approval, problem = executor._quote_age_seconds(fake.symbol_info_tick("XAUUSD"))
+        assert problem is None and age_at_approval <= QUOTE_MAX_AGE_SECONDS
+
+        # Time passes and the feed stops updating; the SAME quote is now expired.
+        fake.set_tick_age_seconds(QUOTE_MAX_AGE_SECONDS + 2)
+        result = executor.send_bracket_order(
+            side="BUY", volume=0.5, stop_loss_points=500, take_profit_points=500,
+            magic=262610190, comment="x", symbol="XAUUSD", point_size=0.01,
+        )
+
+        assert result.ok is False
+        assert fake.order_send_calls == []
+        assert "old at the send boundary" in result.error_message
+
+    def test_the_retry_re_checks_freshness_and_will_not_resend_a_stale_quote(self):
+        fake = FakeMt5(tick_bid=4374.77, tick_ask=4375.28)
+        fake.queue_order_send_result(failed_result())  # first attempt requotes
+        calls = {"n": 0}
+
+        def ageing_tick(symbol):
+            calls["n"] += 1
+            age = 1.0 if calls["n"] == 1 else QUOTE_MAX_AGE_SECONDS + 10
+            return SimpleNamespace(bid=4374.77, ask=4375.28, time=broker_epoch_now(-age))
+
+        fake.symbol_info_tick = ageing_tick
+
+        result = Executor(fake).send_bracket_order(
+            side="BUY", volume=0.5, stop_loss_points=500, take_profit_points=500,
+            magic=262610190, comment="x", symbol="XAUUSD", point_size=0.01,
+        )
+
+        assert result.ok is False
+        # The first attempt was sent; the retry was refused, not sent stale.
+        assert len(fake.order_send_calls) == 1
+        assert "on retry" in result.error_message
+
+    def test_a_missing_timestamp_refuses_rather_than_assuming_freshness(self):
+        fake = FakeMt5(tick_bid=4374.77, tick_ask=4375.28)
+        fake.set_tick_time_raw(0)
+
+        result = Executor(fake).send_bracket_order(
+            side="BUY", volume=0.5, stop_loss_points=500, take_profit_points=500,
+            magic=262610190, comment="x", symbol="XAUUSD", point_size=0.01,
+        )
+
+        assert result.ok is False
+        assert fake.order_send_calls == []
+        assert "cannot establish quote age" in result.error_message
+
+    def test_the_broker_offset_is_applied_once_not_twice_or_never(self):
+        """A quote decoded on the wrong timeline must not pass as fresh.
+
+        Reading the broker's wall-clock epoch as if it were UTC puts the
+        quote three hours in the future. That is the exact failure this
+        project hit in its stored tick timestamps, and here it would turn
+        the whole gate into a no-op, so it is refused rather than treated as
+        very fresh.
+        """
+        fake = FakeMt5(tick_bid=4374.77, tick_ask=4375.28)
+        executor = Executor(fake)
+
+        # A correctly-built fresh quote reads as ~0s old, not ~-10800s.
+        fake.set_tick_age_seconds(0.0)
+        age, problem = executor._quote_age_seconds(fake.symbol_info_tick("XAUUSD"))
+        assert problem is None
+        assert abs(age) < 5, "a fresh quote should read about 0s old; got %ss" % age
+
+        # Double-applying the offset lands the quote in the future; refused.
+        fake.set_tick_time_raw(broker_epoch_now() + 3 * 3600)
+        age, problem = executor._quote_age_seconds(fake.symbol_info_tick("XAUUSD"))
+        assert problem is not None
+        assert "in the future" in problem

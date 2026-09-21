@@ -416,7 +416,8 @@ export default async function XauusdRsiPage() {
             <table className="w-full text-sm">
               <thead className="text-xs uppercase tracking-wide text-text-muted">
                 <tr>
-                  <th className="text-left py-1">Observed</th>
+                  <th className="text-left py-1">Observed (market)</th>
+                  <th className="text-left py-1">Recorded</th>
                   <th className="text-left py-1">Slot</th>
                   <th className="text-left py-1">Setup</th>
                   <th className="text-left py-1">Dir</th>
@@ -429,6 +430,7 @@ export default async function XauusdRsiPage() {
                 {recentDecisions.map((d) => (
                   <tr key={d.id} className="border-t border-border align-top">
                     <td className="py-1 font-mono text-xs whitespace-nowrap">{formatDateTime(d.observedAt)}</td>
+                    <td className="py-1 font-mono text-xs whitespace-nowrap text-text-muted">{formatDateTime(d.evaluatedAt)}</td>
                     <td className="py-1 font-mono text-xs">{d.ruleFamily ?? "—"}</td>
                     <td className="py-1 text-xs">{d.setupKinds.join(", ")}</td>
                     <td className="py-1 font-mono text-xs">{d.direction}</td>

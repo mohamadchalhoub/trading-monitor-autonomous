@@ -167,7 +167,7 @@ export class RsiDashboardController {
         // Reproduced from MT5: a perfectly flat series reads 100, which is
         // inside the extreme-SELL region. Disclosed, not filtered away.
         flatPriceBehaviourNote:
-          "MT5 reports RSI 100 when average loss is zero, and that is reproduced. Its practical reach is narrow: Wilder's average loss decays but never reaches zero, so once any down move exists in the smoothed history, flat closes raise RSI without pinning it to 100 (a mixed history then five flat closes reads ~54.5). Only a history with no down move at all reads 100. Across 5,000 live M1 bars the longest unchanged run was shorter than the RSI period.",
+          "Flat closes leave RSI UNCHANGED, they do not raise it. A zero-change close contributes zero to both sides, so Wilder smoothing multiplies the average gain and the average loss by the same (period-1)/period factor; their ratio, and therefore RSI, is unaffected. Verified against this implementation: a mixed history reading 64.1616 still reads 64.1616 after eight consecutive flat closes. The one exception is the degenerate case where average loss is already zero — a history containing no down move at all, including an all-flat series from initialization — for which MT5 reports 100 and continues to, and that is reproduced. Across 5,000 live M1 bars the longest unchanged run was shorter than the RSI period.",
       },
 
       thresholds: {

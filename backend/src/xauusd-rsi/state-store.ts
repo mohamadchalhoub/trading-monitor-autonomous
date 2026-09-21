@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { join } from 'node:path';
 import { createEngineState, EngineState, ObservationMode } from './engine';
 import { SPEC_HASH } from './spec';
+import { RSI_CURSOR_TIME_BASIS } from './tick-time';
 
 export interface ObservationCursor {
   /** Timestamp (UTC ms) of the newest observation consumed. */
@@ -27,6 +28,16 @@ export interface ObservationCursor {
   lastTickKey: string | null;
   /** Identities consumed at exactly `lastTimestampMs`, for same-millisecond ties. */
   lastTimestampKeys: string[];
+  /**
+   * Which timeline `lastTimestampMs` was recorded on.
+   *
+   * Cursors written before the broker wall-clock correction (tick-time.ts)
+   * hold a value three hours ahead of the true UTC one the same tick now
+   * produces. Such a cursor sits in the future and would silently filter
+   * out every new observation, so it is discarded rather than trusted. A
+   * missing tag means "written before the correction existed".
+   */
+  timeBasis?: string;
 }
 
 export interface RecoveryMetadata {
@@ -67,7 +78,7 @@ export function createWatchState(strategyVersion: string, mode: ObservationMode)
     specHash: SPEC_HASH,
     strategyVersion,
     engine: createEngineState(mode),
-    cursor: { lastTimestampMs: null, lastTickKey: null, lastTimestampKeys: [] },
+    cursor: { lastTimestampMs: null, lastTickKey: null, lastTimestampKeys: [], timeBasis: RSI_CURSOR_TIME_BASIS },
     recovery: {
       lastCycleAtUtc: null,
       lastReseedAtUtc: null,

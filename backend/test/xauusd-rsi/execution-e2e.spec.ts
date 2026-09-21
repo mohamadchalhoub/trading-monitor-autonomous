@@ -345,6 +345,46 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
       expect(res.body.order.ruleFamily).toBe('RETEST');
     });
 
+    it('when the quote itself has gone stale, however fresh the signal looks', async () => {
+      // The frozen-feed case. The quote is far older than the 30s limit
+      // measured against REAL time, while the signal looks young because it
+      // was observed just after that same frozen quote. Before the quote's
+      // own age was checked, this combination sailed through: the stopped
+      // feed was also the clock the signal was aged against.
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      const frozenAt = new Date(Date.now() - 10 * 60_000);
+      await prisma.liveTick.update({
+        where: { symbol: 'XAUUSD' },
+        data: { bid: 4345.45, ask: 4345.63, tickAt: frozenAt },
+      });
+      await queueDecision(account.id, { observedAt: new Date(frozenAt.getTime() - 1_000) });
+
+      const res = await poll(account.id, token);
+      expect(res.body.order).toBeNull();
+      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: (await prisma.xauusdRsiDecision.findFirstOrThrow({ where: { accountId: account.id }, orderBy: { evaluatedAt: 'desc' } })).id } });
+      expect(after.skipReason).toMatch(/quote is .* old at the pre-send check/);
+    });
+
+    it('re-reading the same frozen tick does not refresh it into acceptance', async () => {
+      const { account, token } = await setupAccountWithToken(prisma);
+      await seedPrerequisites(account.id);
+      const frozenAt = new Date(Date.now() - 10 * 60_000);
+      await prisma.liveTick.update({
+        where: { symbol: 'XAUUSD' },
+        data: { bid: 4345.45, ask: 4345.63, tickAt: frozenAt },
+      });
+      await queueDecision(account.id, { observedAt: new Date(frozenAt.getTime() - 1_000) });
+
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const res = await poll(account.id, token);
+        expect(res.body.order).toBeNull();
+      }
+      // The stored timestamp is untouched by having been read three times.
+      const tickNow = await prisma.liveTick.findUniqueOrThrow({ where: { symbol: 'XAUUSD' } });
+      expect(tickNow.tickAt.getTime()).toBe(frozenAt.getTime());
+    });
+
     it('when there is no live quote at all — refusing to send blind', async () => {
       const { account, token } = await setupAccountWithToken(prisma);
       // Deliberately no LiveTick row.

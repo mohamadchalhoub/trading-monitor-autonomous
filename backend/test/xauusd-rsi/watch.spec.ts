@@ -24,12 +24,23 @@ import { RsiDecisionService } from '../../src/xauusd-rsi/decision.service';
 import { createWatchState, RsiWatchStore } from '../../src/xauusd-rsi/state-store';
 import { SPEC } from '../../src/xauusd-rsi/spec';
 import { M1_MS } from '../../src/xauusd-rsi/engine';
+import { RSI_BROKER_SERVER_TIMEZONE } from '../../src/xauusd-rsi/tick-time';
+import { utcToWallClockMs } from '../../src/research/confirmed-retest/time';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 /** Wednesday 2026-09-23, 15:00 Beirut — an ordinary eligible instant. */
 const NOW_T = Date.parse('2026-09-23T12:00:00.000Z');
+
+/**
+ * Candle and tick rows are stored the way the collector really stores them:
+ * broker wall-clock digits wearing a UTC label (see
+ * `src/xauusd-rsi/tick-time.ts`). The fixtures write through this so they
+ * exercise the same conversion the live path does; every assertion below
+ * stays in true UTC.
+ */
+const stored = (utcMs: number) => new Date(utcToWallClockMs(RSI_BROKER_SERVER_TIMEZONE, utcMs));
 const BARS = SPEC.rsi.period + 1 + SPEC.rsi.warmupBars + 20;
 
 describe('Watch cycle — cold start', () => {
@@ -65,7 +76,7 @@ describe('Watch cycle — cold start', () => {
   async function seedCandles(endT: number) {
     const rows = [];
     for (let i = BARS; i >= 1; i -= 1) {
-      const openTime = new Date(endT - i * M1_MS);
+      const openTime = stored(endT - i * M1_MS);
       const base = 4300 + Math.sin(i / 7) * 3;
       rows.push({
         symbol: 'XAUUSD',
@@ -87,7 +98,7 @@ describe('Watch cycle — cold start', () => {
     for (let i = 0; i < count; i += 1) {
       rows.push({
         symbol: 'XAUUSD',
-        timestamp: new Date(endT - (count - i) * 1_000 - 10 * M1_MS),
+        timestamp: stored(endT - (count - i) * 1_000 - 10 * M1_MS),
         bid: 4300 + i * 0.01,
         ask: 4300.18 + i * 0.01,
         flags: 6,
@@ -129,7 +140,7 @@ describe('Watch cycle — cold start', () => {
     for (let i = 0; i < 20; i += 1) {
       rows.push({
         symbol: 'XAUUSD',
-        timestamp: new Date(NOW_T + i * 1_000),
+        timestamp: stored(NOW_T + i * 1_000),
         bid: 4302 + i * 0.05,
         ask: 4302.18 + i * 0.05,
         flags: 6,
