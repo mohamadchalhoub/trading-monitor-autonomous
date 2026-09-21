@@ -212,11 +212,16 @@ describe('Duplicate prevention and rearming (spec §6)', () => {
   });
 
   it('splits two families firing on one observation into TWO separate decisions', () => {
-    // 99 fires the extreme; 97 re-arms the extreme AND freezes the peak at 99;
-    // the return to 99 satisfies both the peak retest and a fresh extreme
-    // crossing. Under the two-slot model these are two different trades
-    // against two different slots, so they must NOT be merged.
-    const { firings } = drive([50, 99, 97, 99]);
+    // 99 fires the extreme; 85 is a REAL pullback — out of the arming zone
+    // (below Sell 2) but not through Sell 1 — so it re-arms the extreme AND
+    // freezes the peak at 99; the return to 99 satisfies both the peak retest
+    // and a fresh extreme crossing. Under the two-slot model these are two
+    // different trades against two different slots, so they must NOT be
+    // merged.
+    //
+    // 97 was used here before, which no longer freezes anything: a pullback
+    // that never leaves the zone is not a pullback.
+    const { firings } = drive([50, 99, 85, 99]);
     expect(firings).toHaveLength(2);
     const both = firings[1];
     expect(both.kinds.sort()).toEqual(['EXTREME_SELL', 'SELL_PEAK_RETEST']);
@@ -312,5 +317,61 @@ describe('Start-up and reset behaviour', () => {
     const { state, firings } = drive([5, 6, 4]);
     expect(firings).toHaveLength(0);
     expect(state.buyRetest.phase).toBe('AWAITING_ARM_RESET');
+  });
+});
+
+describe('A retest needs a REAL rebound — the 2026-09-21 defect', () => {
+  /**
+   * The entry that should never have been opened.
+   *
+   * Recorded live: frozen trough 8.0752, previous 8.1199, current 8.0752 —
+   * 0.045 of RSI movement across three ticks at the bottom of one continuous
+   * dip. The trough froze on the first slightly higher reading, so a wiggle
+   * counted as the rebound.
+   *
+   * As the user put it: the system "did not wait to make a trough below 8.9"
+   * and "did not wait to go down to it to make the same rsi of the trough".
+   */
+  it('does NOT fire on the exact tick sequence that produced the bad entry', () => {
+    const { firings } = drive([50, 8.0752, 8.1199, 8.0752]);
+    expect(firings).toHaveLength(0);
+  });
+
+  it('does not fire on a one-tick wiggle at a SELL peak either', () => {
+    // The mirror, also seen live: peak 92.2464, prev 92.2114, then 92.5632.
+    const { firings } = drive([50, 92.2464, 92.2114, 92.5632]);
+    expect(firings.filter((f) => f.kinds.includes('SELL_PEAK_RETEST'))).toHaveLength(0);
+  });
+
+  it('DOES fire when the rebound genuinely leaves the zone and returns', () => {
+    // trough 8.07 → rebound to 12 (above Buy 2, below Buy 1) → back to 8.07.
+    const { firings } = drive([50, 8.07, 12, 8.07]);
+    expect(firings).toHaveLength(1);
+    expect(firings[0].kinds).toEqual(['BUY_TROUGH_RETEST']);
+    expect(firings[0].triggered[0].keyLevel).toBeCloseTo(8.07, 4);
+  });
+
+  it('DOES fire on the SELL side with a genuine pullback', () => {
+    const { firings } = drive([50, 92.5, 88, 92.5]);
+    expect(firings).toHaveLength(1);
+    expect(firings[0].kinds).toEqual(['SELL_PEAK_RETEST']);
+  });
+
+  it('still invalidates when the rebound goes above Buy 1', () => {
+    const { firings } = drive([50, 8.07, 19, 8.07]);
+    expect(firings).toHaveLength(0);
+  });
+
+  it('keeps tracking a deeper trough while RSI stays in the zone', () => {
+    // 8.5 then 8.07 is still one descent: the deeper value becomes the trough.
+    const { firings } = drive([50, 8.5, 8.07, 12, 8.07]);
+    expect(firings).toHaveLength(1);
+    expect(firings[0].triggered[0].keyLevel).toBeCloseTo(8.07, 4);
+  });
+
+  it('requires the return to reach the trough, not merely approach it', () => {
+    // Rebound is real, but the return stops short of the frozen trough.
+    const { firings } = drive([50, 8.07, 12, 8.5]);
+    expect(firings).toHaveLength(0);
   });
 });

@@ -191,10 +191,21 @@ function stepSellRetest(
       }
       const runningMax = s.runningExtreme ?? rsi;
       if (rsi > runningMax) return { ...s, runningExtreme: rsi };
-      // Equal readings extend the plateau; only a STRICTLY lower one confirms
-      // the reversal and freezes the peak (spec §4).
-      if (rsi === runningMax) return s;
-      notes.push(`SELL peak frozen at ${fmt(runningMax)} (first strictly lower reading ${fmt(rsi)})`);
+
+      // The peak freezes only when RSI PULLS BACK OUT of the arming zone,
+      // never on the first slightly lower tick.
+      //
+      // USER RULE, stated after a wrongly-opened entry on 2026-09-21: the
+      // pullback has to actually happen. Freezing on any lower reading
+      // treated 0.035 of RSI movement as a pullback and fired an entry on
+      // three ticks of noise at the top of one continuous rise. It also made
+      // Sell 1 unreachable in practice, so the invalidation threshold could
+      // never do its job.
+      //
+      // Below Sell 2 the peak is confirmed and the pattern waits for the
+      // return to it; at or above Sell 2 the move is still forming.
+      if (rsi >= t.sell2) return s;
+      notes.push(`SELL peak frozen at ${fmt(runningMax)} — RSI pulled back to ${fmt(rsi)}, below Sell 2 (${t.sell2})`);
       return { phase: 'EXTREME_FROZEN', runningExtreme: null, frozenExtreme: runningMax };
     }
 
@@ -259,8 +270,15 @@ function stepBuyRetest(
       }
       const runningMin = s.runningExtreme ?? rsi;
       if (rsi < runningMin) return { ...s, runningExtreme: rsi };
-      if (rsi === runningMin) return s;
-      notes.push(`BUY trough frozen at ${fmt(runningMin)} (first strictly higher reading ${fmt(rsi)})`);
+
+      // Mirror of the SELL side: the trough freezes only when RSI REBOUNDS
+      // out of the arming zone, never on the first slightly higher tick.
+      //
+      // The entry this rule exists to prevent: trough 8.0752, uptick to
+      // 8.1199, back to 8.0752 — 0.045 of movement, no rebound, no second
+      // trough, and an order opened anyway.
+      if (rsi <= t.buy2) return s;
+      notes.push(`BUY trough frozen at ${fmt(runningMin)} — RSI rebounded to ${fmt(rsi)}, above Buy 2 (${t.buy2})`);
       return { phase: 'EXTREME_FROZEN', runningExtreme: null, frozenExtreme: runningMin };
     }
 

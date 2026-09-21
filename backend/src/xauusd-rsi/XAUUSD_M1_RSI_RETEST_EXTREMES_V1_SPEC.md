@@ -107,13 +107,18 @@ Emit BUY when RSI reaches **1.5**. No trough-retest pattern is required.
 
 **SELL:**
 - Once RSI exceeds 91, track the running maximum.
-- The **first strictly lower** valid observation confirms and freezes the peak.
+- The peak is confirmed and frozen only when RSI **pulls back out of the
+  arming zone**, i.e. falls **below Sell 2 (91)**. A merely lower reading
+  that is still at or above Sell 2 does not freeze anything — the move is
+  still forming.
 - Then wait for the first observation that returns **to or above** that peak.
 - Invalidate if RSI goes **below 82** before that return.
 
 **BUY:**
 - Once RSI falls under 8.9, track the running minimum.
-- The **first strictly higher** valid observation confirms and freezes the trough.
+- The trough is confirmed and frozen only when RSI **rebounds out of the
+  arming zone**, i.e. rises **above Buy 2 (8.9)**. A merely higher reading
+  that is still at or below Buy 2 does not freeze anything.
 - Then wait for the first observation that returns **to or below** that trough.
 - Invalidate if RSI goes **above 18** before that return.
 
@@ -486,3 +491,40 @@ unattended supervisor is installed. It follows that Friday liquidation cannot be
 performed by local software when the laptop, the required processes or the broker
 connection are unavailable. Approaching deadlines and outages are made visible;
 guaranteed closure is never claimed.
+
+
+---
+
+## Revision 4 — the rebound must be real
+
+**Corrected after a live entry that should never have been opened**
+(2026-09-21, ticket 58555388969).
+
+Revisions 1-3 froze the peak or trough on the **first strictly contrary
+observation** — any tick in the opposite direction, however small. That made
+the recorded entry possible:
+
+| | |
+|---|---|
+| Frozen trough | 8.0752 |
+| Previous RSI | 8.1199 |
+| Current RSI | 8.0752 |
+| Total movement | **0.045**, across three ticks |
+
+There was no rebound and no second trough: one continuous dip with a wiggle
+in it. The same defect existed on the SELL side, and fired there too (peak
+92.2464, previous 92.2114, current 92.5632 — 0.035 of movement).
+
+It also made the invalidation thresholds unreachable. If a 0.03 wiggle counts
+as the rebound, RSI can never travel far enough to test Buy 1 or Sell 1, so
+those levels could never do their job.
+
+**The rule, as the user states it:** wait for a trough genuinely below Buy 2,
+wait for RSI to leave it, and wait for RSI to come back down to the same RSI
+value as the trough. The mirror applies to the SELL side.
+
+**Implemented as:** the extreme freezes when RSI leaves the arming zone —
+below Sell 2 for a peak, above Buy 2 for a trough — and the entry still
+requires the subsequent return to the frozen level, with Sell 1 / Buy 1
+invalidating throughout. Nothing else changes: thresholds, volume, brackets,
+slots, schedule and risk controls are all unchanged.
