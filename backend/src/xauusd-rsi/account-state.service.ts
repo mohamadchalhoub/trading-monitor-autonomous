@@ -16,7 +16,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RsiAccountMarginMode, RsiAccountRiskInfo, RsiAccountTradeMode, RsiBrokerConstraints, RsiOccupancyState } from './risk-manager';
 import { RSI_QUOTE_MAX_STALENESS_SECONDS, RSI_SYMBOL } from './safety-constants';
-import { storedBrokerTimeToUtcMs } from './tick-time';
+import { QuoteCandidate, QuoteResolution, resolveQuote } from './quote';
 import { describeOwnership, isOwnedByThisApplication, ruleFamilyForMagic } from './ownership';
 import type { RuleFamily } from './pattern';
 import { RULE_FAMILIES } from './pattern';
@@ -408,49 +408,51 @@ export class RsiAccountStateService {
    * forbids assuming a reopening time, and a broker holiday or an early
    * Friday close would make any such calendar wrong.
    */
-  async resolveBrokerSessionOpen(now: Date = new Date()): Promise<{ open: boolean | null; detail: string; quoteAgeSeconds: number | null }> {
-    // Freshness is judged on the FRESHEST XAUUSD data that exists, which
-    // means considering both streams the collector writes.
-    //
-    // `live_ticks` is written once per SNAPSHOT cycle, and that cycle also
-    // syncs candles across six timeframes and two symbols, so in practice it
-    // lands every 25-45 seconds rather than every 10. `historical_ticks` is
-    // written by the dedicated one-second XAUUSD observation thread and is
-    // the stream the strategy actually observes.
-    //
-    // Reading only `live_ticks` therefore measured the wrong thing: with
-    // ticks arriving every second and the indicator a second old, this gate
-    // still reported "quote is 43s old" and blocked entries whenever the
-    // snapshot cycle ran long. Observed on both the local machine and the
-    // VPS, oscillating between blocked and allowed with no change in the
-    // market. Signals landing in those windows were consumed and skipped.
-    //
-    // Note the stored timestamps of the two streams differ: `live_ticks`
-    // carries true UTC (the collector corrects it on the way in) while
-    // `historical_ticks` holds broker wall clock, so it is converted here.
-    const [tick, meta, newestObservation] = await Promise.all([
+  /**
+   * The one XAUUSD quote this strategy uses, with its own age and source.
+   *
+   * Every consumer takes price, timestamp, age and source from here, so a
+   * price can never be published or priced against with another stream's
+   * freshness. See `quote.ts` for why that mattered.
+   *
+   * Both queries are point lookups: `live_ticks` is keyed by symbol, and
+   * the `historical_ticks` read is an index-only descending probe on the
+   * existing `(symbol, timestamp)` index, not a scan.
+   */
+  async resolveQuoteNow(now: Date = new Date()): Promise<QuoteResolution> {
+    const [live, observed] = await Promise.all([
       this.prisma.liveTick.findUnique({ where: { symbol: RSI_SYMBOL } }),
-      this.prisma.symbolMetadata.findUnique({ where: { symbol: RSI_SYMBOL } }),
       this.prisma.historicalTick.findFirst({
         where: { symbol: RSI_SYMBOL },
         orderBy: { timestamp: 'desc' },
-        select: { timestamp: true },
+        select: { timestamp: true, bid: true, ask: true },
       }),
     ]);
 
-    const observationUtcMs =
-      newestObservation === null ? null : storedBrokerTimeToUtcMs(newestObservation.timestamp.getTime());
+    const candidates: QuoteCandidate[] = [];
+    if (live) candidates.push({ bid: live.bid, ask: live.ask, storedMs: live.tickAt.getTime(), source: 'live_ticks' });
+    if (observed) candidates.push({ bid: observed.bid, ask: observed.ask, storedMs: observed.timestamp.getTime(), source: 'historical_ticks' });
 
-    if (!tick && observationUtcMs === null) {
-      return { open: null, detail: 'No live XAUUSD quote has ever been recorded — broker session availability cannot be established.', quoteAgeSeconds: null };
+    return resolveQuote(candidates, now.getTime());
+  }
+
+  /**
+   * Whether the broker session is open for new entries.
+   *
+   * Judged on the SELECTED quote's own age, so the answer and the price it
+   * is about always refer to the same observation.
+   */
+  async resolveBrokerSessionOpen(now: Date = new Date()): Promise<{ open: boolean | null; detail: string; quoteAgeSeconds: number | null }> {
+    const [resolution, meta] = await Promise.all([
+      this.resolveQuoteNow(now),
+      this.prisma.symbolMetadata.findUnique({ where: { symbol: RSI_SYMBOL } }),
+    ]);
+
+    const ageSeconds = resolution.quote?.ageSeconds ?? null;
+
+    if (resolution.quote === null) {
+      return { open: null, detail: `${resolution.blockedReason} Broker session availability cannot be established.`, quoteAgeSeconds: null };
     }
-
-    const candidates = [
-      tick ? tick.tickAt.getTime() : null,
-      observationUtcMs,
-    ].filter((t): t is number => t !== null);
-    const freshestT = Math.max(...candidates);
-    const ageSeconds = (now.getTime() - freshestT) / 1000;
 
     if (meta?.tradeMode !== undefined && meta?.tradeMode !== null && meta.tradeMode !== SYMBOL_TRADE_MODE_FULL) {
       return {
@@ -460,17 +462,17 @@ export class RsiAccountStateService {
       };
     }
 
-    if (ageSeconds > RSI_QUOTE_MAX_STALENESS_SECONDS) {
+    if (!resolution.quote.fresh) {
       return {
         open: null,
-        detail: `The newest XAUUSD quote is ${ageSeconds.toFixed(0)}s old (limit ${RSI_QUOTE_MAX_STALENESS_SECONDS}s). The session may be closed or the feed may be down — this cannot be distinguished, so it is reported as unknown rather than guessed.`,
+        detail: `${resolution.blockedReason} The session may be closed or the feed may be down — this cannot be distinguished, so it is reported as unknown rather than guessed.`,
         quoteAgeSeconds: ageSeconds,
       };
     }
 
     return {
       open: true,
-      detail: `Confirmed open: XAUUSD quote is ${ageSeconds.toFixed(1)}s old and the broker reports full trading.`,
+      detail: `Confirmed open: XAUUSD quote is ${resolution.quote.ageSeconds.toFixed(1)}s old (from ${resolution.quote.source}) and the broker reports full trading.`,
       quoteAgeSeconds: ageSeconds,
     };
   }

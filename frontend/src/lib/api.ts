@@ -715,7 +715,19 @@ export interface XauusdRsiStatus {
     previousRsi: number | null;
     observationCount: number;
   } | null;
-  quote: { bid: number | null; ask: number | null; tickAt: string | null; ageSeconds: number | null; fresh: boolean };
+  quote: {
+    bid: number | null;
+    ask: number | null;
+    tickAt: string | null;
+    ageSeconds: number | null;
+    fresh: boolean;
+    /** Which stream this quote came from. Optional: older backends omit it. */
+    source?: 'live_ticks' | 'historical_ticks' | null;
+    /** Server instant the age was measured against, so it can be checked. */
+    evaluatedAt?: string;
+    blockedReason?: string | null;
+    considered?: Array<{ source: string; ageSeconds: number | null; rejected: string | null }>;
+  };
   observation: {
     mode: string;
     modeLimitation: string;

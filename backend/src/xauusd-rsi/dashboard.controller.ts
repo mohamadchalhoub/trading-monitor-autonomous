@@ -100,6 +100,7 @@ export class RsiDashboardController {
     });
     const heartbeat = accountId ? await this.prisma.collectorHeartbeat.findUnique({ where: { accountId } }) : null;
     const slots = accountId ? await this.accountState.resolveSlotStates(accountId) : null;
+    const quoteResolution = await this.accountState.resolveQuoteNow(now);
     const reservedRisk = accountId ? await this.accountState.resolveReservedStopRisk(accountId) : null;
 
     return {
@@ -193,12 +194,29 @@ export class RsiDashboardController {
           }
         : null,
 
+      /**
+       * The SELECTED quote, as one observation.
+       *
+       * Price, broker timestamp, age and source all describe the same tick,
+       * and `evaluatedAt` is the server instant the age was measured
+       * against, so a reader can check
+       * `ageSeconds === (evaluatedAt - tickAt) / 1000` instead of trusting
+       * it. Previously bid/ask/tickAt came from live_ticks while ageSeconds
+       * came from whichever stream was fresher, which published a
+       * 34.5s-old price as 3.5s old and fresh.
+       */
       quote: {
-        bid: tick?.bid.toNumber() ?? null,
-        ask: tick?.ask.toNumber() ?? null,
-        tickAt: tick?.tickAt.toISOString() ?? null,
-        ageSeconds: session.quoteAgeSeconds,
-        fresh: session.open === true,
+        bid: quoteResolution.quote?.bid ?? null,
+        ask: quoteResolution.quote?.ask ?? null,
+        tickAt: quoteResolution.quote ? new Date(quoteResolution.quote.tickAtMs).toISOString() : null,
+        ageSeconds: quoteResolution.quote?.ageSeconds ?? null,
+        fresh: quoteResolution.quote?.fresh ?? false,
+        source: quoteResolution.quote?.source ?? null,
+        evaluatedAt: new Date(quoteResolution.evaluatedAtMs).toISOString(),
+        blockedReason: quoteResolution.blockedReason,
+        // Both streams, each with its own age, so a lagging one is visible
+        // rather than silently discarded.
+        considered: quoteResolution.considered,
       },
 
       observation: {
