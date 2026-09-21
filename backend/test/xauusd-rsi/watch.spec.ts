@@ -301,7 +301,10 @@ describe('Watch cycle — migrating off the pre-correction time basis', () => {
 
     const result = await watch.runCycle({ accountId, store, state: poisoned, nowT: NOW_T + 25_000 });
 
-    expect(result.result.notes.join(' ')).toMatch(/older time basis/);
+    // Either reason is correct here — both conditions hold for this state,
+    // and what matters is that the engine was rebuilt, not which check
+    // noticed first.
+    expect(result.result.notes.join(' ')).toMatch(/older time basis|engine clock is .* in the FUTURE/);
     // The engine was rebuilt from history on the corrected timeline...
     expect(result.result.reseeded).toBe(true);
     expect(result.state.cursor.timeBasis).toBe(RSI_CURSOR_TIME_BASIS);
@@ -346,5 +349,36 @@ describe('Watch cycle — migrating off the pre-correction time basis', () => {
 
     const result = await watch.runCycle({ accountId, store, state: fresh, nowT: NOW_T + 25_000 });
     expect(result.result.notes.join(' ')).not.toMatch(/older time basis/);
+  });
+  it('self-heals a future engine clock even when the cursor is ALREADY tagged current', async () => {
+    // The exact state the running system got into: an earlier, cursor-only
+    // migration stamped the current basis onto the cursor while leaving the
+    // engine three hours ahead. A tag-keyed guard stops firing; the damage
+    // persists; RSI stays frozen while the loop looks healthy.
+    await seedCandlesAndTicks(NOW_T);
+    const stale = createWatchState(SPEC.strategyVersion, 'TICK');
+    const staleEngineT = utcToWallClockMs(RSI_BROKER_SERVER_TIMEZONE, NOW_T);
+    const poisoned = {
+      ...stale,
+      engine: { ...stale.engine, lastObservationT: staleEngineT, lastClosedBarT: staleEngineT - M1_MS, closedBarsApplied: 600 },
+      // Tagged CURRENT — this is what defeated the previous guard.
+      cursor: { lastTimestampMs: NOW_T, lastTickKey: null, lastTimestampKeys: [], timeBasis: RSI_CURSOR_TIME_BASIS },
+    } as typeof stale;
+
+    const result = await watch.runCycle({ accountId, store, state: poisoned, nowT: NOW_T + 25_000 });
+
+    expect(result.result.notes.join(' ')).toMatch(/engine clock is .* in the FUTURE/);
+    expect(result.state.engine.lastObservationT).toBeLessThan(NOW_T + 60_000);
+    expect(result.result.reseeded).toBe(true);
+  });
+
+  it('leaves a healthy engine clock alone', async () => {
+    await seedCandlesAndTicks(NOW_T);
+    const fresh = createWatchState(SPEC.strategyVersion, 'TICK');
+    const first = await watch.runCycle({ accountId, store, state: fresh, nowT: NOW_T + 25_000 });
+    // Second cycle on a normal, just-built state must not rebuild again.
+    const second = await watch.runCycle({ accountId, store, state: first.state, nowT: NOW_T + 26_000 });
+    expect(second.result.notes.join(' ')).not.toMatch(/FUTURE/);
+    expect(second.result.reseeded).toBe(false);
   });
 });

@@ -120,6 +120,19 @@ export const RSI_QUOTE_MAX_STALENESS_SECONDS = SPEC.observation.maxStalenessMs /
 export const RSI_FUTURE_OBSERVATION_TOLERANCE_MS = 2_000;
 
 /**
+ * How far ahead of wall clock a PERSISTED engine clock may sit before the
+ * indicator is rebuilt from history.
+ *
+ * Much larger than the per-observation tolerance, because this is about a
+ * state file being wrong rather than a quote being early: an engine a few
+ * seconds ahead is ordinary, one minutes ahead cannot be right. A future
+ * engine clock rejects every incoming observation as out-of-order and
+ * freezes RSI while the loop still reports a healthy cadence, so it must
+ * self-heal rather than wait for someone to notice.
+ */
+export const RSI_ENGINE_CLOCK_FUTURE_LIMIT_MS = 120_000;
+
+/**
  * Target observation cadence: read XAUUSD and evaluate once per second.
  *
  * Both halves matter. A one-second collector feeding a sixty-second evaluator

@@ -28,7 +28,7 @@ import { RsiCoordinatorService } from './coordinator.service';
 import { RsiAccountStateService } from './account-state.service';
 import { RsiLiquidationService, LiquidationCycleResult } from './liquidation.service';
 import { RsiDecisionService } from './decision.service';
-import { RSI_OBSERVATION_INTERVAL_MS } from './safety-constants';
+import { RSI_ENGINE_CLOCK_FUTURE_LIMIT_MS, RSI_OBSERVATION_INTERVAL_MS } from './safety-constants';
 import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 import { RsiWatchState, RsiWatchStore } from './state-store';
 import { SPEC } from './spec';
@@ -111,29 +111,43 @@ export class RsiWatchService {
     // hours ahead of what the same tick now yields. Kept, it would sit in
     // the future and filter out every new observation — the strategy would
     // look healthy and see nothing. Dropping it costs one reseed.
-    if (state.cursor.timeBasis !== RSI_CURSOR_TIME_BASIS) {
-      // The ENGINE's clock has to go too, not just the cursor.
-      //
-      // Resetting the cursor alone was not enough, and the gap was visible
-      // in the running system: a persisted engine keeps `lastObservationT`
-      // and `lastClosedBarT` on the OLD timeline, three hours ahead. Since
-      // it also restores as already warmed up, the corrected reseed never
-      // runs, and every corrected tick is three hours "older" than the
-      // engine's own clock and is rejected as out-of-order. RSI freezes at
-      // whatever value it held while the loop looks healthy — observed live
-      // at a frozen 42.78 with out-of-order rejections climbing.
-      //
-      // Rebuilding the engine forces `reseedFromCandles`, which now converts
-      // candle times the same way, so indicator and observations land on one
-      // timeline. The indicator is rebuilt from history rather than carried,
-      // and pattern state is deliberately dropped: a pattern half-formed on
-      // a different timeline is not one this engine may trade.
+    // A persisted clock that sits in the FUTURE is rebuilt, whatever put it
+    // there.
+    //
+    // This began as a one-shot migration keyed on a `timeBasis` tag, and the
+    // running system proved that insufficient: the tag was stamped onto the
+    // cursor by an earlier restart while the ENGINE kept its old clock, so
+    // the guard stopped firing and the damage persisted. The symptom is
+    // nasty because everything else looks healthy — one-second cadence,
+    // ticks read, recovery complete — while `lastObservationT` sits three
+    // hours ahead, every incoming tick is rejected as out-of-order, and RSI
+    // stays frozen at whatever value it last held. Observed live at 42.78
+    // with out-of-order rejections past 167,000.
+    //
+    // So the condition is now the symptom itself, not a version tag: an
+    // engine whose clock is meaningfully ahead of wall clock cannot be
+    // right, and is rebuilt from history. That self-heals a state file
+    // poisoned by any cause, including a half-completed migration.
+    //
+    // The tolerance is generous compared to real clock skew, so an ordinary
+    // healthy engine is never rebuilt.
+    const engineClockT = Math.max(state.engine.lastObservationT ?? 0, state.engine.lastClosedBarT ?? 0);
+    const engineClockAheadMs = engineClockT - nowT;
+    const basisStale = state.cursor.timeBasis !== RSI_CURSOR_TIME_BASIS;
+    if (engineClockAheadMs > RSI_ENGINE_CLOCK_FUTURE_LIMIT_MS || (basisStale && state.cursor.lastTimestampMs !== null)) {
       notes.push(
-        `observation cursor and engine clock were on an older time basis (${state.cursor.timeBasis ?? 'untagged'}) — ` +
-          'both discarded and rebuilt from history, because a pre-correction clock sits in the future and silently rejects every new tick',
+        engineClockAheadMs > RSI_ENGINE_CLOCK_FUTURE_LIMIT_MS
+          ? `engine clock is ${(engineClockAheadMs / 1000).toFixed(0)}s in the FUTURE (limit ${RSI_ENGINE_CLOCK_FUTURE_LIMIT_MS / 1000}s) — ` +
+              'indicator and cursor discarded and rebuilt from history, because every new observation would otherwise be rejected as out-of-order'
+          : `observation cursor was recorded on an older time basis (${state.cursor.timeBasis ?? 'untagged'}) — discarded and rebuilt from history`,
       );
       state = {
         ...state,
+        // Rebuilding forces reseedFromCandles, which converts candle times
+        // the same way ticks are converted, so the indicator and the
+        // observations end up on one timeline. Pattern state is dropped on
+        // purpose: a pattern half-formed on a different timeline is not one
+        // this engine may trade.
         engine: createEngineState(state.engine.observationMode),
         cursor: { lastTimestampMs: null, lastTickKey: null, lastTimestampKeys: [], timeBasis: RSI_CURSOR_TIME_BASIS },
       };
