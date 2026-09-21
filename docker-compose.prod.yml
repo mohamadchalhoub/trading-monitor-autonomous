@@ -238,6 +238,37 @@ services:
         condition: service_healthy
     networks: [internal]
 
+  # XAUUSD M1 RSI retest/extremes — THE ACTIVE ENTRY STRATEGY.
+  #
+  # Without this service nothing evaluates the strategy: the API serves
+  # pending orders and the collector polls for them, but the watch loop is
+  # what observes XAUUSD, runs the RSI state machine, and queues an entry in
+  # the first place. A deployment that pulls the new code without adding this
+  # service comes up looking healthy and never trades.
+  #
+  # Runs at the spec's one-second cadence, so it is a long-lived process
+  # rather than a cron. Its own volume holds the kill switch, the
+  # stop-new-entries file, the persisted indicator state and the recorded
+  # volume setting — deliberately NOT shared with the retired strategies'
+  # runtime volumes, matching the per-strategy isolation already used above.
+  #
+  # The persisted indicator state is why this volume matters operationally:
+  # a restart that keeps it resumes warm, while losing it forces a fresh
+  # 256-bar warm-up before any signal can fire.
+  xauusd-rsi-scheduler:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ./backend/.env.production
+    command: ["node", "dist/scripts/xauusd-rsi-scheduler.js"]
+    volumes:
+      - xauusd_rsi_runtime_data:/app/xauusd-rsi-runtime
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [internal]
+
   # NOTE (single-VPS-alongside-v1 topology): no `caddy` service is defined
   # in this file, on purpose. v1 already owns host ports 80/443 with its
   # own Caddy container — a second container binding the same ports on the
@@ -265,3 +296,7 @@ volumes:
   autonomous_trading_redisdata:
   gold_runtime_data:
   trend_breakout_runtime_data:
+  # Kill switch, stop-new-entries, persisted indicator state and the
+  # recorded volume setting for the active strategy. Keep this volume across
+  # deployments: losing it costs a full 256-bar warm-up.
+  xauusd_rsi_runtime_data:
