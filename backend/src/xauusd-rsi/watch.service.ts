@@ -363,7 +363,22 @@ export class RsiWatchService {
     const liveTickets = new Set(exposure.items.filter((i) => i.kind === 'POSITION').map((i) => i.ticket));
     const parts: string[] = [];
 
-    for (const decision of inFlight) {
+    // Before judging anything unresolved, give a ticketless in-flight
+    // decision the chance to be identified from broker evidence, and release
+    // any holder the broker confirms is closed. Without this, a restart
+    // turned a decision whose result report was lost into a permanent
+    // UNKNOWN that held its family's slot forever — which is exactly what
+    // happened to the RETEST slot after 966bf32f's fill report was rejected.
+    const reconciled = await this.decisions.releaseSlotsForClosedPositions(accountId, liveTickets);
+    if (reconciled.length > 0) parts.push(`reconciled against broker evidence: ${reconciled.join(', ')}`);
+
+    // Re-read, because the step above may have resolved some of them.
+    const stillInFlight = await this.prisma.xauusdRsiDecision.findMany({
+      where: { accountId, orderStatus: { in: ['PENDING', 'SENT', 'UNKNOWN'] }, slotReleasedAt: null },
+      orderBy: { evaluatedAt: 'asc' },
+    });
+
+    for (const decision of stillInFlight) {
       if (decision.orderStatus === 'PENDING') {
         // Never sent — retiring it is safe and is what spec §10 asks for
         // ("Retire unsent old-strategy intentions with audit reasons").

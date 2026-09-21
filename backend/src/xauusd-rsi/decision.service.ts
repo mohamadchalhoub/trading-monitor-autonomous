@@ -18,6 +18,7 @@ import {
   RSI_MAX_SIGNAL_AGE_SECONDS,
   RSI_QUOTE_MAX_STALENESS_SECONDS,
   RSI_SYMBOL,
+  rsiMagicForFamily,
 } from './safety-constants';
 
 export interface RsiExecutionResult {
@@ -115,30 +116,144 @@ export class RsiDecisionService {
   }
 
   /**
-   * Releases the slots of decisions whose positions are confirmed gone.
+   * Resolves an in-flight decision that never received its broker ticket.
    *
-   * `liveTickets` must come from real broker-derived position data. A ticket
-   * that is no longer there is closed as far as the broker is concerned, and
-   * that — not a close request having been submitted — is what frees a slot.
+   * This exists because of a real incident. Decision
+   * `966bf32f-04f2-4f4c-8715-699e072e2b7a` was submitted, the broker filled
+   * it as ticket 58537207521, and the collector reported that fill — but the
+   * backend's own write failed, because `mt5_ticket` was INT4 and an 11-digit
+   * ticket does not fit in 32 bits. The decision was left SENT with a null
+   * ticket. The column is BIGINT now, so that specific cause is gone, but
+   * ANY lost or rejected result report leaves the same shape behind, and the
+   * consequence was severe: a null ticket meant the slot could never be
+   * released, so the RETEST family was blocked permanently.
    *
-   * An UNKNOWN decision with no ticket is deliberately NOT released: there is
-   * no ticket to check, so its outcome remains genuinely unresolved.
+   * The order's broker comment is what makes recovery possible without
+   * guessing. Submission stamps every order with `rsi-<first 8 of decision
+   * id>` (see `execution.controller.ts`), so a position carries the identity
+   * of the decision that opened it. Matching additionally requires the same
+   * account, symbol and rule-family magic number, so a coincidental comment
+   * cannot attach a foreign position to this strategy.
+   *
+   * Attribution alone never releases anything. It only supplies the ticket;
+   * closure is then judged by `releaseSlotsForClosedPositions` on its own
+   * evidence.
+   */
+  private async attributeTicketlessHolders(accountId: string): Promise<string[]> {
+    const orphans = await this.prisma.xauusdRsiDecision.findMany({
+      where: {
+        accountId,
+        slotReleasedAt: null,
+        mt5Ticket: null,
+        orderStatus: { in: ['SENT', 'UNKNOWN'] },
+      },
+      select: { id: true, ruleFamily: true, orderStatus: true, direction: true, volumeLots: true, requestedPrice: true, executionError: true },
+    });
+    if (orphans.length === 0) return [];
+
+    const notes: string[] = [];
+    for (const orphan of orphans) {
+      const expectedComment = `rsi-${orphan.id.slice(0, 8)}`;
+      const expectedMagic = rsiMagicForFamily(orphan.ruleFamily as RuleFamily);
+
+      const candidates = await this.prisma.position.findMany({
+        where: { accountId, symbol: RSI_SYMBOL },
+        select: { externalPositionId: true, status: true, volume: true, openPrice: true, stopLoss: true, takeProfit: true, rawPayload: true },
+      });
+      const match = candidates.find((c) => {
+        const raw = c.rawPayload as Record<string, unknown> | null;
+        return raw?.comment === expectedComment && Number(raw?.magic) === expectedMagic;
+      });
+      if (!match) {
+        // No broker evidence either way. The decision keeps its slot: an
+        // unattributable in-flight order is exactly the case where holding
+        // is the safe answer.
+        continue;
+      }
+
+      await this.prisma.xauusdRsiDecision.update({
+        where: { id: orphan.id },
+        data: {
+          mt5Ticket: BigInt(match.externalPositionId),
+          orderStatus: 'FILLED',
+          filledPrice: match.openPrice,
+          brokerStopLoss: match.stopLoss,
+          brokerTakeProfit: match.takeProfit,
+          slippagePoints:
+            match.openPrice !== null && orphan.requestedPrice !== null
+              ? Math.abs(match.openPrice.toNumber() - orphan.requestedPrice.toNumber()) / RSI_GOLD_POINT_SIZE
+              : null,
+          executionError:
+            (orphan.executionError ? `${orphan.executionError} | ` : '') +
+            `Reconciled against broker evidence: this ${orphan.orderStatus} decision had no ticket, and the broker reports position ${match.externalPositionId} opened under this strategy's comment "${expectedComment}" and magic ${expectedMagic}. The result report was lost or rejected at the time.`,
+        },
+      });
+      notes.push(`attributed ${orphan.ruleFamily} decision ${orphan.id} to broker position ${match.externalPositionId}`);
+      this.logger.warn(
+        `decision ${orphan.id} had no ticket but the broker shows position ${match.externalPositionId} with comment ${expectedComment} and magic ${expectedMagic} — attributed and marked FILLED`,
+      );
+    }
+    return notes;
+  }
+
+  /**
+   * Releases the slot of any holder whose position the broker confirms is
+   * fully closed.
+   *
+   * Closure must be POSITIVE evidence, never absence. Specifically:
+   *
+   *   - A position row that the collector has marked CLOSED releases the
+   *     slot. That marking is broker-derived: `positions_get()` is
+   *     authoritative for what is open, and `replaceOpenPositions` marks
+   *     anything missing from that authoritative list as closed, in one
+   *     transaction.
+   *   - A position still OPEN holds the slot regardless of its volume. A
+   *     partial close leaves real exposure behind, and real exposure keeps
+   *     its family.
+   *   - NO position row at all does NOT release. That is absence, not
+   *     evidence: a snapshot that never arrived, or one lost to a failed
+   *     sync, must not be read as "the trade is over".
+   *
+   * `liveTickets` is still honoured as a second, independent confirmation:
+   * a ticket the broker currently reports as open always holds its slot,
+   * whatever a stored row says.
    */
   async releaseSlotsForClosedPositions(accountId: string, liveTickets: ReadonlySet<string>): Promise<string[]> {
+    const released: string[] = [...(await this.attributeTicketlessHolders(accountId))];
+
     const holders = await this.prisma.xauusdRsiDecision.findMany({
       where: { accountId, slotReleasedAt: null, orderStatus: 'FILLED' },
       select: { id: true, mt5Ticket: true, ruleFamily: true },
     });
-    const released: string[] = [];
     for (const h of holders) {
       if (h.mt5Ticket === null) continue;
-      if (liveTickets.has(String(h.mt5Ticket))) continue;
+      const ticket = String(h.mt5Ticket);
+      // Still open at the broker right now: nothing to decide.
+      if (liveTickets.has(ticket)) continue;
+
+      const position = await this.prisma.position.findFirst({
+        where: { accountId, externalPositionId: ticket },
+        select: { status: true, volume: true },
+      });
+      if (!position) {
+        this.logger.warn(
+          `decision ${h.id} holds the ${h.ruleFamily} slot on ticket ${ticket}, which is absent from both live broker data and stored positions — NOT releasing, because absence is not proof of closure`,
+        );
+        continue;
+      }
+      if (position.status !== 'CLOSED') {
+        // Present but not closed — e.g. a partial close leaving exposure.
+        continue;
+      }
+
       await this.prisma.xauusdRsiDecision.update({
         where: { id: h.id },
         data: { slotReleasedAt: new Date() },
       });
-      released.push(`${h.ruleFamily}:${h.mt5Ticket}`);
-      this.logger.log(`released the ${h.ruleFamily} slot: position ${h.mt5Ticket} is no longer present in broker data`);
+      released.push(`${h.ruleFamily}:${ticket}`);
+      this.logger.log(
+        `released the ${h.ruleFamily} slot: the broker confirms position ${ticket} is fully closed`,
+      );
     }
     return released;
   }
