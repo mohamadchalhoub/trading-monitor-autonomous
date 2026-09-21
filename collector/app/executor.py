@@ -40,9 +40,12 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Literal
+
+from .mt5_client import _mt5_time_to_utc
 
 MT5_BRIDGE_HOST = os.environ.get("MT5_BRIDGE_HOST", "").strip()
 
@@ -70,6 +73,25 @@ DEFAULT_SYMBOL = "EURUSD"
 # already-verified value and the default for backward compatibility with
 # the legacy strategy's existing calls).
 EURUSD_POINT_SIZE = 0.00001
+
+# The last quote-freshness gate before order_send, in seconds.
+#
+# Deliberately the SAME limit the backend already enforces
+# (backend/src/xauusd-rsi/safety-constants.ts RSI_QUOTE_MAX_STALENESS_SECONDS,
+# derived from the frozen spec's observation.maxStalenessMs of 30000ms). It is
+# restated here rather than widened, because the two processes cannot share a
+# constant and a looser limit on this side would quietly defeat the stricter
+# one on the other. If the spec's limit ever changes, change it in both places.
+#
+# This is the send boundary, which the backend's check cannot cover: the
+# backend approves against the last quote it was PUSHED, then the order
+# travels to the collector, which reads MT5 directly. Time passes in between.
+QUOTE_MAX_AGE_SECONDS = 30.0
+
+# A quote may legitimately read a fraction of a second ahead of local time
+# (clock skew between this machine and the broker). Beyond this, a
+# future-dated quote means a conversion error, not skew, and is refused.
+QUOTE_FUTURE_TOLERANCE_SECONDS = 2.0
 
 # How far back to look for a matching deal when reconciling an ambiguous
 # order_send response against closed-position history (the "filled position
@@ -164,9 +186,13 @@ class Executor:
     "concurrent execution calls" a queuing problem, not a race.
     """
 
-    def __init__(self, mt5_module: Any = None) -> None:
+    def __init__(self, mt5_module: Any = None, broker_timezone: str | None = None) -> None:
         self._mt5 = mt5_module if mt5_module is not None else mt5
         self._lock = threading.Lock()
+        # Same default and same env var as config.py, so the quote-age gate
+        # below resolves the broker offset identically to the rest of the
+        # collector rather than with a second, drifting source of truth.
+        self._broker_timezone = broker_timezone or os.environ.get("MT5_BROKER_TIMEZONE", "").strip() or "EET"
         # Optional — wired to `Mt5Client.get_deals_since` by runner.py after
         # connect, via `set_deals_lookup`. That method (not reimplemented
         # here) already handles a real, verified-live MT5-under-Wine quirk:
@@ -461,17 +487,77 @@ class Executor:
             result = self._mt5.order_send(request)
             return self._result_from_response(result)
 
+    def _quote_age_seconds(self, tick: Any, now_ms: float | None = None) -> tuple[float | None, str | None]:
+        """Age of a freshly fetched MT5 tick, in seconds.
+
+        Uses the project's ONE established conversion,
+        `mt5_client._mt5_time_to_utc()` — the same one `get_live_tick()`
+        already applies to this very field. MT5 reports the tick `time` as
+        an epoch built from the broker server's own wall-clock components
+        (EET/EEST here, so +3h in summer), not true UTC. Decoding it
+        naively as UTC puts every quote three hours in the future, which
+        would make this gate pass anything.
+
+        The helper is imported rather than reimplemented so the offset is
+        resolved in exactly one place, with that zone's DST handled, and
+        can never be applied twice or with a guessed value.
+
+        A tick meaningfully in the FUTURE is treated as unusable rather
+        than as "very fresh". A negative age is the exact signature of an
+        offset being applied twice or not at all, and silently accepting it
+        would turn this whole gate into a no-op.
+        """
+        raw = getattr(tick, "time", None)
+        if raw is None or not raw:
+            return None, "tick carries no timestamp - cannot establish quote age, refusing rather than assuming it is fresh"
+        try:
+            true_utc_iso = _mt5_time_to_utc(int(raw), self._broker_timezone)
+        except Exception as exc:  # noqa: BLE001 - a bad zone must not send an order
+            return None, f"could not convert the quote timestamp to UTC ({exc}) - refusing rather than assuming it is fresh"
+        if true_utc_iso is None:
+            return None, "could not convert the quote timestamp to UTC - refusing rather than assuming it is fresh"
+        tick_ms = datetime.fromisoformat(true_utc_iso).timestamp() * 1000
+        now_ms = time.time() * 1000 if now_ms is None else now_ms
+        age = (now_ms - tick_ms) / 1000.0
+        if age < -QUOTE_FUTURE_TOLERANCE_SECONDS:
+            return age, (
+                f"quote timestamp is {abs(age):.1f}s in the future - the broker clock or the timestamp conversion is wrong, "
+                "refusing to price an order off it"
+            )
+        return age, None
+
     def _build_bracket_request(
+
         self, *, side: str, volume: float, stop_loss_points: float, take_profit_points: float,
         magic: int, comment: str, deviation_points: int, symbol: str = DEFAULT_SYMBOL, point_size: float = EURUSD_POINT_SIZE,
     ) -> dict | None:
         """Builds one order_send request from a FRESH live tick — called
         once per attempt (not once per call), so a retry always prices its
         SL/TP off the price at that retry's own moment, never a stale one
-        from the first attempt."""
+        from the first attempt.
+
+        Returns `(request, rejection_reason)`. Exactly one is ever set.
+
+        A freshly FETCHED tick is not the same thing as a freshly QUOTED
+        one: `symbol_info_tick` happily returns the last tick it ever saw,
+        so a frozen or halted feed yields a brand-new read of a very old
+        price. The age gate below is the last check before `order_send`,
+        and it is what makes "reject an expired quote at the send boundary"
+        true rather than merely intended. The one-second polling loop does
+        not and cannot guarantee a one-second-old market price.
+        """
         tick = self._mt5.symbol_info_tick(symbol)
         if tick is None:
-            return None
+            return None, f"No live tick for {symbol} - cannot determine an entry price."
+
+        age_seconds, age_problem = self._quote_age_seconds(tick)
+        if age_problem is not None:
+            return None, f"Refusing to send {symbol} order: {age_problem}."
+        if age_seconds is not None and age_seconds > QUOTE_MAX_AGE_SECONDS:
+            return None, (
+                f"Refusing to send {symbol} order: the broker quote is {age_seconds:.1f}s old at the send boundary "
+                f"(limit {QUOTE_MAX_AGE_SECONDS}s). The order is dropped, not repriced."
+            )
 
         order_type = self._mt5.ORDER_TYPE_BUY if side == "BUY" else self._mt5.ORDER_TYPE_SELL
         price = tick.ask if side == "BUY" else tick.bid
@@ -493,7 +579,7 @@ class Executor:
             "comment": comment,
             "type_time": self._mt5.ORDER_TIME_GTC,
             "type_filling": self._mt5.ORDER_FILLING_IOC,
-        }
+        }, None
 
     def _send_with_one_retry(
         self, *, side: str, volume: float, stop_loss_points: float, take_profit_points: float,
@@ -504,9 +590,10 @@ class Executor:
             magic=magic, comment=comment, deviation_points=deviation_points, symbol=symbol, point_size=point_size,
         )
 
-        request = self._build_bracket_request(**build_kwargs)
+        request, reject_reason = self._build_bracket_request(**build_kwargs)
         if request is None:
-            return OrderResult(ok=False, outcome="FAILED", error_message=f"No live tick for {symbol} — cannot determine an entry price.")
+            logger.error("refusing to send %s order at the send boundary: %s", symbol, reject_reason)
+            return OrderResult(ok=False, outcome="FAILED", error_message=reject_reason)
 
         raw_result = self._mt5.order_send(request)
         outcome = self._result_from_response(raw_result)
@@ -533,9 +620,13 @@ class Executor:
         # a retry is that market conditions may have moved (a requote);
         # resending the exact same stale price/SL/TP would just fail the
         # same way again.
-        retry_request = self._build_bracket_request(**build_kwargs)
+        retry_request, retry_reject_reason = self._build_bracket_request(**build_kwargs)
         if retry_request is None:
-            return OrderResult(ok=False, outcome="FAILED", error_message=f"No live tick for {symbol} on retry — cannot determine an entry price.")
+            # The retry re-reads the clock as well as the price, so a quote
+            # that expired while the first attempt was in flight stops the
+            # retry here instead of sending a stale order a second time.
+            logger.error("refusing to retry %s order at the send boundary: %s", symbol, retry_reject_reason)
+            return OrderResult(ok=False, outcome="FAILED", error_message=f"{retry_reject_reason} (on retry)")
 
         raw_retry_result = self._mt5.order_send(retry_request)
         retry_outcome = self._result_from_response(raw_retry_result)

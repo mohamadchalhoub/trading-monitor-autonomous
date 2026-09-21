@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { IncomingPositionDto } from '../collector-ingress/dto/snapshot.dto';
-import { GOLD_MAGIC_NUMBER, GOLD_POINT_SIZE, GOLD_SYMBOL } from './gold-safety-constants';
+import { GOLD_POINT_SIZE, GOLD_SYMBOL, GOLD_TP_SL_USD } from './gold-safety-constants';
+import { isOwnedByThisApplication, ownerForMagic } from '../xauusd-rsi/ownership';
 import { GoldTelegramService } from './gold-telegram.service';
 import { GoldAiSummaryService } from './gold-ai-summary.service';
 import { GoldProtectionRestoreService } from './gold-protection-restore.service';
@@ -125,6 +126,9 @@ export class GoldProtectionMonitorService {
           side: position.side,
           entryPrice: position.openPrice,
           goldPointSize: GOLD_POINT_SIZE,
+          // Each owner's own distance — an old position is never re-protected
+          // at the new strategy's $5.
+          protectionUsd: protectionUsdFor(position),
         });
         const text2 =
           `GOLD DEMO — REMEDIATION: requesting ONE protection-restore attempt for unprotected position=${positionId} (request=${restoreRequestId}). ` +
@@ -182,9 +186,30 @@ function isSet(value: number | undefined | null): boolean {
   return value !== undefined && value !== null && value !== 0;
 }
 
-/** True only when the position's raw MT5 payload carries a `magic` matching this strategy's own — never assumed true when absent. */
-function isOwnMagic(position: IncomingPositionDto): boolean {
+/**
+ * Reads the MT5 magic number out of the position's raw payload. Never
+ * assumed present, and a missing magic never matches an owner.
+ */
+function magicOf(position: IncomingPositionDto): number | null {
   const raw = (position as { raw?: Record<string, unknown> }).raw;
   const magic = raw?.magic;
-  return typeof magic === 'number' && magic === GOLD_MAGIC_NUMBER;
+  return typeof magic === 'number' && Number.isFinite(magic) ? magic : null;
+}
+
+/**
+ * True when this application opened the position and may therefore remediate
+ * it — which now covers BOTH the active RSI strategy and the retired H4 one,
+ * because the retired strategy's open positions must keep their protective
+ * management until they resolve (migration spec §2).
+ *
+ * A foreign or manual position still raises the missing-protection ALERT
+ * above; it is simply never restored or closed.
+ */
+function isOwnMagic(position: IncomingPositionDto): boolean {
+  return isOwnedByThisApplication(magicOf(position));
+}
+
+/** The protective distance the position's OWN strategy manages it at. */
+function protectionUsdFor(position: IncomingPositionDto): number {
+  return ownerForMagic(magicOf(position))?.stopLossUsd ?? GOLD_TP_SL_USD;
 }

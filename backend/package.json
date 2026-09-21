@@ -32,7 +32,11 @@
     "test": "npm run test:db:up && vitest run",
     "test:watch": "npm run test:db:up && vitest",
     "backup": "bash scripts/backup.sh",
-    "restore": "bash scripts/restore.sh"
+    "restore": "bash scripts/restore.sh",
+    "xauusd-rsi:scheduler": "tsx scripts/xauusd-rsi-scheduler.ts",
+    "xauusd-rsi:migrate": "tsx scripts/xauusd-rsi-migrate.ts",
+    "xauusd-rsi:telegram-test": "tsx scripts/xauusd-rsi-telegram-test.ts",
+    "xauusd-rsi:verify-rsi": "tsx scripts/xauusd-rsi-verify-rsi.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.4",

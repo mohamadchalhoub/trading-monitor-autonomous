@@ -68,6 +68,15 @@ class ConnectResult:
     error_message: str | None = None
 
 
+class PositionsUnavailable(RuntimeError):
+    """The broker could not be asked for open positions.
+
+    Deliberately NOT a subclass of anything the snapshot loop swallows into
+    an empty result: the whole point is that "unknown" must never be
+    flattened into "none".
+    """
+
+
 class Mt5Client:
     """Owns the single MT5 terminal connection for this process."""
 
@@ -189,6 +198,11 @@ class Mt5Client:
             # safety-critical check (executor.py's verify_demo_account()):
             # MT5's ACCOUNT_TRADE_MODE_REAL/DEMO/CONTEST integer enum.
             "trade_mode": d.get("trade_mode"),
+            # ACCOUNT_MARGIN_MODE_* — how the broker accounts for positions.
+            # Read alongside trade_mode because the active strategy's two
+            # execution slots can only hold independent positions with
+            # independent brackets on a HEDGING account.
+            "margin_mode": d.get("margin_mode"),
             "raw": d,
         }
 
@@ -258,11 +272,36 @@ class Mt5Client:
         }
 
     def get_open_positions(self) -> list[dict[str, Any]]:
+        """Open positions, or PositionsUnavailable when the broker could not
+        be asked.
+
+        The distinction is load-bearing and used to be lost here. The backend
+        treats a positions list as AUTHORITATIVE: `replaceOpenPositions`
+        marks every stored position that is missing from it as CLOSED. So an
+        empty list does not mean "nothing came back", it means "the broker
+        says you have nothing open".
+
+        `positions_get()` returns None both for a genuine zero and for a
+        genuine failure, separated only by `last_error()`. This previously
+        returned `[]` for both, so one dropped trade-server connection could
+        mark a live position closed - and, since a closed position releases
+        its rule-family slot, hand that slot to a new entry while the old
+        one was still open at the broker.
+
+        Raising on failure means the snapshot for that cycle is simply not
+        sent. Nothing is marked closed on the strength of an answer the
+        broker never gave.
+        """
         positions = self._mt5.positions_get()
         if positions is None:
             code, message = self._mt5.last_error()
             if code != 1:  # 1 == RES_S_OK; None can also just mean "zero positions"
-                logger.warning("positions_get returned None", extra={"mt5_error": message})
+                logger.error(
+                    "positions_get failed - refusing to report an empty position list, "
+                    "because the backend would treat it as authoritative and close open positions",
+                    extra={"mt5_error": message, "mt5_code": code},
+                )
+                raise PositionsUnavailable(f"positions_get failed: {message} (code {code})")
             return []
 
         result = []
@@ -514,6 +553,44 @@ class Mt5Client:
                 "volume_real": float(t["volume_real"]) if t["volume_real"] is not None else None,
                 "flags": int(t["flags"]),
                 "batch_seq": i,  # 0-based index within THIS returned array/call
+            })
+        return result
+
+    def get_ticks_from(self, symbol: str, date_from: datetime, count: int = 2000) -> list[dict[str, Any]]:
+        """Incremental ticks from a cursor, via `copy_ticks_from`.
+
+        Used by the one-second XAUUSD observation loop. `copy_ticks_from` is
+        COUNT-based rather than range-based, which is the right shape here:
+        the loop knows where it got to and wants whatever has happened since,
+        not a window it must guess the end of.
+
+        Same error posture as `get_ticks`: a genuine failure raises, and only
+        a real code-1 empty result returns `[]`, so "nothing happened in the
+        last second" is never indistinguishable from "the call failed".
+
+        `time_msc` is already true UTC and must NOT be run through the
+        broker-timezone correction — see `get_ticks`.
+        """
+        ticks = self._mt5.copy_ticks_from(symbol, date_from, count, self._mt5.COPY_TICKS_ALL)
+        if ticks is None:
+            code, message = self._mt5.last_error()
+            if code != 1:
+                raise RuntimeError(f"copy_ticks_from failed: {message} (code={code})")
+            return []
+
+        result = []
+        for i, t in enumerate(ticks):
+            last = float(t["last"]) if t["last"] else None
+            result.append({
+                "timestamp": datetime.fromtimestamp(t["time_msc"] / 1000, tz=timezone.utc).isoformat(),
+                "time_msc": int(t["time_msc"]),
+                "bid": float(t["bid"]),
+                "ask": float(t["ask"]),
+                "last": last,
+                "volume": float(t["volume"]) if t["volume"] is not None else None,
+                "volume_real": float(t["volume_real"]) if t["volume_real"] is not None else None,
+                "flags": int(t["flags"]),
+                "batch_seq": i,
             })
         return result
 

@@ -47,3 +47,28 @@ const isolatedGoldRuntimeDir = mkdtempSync(join(tmpdir(), 'test-gold-runtime-'))
 process.env.GOLD_AI_SUMMARIES_PATH = join(isolatedGoldRuntimeDir, 'ai-summaries.json');
 process.env.GOLD_RUNTIME_SETTINGS_PATH = join(isolatedGoldRuntimeDir, 'settings.json');
 process.env.GOLD_KILL_SWITCH_PATH = join(isolatedGoldRuntimeDir, 'GOLD_KILL_SWITCH');
+
+// Same isolation, extended to the active strategy
+// (`xauusd-m1-rsi-retest-extremes-v1`). Every one of these paths defaults to a
+// location under `process.cwd()`, which from `backend/` is the REAL
+// operator-facing runtime directory — so without this a test could engage the
+// live stop-new-entries switch, overwrite the live volume setting, or read the
+// live watch state and report a test fixture as current health.
+//
+// The two GOLD_* paths below matter for this strategy specifically: it
+// deliberately honours the pre-existing gold controls as well as its own
+// (see xauusd-rsi/controls.ts), so leaving them pointed at the repository
+// would make every test in this suite see the real `backend/GOLD_KILL_SWITCH`
+// file — which is currently PRESENT as a deliberate operational pause — and
+// every entry would be refused for reasons unrelated to the case under test.
+const isolatedRsiRuntimeDir = mkdtempSync(join(tmpdir(), 'test-xauusd-rsi-runtime-'));
+process.env.XAUUSD_RSI_STATE_DIR = isolatedRsiRuntimeDir;
+process.env.XAUUSD_RSI_RUNTIME_SETTINGS_PATH = join(isolatedRsiRuntimeDir, 'settings.json');
+process.env.XAUUSD_RSI_KILL_SWITCH_PATH = join(isolatedRsiRuntimeDir, 'XAUUSD_RSI_KILL_SWITCH');
+process.env.XAUUSD_RSI_STOP_NEW_ENTRIES_PATH = join(isolatedRsiRuntimeDir, 'XAUUSD_RSI_STOP_NEW_ENTRIES');
+process.env.GOLD_STOP_NEW_ENTRIES_PATH = join(isolatedGoldRuntimeDir, 'GOLD_STOP_NEW_ENTRIES');
+// Fails closed in tests exactly as it does in production: a test that needs
+// DEMO submission opts in explicitly rather than inheriting an active mode.
+process.env.XAUUSD_RSI_EXECUTION_MODE = 'OFF';
+delete process.env.XAUUSD_RSI_STOP_NEW_ENTRIES;
+delete process.env.GOLD_STOP_NEW_ENTRIES;

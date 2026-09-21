@@ -3,19 +3,21 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// "Trend Breakout" was removed with the strategy migration: that module is no
+// longer registered in the backend, so the link could only ever have led to an
+// error page.
 const ACCOUNT_SCOPED_ROUTES = [
   { label: "Dashboard", segment: "dashboard" },
   { label: "Alerts", segment: "alerts" },
   { label: "History", segment: "history" },
   { label: "Rules", segment: "rules" },
-  { label: "Trend Breakout", segment: "trend-breakout" },
   { label: "Imports", segment: "imports" },
   { label: "EURUSD Charts", segment: "eurusd-charts" },
   { label: "Technical Analysis", segment: "technical-analysis" },
 ];
 
 function currentAccountId(pathname: string): string | null {
-  const match = pathname.match(/^\/(dashboard|alerts|history|rules|trend-breakout|imports|eurusd-charts|technical-analysis)\/([^/]+)/);
+  const match = pathname.match(/^\/(dashboard|alerts|history|rules|imports|eurusd-charts|technical-analysis)\/([^/]+)/);
   return match ? match[2] : null;
 }
 
@@ -49,6 +51,14 @@ export function NavBar() {
             );
           })}
           <Link
+            href="/xauusd-rsi"
+            className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
+              pathname.startsWith("/xauusd-rsi") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"
+            }`}
+          >
+            XAUUSD RSI (live)
+          </Link>
+          <Link
             href="/market-charts"
             className={`px-3 py-1.5 rounded-md transition-colors whitespace-nowrap ${
               pathname.startsWith("/market-charts") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"
@@ -70,7 +80,7 @@ export function NavBar() {
               pathname.startsWith("/gold-demo") ? "bg-accent-soft text-accent font-medium" : "text-text-muted hover:text-text"
             }`}
           >
-            Gold DEMO (live)
+            Gold (retired)
           </Link>
           <Link
             href="/health"

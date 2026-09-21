@@ -394,6 +394,23 @@ export const api = {
     ),
   marketCoverage: (symbol: string) =>
     apiFetch<MarketDataCoverage>(`/market-data/coverage?symbol=${encodeURIComponent(symbol)}`),
+  // xauusd-m1-rsi-retest-extremes-v1 - the active strategy's own dashboard
+  // and controls. Deliberately separate endpoints from the gold ones below,
+  // which now serve only the retired strategy's remaining positions.
+  xauusdRsiStatus: () => apiFetch<XauusdRsiStatus>('/research/xauusd-rsi-status'),
+  xauusdRsiControls: () => apiFetch<XauusdRsiControls>('/research/xauusd-rsi-controls'),
+  setXauusdRsiVolume: (volumeLots: number, note?: string) =>
+    apiFetch<{ ok: boolean; volumeLots?: number; reason?: string }>('/research/xauusd-rsi-controls/volume', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ volumeLots, note }),
+    }),
+  setXauusdRsiStopNewEntries: (active: boolean) =>
+    apiFetch<{ ok: boolean; note?: string; warning?: string | null }>('/research/xauusd-rsi-controls/stop-new-entries', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ active }),
+    }),
   goldRetestResearch: () => apiFetch<GoldRetestResearch>('/research/xauusd-confirmed-retest'),
   goldExecutionStatus: () => apiFetch<GoldExecutionStatus>('/research/gold-execution-status'),
   goldNews: () => apiFetch<GoldNewsResponse>('/research/gold-execution-status/news'),
@@ -609,4 +626,263 @@ export interface GoldRetestResearch {
     levels: Array<Record<string, string | number | boolean | null>>;
     events: Array<Record<string, unknown>>;
   } | null;
+}
+
+
+// ---------------------------------------------------------------------------
+// xauusd-m1-rsi-retest-extremes-v1 - the application's single enabled entry
+// strategy. Shapes mirror xauusd-rsi/dashboard.controller.ts exactly. Fields
+// the backend can legitimately report as unknown are nullable here, because
+// the page must be able to SAY unknown rather than imply a value it does not
+// actually have.
+// ---------------------------------------------------------------------------
+
+export interface XauusdRsiPatternPhase {
+  phase: string;
+  runningExtreme: number | null;
+  frozenExtreme: number | null;
+}
+
+export interface XauusdRsiExposureItem {
+  kind: string;
+  ticket: string;
+  side: string;
+  volume: number;
+  magicNumber: number | null;
+  owned: boolean;
+  ruleFamily: 'RETEST' | 'EXTREME' | null;
+  openPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  description: string;
+}
+
+export interface XauusdRsiStatus {
+  strategy: {
+    version: string;
+    specHash: string;
+    symbol: string;
+    timeframe: string;
+    magicNumbers: { RETEST: number; EXTREME: number };
+    executionMode: 'OFF' | 'SHADOW' | 'DEMO';
+    isTheOnlyEnabledEntryStrategy: boolean;
+  };
+  demo: {
+    accountId: string | null;
+    tradeMode: string;
+    demoVerified: boolean;
+    equity: number | null;
+    accountCurrency: string | null;
+    marginMode: string;
+    supportsTwoIndependentPositions: boolean;
+    marginModeNote: string;
+  };
+  slots: {
+    RETEST: { occupied: boolean | null; reason: string | null; holders: XauusdRsiExposureItem[] };
+    EXTREME: { occupied: boolean | null; reason: string | null; holders: XauusdRsiExposureItem[] };
+    maxConcurrentPositions: number;
+    note: string;
+    reservedStopRisk: { amount: number; count: number; note: string } | null;
+  };
+  indicator: {
+    period: number;
+    appliedPrice: string;
+    smoothing: string;
+    appliedPriceProvenance: string;
+    parityVerified: boolean;
+    parityMaxAbsDifference: number;
+    paritySource: string;
+    currentRsi: number | null;
+    warmedUp: boolean;
+    warmupBarsRequired: number;
+    closedBarsApplied: number;
+    flatPriceBehaviourNote: string;
+  };
+  thresholds: {
+    sell2: number;
+    sell1: number;
+    buy1: number;
+    buy2: number;
+    extremeSell: number;
+    extremeBuy: number;
+    note: string;
+  };
+  patternState: {
+    sellPeakRetest: XauusdRsiPatternPhase;
+    buyTroughRetest: XauusdRsiPatternPhase;
+    extremeSell: { phase: string };
+    extremeBuy: { phase: string };
+    previousRsi: number | null;
+    observationCount: number;
+  } | null;
+  quote: { bid: number | null; ask: number | null; tickAt: string | null; ageSeconds: number | null; fresh: boolean };
+  observation: {
+    mode: string;
+    modeLimitation: string;
+    ticksApplied: number;
+    duplicatesRejected: number;
+    outOfOrderRejected: number;
+    gapResets: number;
+    needsReseed: boolean;
+    cursor: unknown;
+    cadence: {
+      targetMs: number;
+      samples: number;
+      medianMs: number | null;
+      p95Ms: number | null;
+      maxMs: number | null;
+      withinTarget: boolean | null;
+      detail: string;
+    };
+  };
+  schedule: {
+    timeZone: string;
+    nowBeirut: string;
+    state: string;
+    entriesAllowed: boolean;
+    blockReason: string | null;
+    detail: string;
+    dailyPause: string;
+    fridayEntryCutoff: string;
+    fridayClosureDeadline: string;
+    nextEligibleAt: string | null;
+    nextEligibleLabel: string;
+    nextFridayDeadline: { iso: string; beirut: string } | null;
+    currentFridayDeadline: { iso: string; beirut: string } | null;
+    inWeekendWindow: boolean;
+  };
+  /**
+   * Added after the rest of this payload, so a backend that predates it
+   * simply omits it. Optional on purpose — the dashboard must render
+   * against an older backend rather than crash, which is exactly what it
+   * did when the page hot-reloaded ahead of a backend restart.
+   */
+  /** Optional for the same reason as entryEligibility: it postdates the rest. */
+  telegramDelivery?: {
+    failedPending: number;
+    gaveUp: number;
+    oldestFailedAgeSeconds: number | null;
+    lastError: string | null;
+  };
+  entryEligibility?: {
+    canEnterNow: boolean;
+    blockingGates: string[];
+    gates: Array<{ gate: string; passed: boolean; detail: string }>;
+    evaluatedLater: string[];
+    note: string;
+  };
+  brokerSession: { open: boolean | null; detail: string };
+  liquidation: {
+    phase: string;
+    detail: string;
+    deadline: { iso: string; beirut: string } | null;
+    outstandingItems: Array<{
+      ticket: string;
+      kind: string;
+      status: string;
+      attempts: number;
+      lastError: string | null;
+      deadline: string;
+      ownership: string;
+    }>;
+    ownedExposureFlat: boolean | null;
+  };
+  exposure: {
+    owned: XauusdRsiExposureItem[];
+    foreign: XauusdRsiExposureItem[];
+    occupancyBlocksNewEntries: boolean;
+  };
+  order: {
+    volumeLots: number;
+    volumeSource: string;
+    volumeSourceDetail: string;
+    defaultVolumeLots: number;
+    takeProfitUsd: number;
+    stopLossUsd: number;
+    pointSize: number;
+    maxEntryDeviationPoints: number;
+    brokerConstraints: {
+      minLots: number;
+      maxLots: number;
+      stepLots: number;
+      stopsLevelPoints: number | null;
+      freezeLevelPoints: number | null;
+      tickSize: number | null;
+    };
+    bracketNote: string;
+  };
+  risk: {
+    stopRiskCapPct: number;
+    combinedRiskCapPct: number;
+    dailyLossCapPct: number;
+    drawdownCapPct: number;
+    current: {
+      equity: number;
+      todaysLossAmount: number;
+      currentDrawdownPct: number;
+      existingCombinedRiskAmount: number;
+      contractSize: number | null;
+      profitCurrency: string;
+      conversionRate: number | null;
+    } | null;
+  };
+  controls: {
+    killSwitchActive: boolean;
+    killSwitchSource: string | null;
+    stopNewEntriesActive: boolean;
+    stopNewEntriesSource: string | null;
+  };
+  heartbeats: {
+    strategyWatch: { lastCycleAtUtc: string | null; ageSeconds: number | null; stale: boolean; running: boolean; detail: string };
+    collector: { lastHeartbeatAt: string | null; ageSeconds: number | null; stale: boolean; mt5Connected: boolean; lastError: string | null };
+  };
+  recentDecisions: Array<{
+    id: string;
+    evaluatedAt: string;
+    observedAt: string;
+    direction: string;
+    ruleFamily?: 'RETEST' | 'EXTREME';
+    setupKinds: string[];
+    rsi: number;
+    previousRsi: number | null;
+    entryPrice: number | null;
+    stopLoss: number | null;
+    takeProfit: number | null;
+    volumeLots: number | null;
+    orderStatus: string;
+    approved: boolean;
+    skipReason: string | null;
+    reasoning: string;
+    ticket: string | null;
+    filledPrice: number | null;
+    slippagePoints: number | null;
+    brokerStopLoss: number | null;
+    brokerTakeProfit: number | null;
+    executionError: string | null;
+  }>;
+  confirmedEntries: {
+    count: number;
+    items: Array<{
+      id: string;
+      ticket: string | null;
+      filledAt: string | null;
+      filledPrice: number | null;
+      requestedPrice: number | null;
+      slippagePoints: number | null;
+      requestedStopLoss: number | null;
+      brokerStopLoss: number | null;
+      requestedTakeProfit: number | null;
+      brokerTakeProfit: number | null;
+      protectionMatchesRequest: boolean | null;
+    }>;
+  };
+}
+
+export interface XauusdRsiControls {
+  volume: { volumeLots: number; source: string; sourceDetail: string };
+  volumeAudit: Array<{ at: string; oldValue: number; newValue: number; note: string }>;
+  brokerConstraints: { minLots: number; maxLots: number; stepLots: number };
+  killSwitch: { active: boolean; source: string | null };
+  stopNewEntries: { active: boolean; source: string | null };
+  brackets: { stopLossPoints: number; takeProfitPoints: number };
 }

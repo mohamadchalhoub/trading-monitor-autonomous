@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from types import FrameType
 
@@ -33,7 +34,7 @@ from app.formatting import (
     format_deals_table,
     format_positions_table,
 )
-from app.mt5_client import Mt5Client, stored_candle_time_to_true_utc
+from app.mt5_client import Mt5Client, PositionsUnavailable, stored_candle_time_to_true_utc
 
 logger = logging.getLogger("collector.runner")
 
@@ -134,6 +135,57 @@ TICK_SYNC_OVERLAP_SECONDS = 30
 # a given range.
 TICK_SYNC_SOURCE = "collector_live_sync"
 
+# xauusd-m1-rsi-retest-extremes-v1 — the LIVE tick stream that feeds the
+# strategy's intrabar RSI, deliberately separate from the archival tick sync
+# above.
+#
+# The archival sync runs every TICK_SYNC_INTERVAL_SECONDS (300s) on a
+# background thread because a tick call can hang for ~106s. That cadence is
+# right for building history and useless for trading: a signal this strategy
+# can only act on for about a minute would be five minutes stale before the
+# backend ever saw the tick that produced it.
+#
+# So this second path fetches a SMALL, recent window (seconds, not minutes)
+# for one symbol on the MAIN loop, at poll_interval_seconds cadence. A window
+# this narrow returns quickly, and the main loop's existing non-blocking lock
+# discipline is unchanged. The ticks land in the same deduplicated store via
+# the same /collector/ticks endpoint, so the archival sync and this one can
+# freely overlap — whichever sees a tick first, the other's copy is dropped
+# by the database's own uniqueness constraint.
+#
+# Honest limitation: delivery latency is up to one poll interval, so the
+# backend observes a crossing a few seconds after it happened. No crossing is
+# MISSED (copy_ticks_range returns every tick in the window), but the
+# strategy's own signal-age and entry-deviation guards may legitimately
+# reject a signal that arrived too late to still be the event the rules
+# described. That is intended behaviour, not a defect.
+RSI_TICK_SYMBOL = "XAUUSD"
+# The observation cadence the strategy requires: read XAUUSD once per SECOND.
+#
+# This runs on its own dedicated thread rather than on the main poll loop,
+# because the main loop's interval also governs snapshots, trades, candles and
+# every other execution poll — dropping that to one second would change
+# unrelated EURUSD collection behaviour, which is explicitly out of scope.
+#
+# The thread serialises its MT5 calls against everything else through the same
+# `_mt5_call_lock` the rest of this file uses, since the MetaTrader5 module is
+# not thread-safe for concurrent calls on one connection. It uses a BOUNDED
+# blocking acquire so that a slow main-loop cycle delays an observation rather
+# than silently skipping it, and a genuinely stuck lock skips the tick instead
+# of piling threads up.
+RSI_OBSERVATION_INTERVAL_SECONDS = 1.0
+RSI_OBSERVATION_LOCK_TIMEOUT_SECONDS = 0.75
+# How many incremental ticks one observation will pull. A second of gold
+# rarely produces more than a handful; this is headroom, not an expectation.
+RSI_OBSERVATION_TICK_COUNT = 2000
+# How far back the cursor starts on the very first observation of a run.
+RSI_OBSERVATION_COLD_START_SECONDS = 10
+# How far back each fetch reaches. Comfortably wider than one poll interval
+# so a slow cycle cannot leave a hole; the overlap costs nothing because
+# duplicates are rejected at the database.
+RSI_TICK_WINDOW_SECONDS = 90
+
+
 
 class CollectorApp:
     def __init__(self, config: Config, client: Mt5Client, api: ApiClient, executor: Executor) -> None:
@@ -152,6 +204,15 @@ class CollectorApp:
         # own comment for why concurrent calls on one connection aren't safe.
         self._mt5_call_lock = threading.Lock()
         self._tick_sync_thread: threading.Thread | None = None
+        # One-second XAUUSD observation loop (see RSI_OBSERVATION_INTERVAL_SECONDS).
+        self._rsi_observation_thread: threading.Thread | None = None
+        self._rsi_cursor_msc: int | None = None
+        self._rsi_last_pushed_msc: int | None = None
+        self._rsi_observations = 0
+        self._rsi_ticks_pushed = 0
+        self._rsi_duplicate_skips = 0
+        self._rsi_last_observation_at: datetime | None = None
+        self._rsi_cadence_samples: list[float] = []
         self._tick_sync_consecutive_failures = 0
 
     def install_signal_handlers(self) -> None:
@@ -174,9 +235,12 @@ class CollectorApp:
             "autonomous_execution_enabled": self._config.autonomous_execution_enabled,
             "gold_execution_enabled": self._config.gold_execution_enabled,
             "trend_breakout_execution_enabled": self._config.trend_breakout_execution_enabled,
+            "rsi_execution_enabled": self._config.rsi_execution_enabled,
         })
 
         backoff = self._config.reconnect_initial_backoff_seconds
+        if self._config.rsi_execution_enabled:
+            self._start_rsi_observation_loop()
         try:
             while not self._stop_event.is_set():
                 if not self._mt5_call_lock.acquire(blocking=False):
@@ -207,6 +271,11 @@ class CollectorApp:
                         self._poll_and_execute_pending_gold_order()
                         self._poll_and_execute_gold_close_request()
                         self._poll_and_execute_gold_restore_protection_request()
+                    if self._config.rsi_execution_enabled:
+                        # Tick observation now runs on its own one-second
+                        # thread (see _start_rsi_observation_loop); only the
+                        # order poll happens here.
+                        self._poll_and_execute_pending_rsi_order()
                     if self._config.trend_breakout_execution_enabled:
                         # Both instruments go live together (confirmed
                         # rollout decision) — looped every cycle, never
@@ -291,7 +360,24 @@ class CollectorApp:
         mt5_connected = terminal.get("connected") if terminal else None
         last_error = None if mt5_connected else self._client.last_error()[1]
         account = self._client.get_account_info()
-        positions = self._client.get_open_positions()
+        # A failed positions fetch aborts this snapshot rather than sending
+        # an empty list. The backend treats the list as authoritative and
+        # closes anything missing from it, so "we could not ask" must never
+        # be reported as "there is nothing open".
+        try:
+            positions = self._client.get_open_positions()
+        except PositionsUnavailable as exc:
+            logger.error(
+                "skipping this snapshot cycle: open positions could not be read, and an empty "
+                "list would be treated as authoritative by the backend",
+                extra={"error": str(exc)},
+            )
+            print("=" * 72)
+            print("SNAPSHOT SKIPPED - could not read open positions from the broker.")
+            print(f"  {exc}")
+            print("  Nothing was reported, so no position can be wrongly marked closed.")
+            print("=" * 72, flush=True)
+            return
         # Best-effort — a fresh, genuine bid/ask read on every snapshot tick
         # (this method's own 10s cadence) closes the gap between this
         # system's coarsest number (an M5 candle close, up to ~10 minutes
@@ -412,6 +498,255 @@ class CollectorApp:
             # visibility problem, not a trading-safety one, but it does mean
             # the decision row stays stuck as SENT until this is noticed.
             logger.error("failed to report execution result back to backend", extra={"decision_id": decision_id, "error": str(exc)})
+
+    def _start_rsi_observation_loop(self) -> None:
+        """Launches the one-second XAUUSD observation thread."""
+        if self._rsi_observation_thread is not None and self._rsi_observation_thread.is_alive():
+            return
+        self._rsi_observation_thread = threading.Thread(
+            target=self._rsi_observation_loop, daemon=True, name="rsi-observation"
+        )
+        self._rsi_observation_thread.start()
+        logger.info("rsi observation loop started", extra={
+            "symbol": RSI_TICK_SYMBOL, "interval_seconds": RSI_OBSERVATION_INTERVAL_SECONDS,
+        })
+
+    def _rsi_observation_loop(self) -> None:
+        """Observes XAUUSD once per second until shutdown.
+
+        Paced against a fixed schedule rather than by sleeping a whole
+        interval after each pass, so the time an observation itself takes does
+        not accumulate into drift.
+        """
+        next_at = time.monotonic()
+        while not self._stop_event.is_set():
+            next_at += RSI_OBSERVATION_INTERVAL_SECONDS
+            try:
+                self._observe_rsi_once()
+            except Exception as exc:  # noqa: BLE001 - never let this thread die
+                logger.warning("rsi observation failed, continuing", extra={"error": str(exc)})
+            delay = next_at - time.monotonic()
+            if delay <= 0:
+                # Fell behind: resynchronise instead of trying to catch up with
+                # a burst of back-to-back observations.
+                next_at = time.monotonic()
+                delay = 0
+            if self._stop_event.wait(timeout=delay):
+                break
+        logger.info("rsi observation loop stopped")
+
+    def _observe_rsi_once(self) -> None:
+        """One observation: read what has happened since the cursor and push it.
+
+        Prefers INCREMENTAL ticks (`copy_ticks_from`), which capture movement
+        between polls rather than only the instant each poll happened to land
+        on. The current quote is read as well, and is used only when the
+        incremental call yields nothing new — it is never treated as a fresh
+        market event in its own right, because a quote that has not changed
+        is not new information.
+        """
+        if not self._mt5_call_lock.acquire(timeout=RSI_OBSERVATION_LOCK_TIMEOUT_SECONDS):
+            # Another MT5 call is in flight. Skipping is correct: the next
+            # observation is one second away and will pick up everything since
+            # the cursor anyway, so nothing is lost.
+            return
+        try:
+            if not self._client.is_connected():
+                return
+
+            now = datetime.now(tz=timezone.utc)
+            self._record_rsi_cadence(now)
+
+            cursor = self._rsi_cursor_msc
+            date_from = (
+                datetime.fromtimestamp(cursor / 1000, tz=timezone.utc)
+                if cursor is not None
+                else now - timedelta(seconds=RSI_OBSERVATION_COLD_START_SECONDS)
+            )
+
+            try:
+                ticks = self._client.get_ticks_from(RSI_TICK_SYMBOL, date_from, RSI_OBSERVATION_TICK_COUNT)
+            except Exception as exc:  # noqa: BLE001 - MT5 boundary
+                logger.warning("rsi observation: incremental tick call failed", extra={"error": str(exc)})
+                return
+
+            # Drop anything at or before the cursor: copy_ticks_from is
+            # inclusive of its start, so the boundary tick would otherwise be
+            # re-sent every single second.
+            fresh = [t for t in ticks if cursor is None or int(t.get("time_msc", 0)) > cursor]
+            self._rsi_duplicate_skips += len(ticks) - len(fresh)
+
+            if not fresh:
+                # Nothing new. Deliberately no synthetic observation is
+                # manufactured merely because a poll occurred.
+                return
+
+            newest = max(int(t["time_msc"]) for t in fresh)
+            payload_ticks = [{k: v for k, v in t.items() if k != "time_msc"} for t in fresh]
+            # batch_seq must be contiguous within the pushed batch.
+            for i, t in enumerate(payload_ticks):
+                t["batch_seq"] = i
+
+            try:
+                payload = build_ticks_payload(RSI_TICK_SYMBOL, None, None, None, payload_ticks)
+                result = self._api.post_ticks(payload)
+            except Exception as exc:  # noqa: BLE001 - see below
+                # Deliberately broader than ApiClientError: payload
+                # construction sits inside this block too, so one malformed
+                # tick must not kill the observation thread. The cursor is NOT
+                # advanced on failure, so the same ticks are retried next
+                # second.
+                logger.warning("rsi observation: push failed, will retry", extra={"error": str(exc)})
+                return
+
+            self._rsi_cursor_msc = newest
+            self._rsi_last_pushed_msc = newest
+            self._rsi_ticks_pushed += len(fresh)
+            logger.debug("rsi observation pushed", extra={
+                "symbol": RSI_TICK_SYMBOL, "count": len(fresh), "inserted": result.get("inserted"),
+            })
+        finally:
+            self._mt5_call_lock.release()
+
+    def _record_rsi_cadence(self, now: datetime) -> None:
+        """Measures the ACTUAL interval between observations.
+
+        Reported rather than assumed: the requirement is a one-second cadence,
+        and the only honest way to state whether it is met is to measure it.
+        """
+        if self._rsi_last_observation_at is not None:
+            gap = (now - self._rsi_last_observation_at).total_seconds()
+            self._rsi_cadence_samples.append(gap)
+            if len(self._rsi_cadence_samples) > 300:
+                self._rsi_cadence_samples.pop(0)
+        self._rsi_last_observation_at = now
+        self._rsi_observations += 1
+        if self._rsi_observations % 60 == 0 and self._rsi_cadence_samples:
+            samples = sorted(self._rsi_cadence_samples)
+            logger.info("rsi observation cadence", extra={
+                "observations": self._rsi_observations,
+                "ticks_pushed": self._rsi_ticks_pushed,
+                "duplicates_skipped": self._rsi_duplicate_skips,
+                "median_interval_s": round(samples[len(samples) // 2], 3),
+                "max_interval_s": round(samples[-1], 3),
+            })
+
+    def _poll_and_execute_pending_rsi_order(self) -> None:
+        """Polls the active strategy's own route and executes an approved
+        entry. Same failure posture as every other execution poll here: never
+        crashes the main loop, and every outcome is reported back so nothing
+        is left silently in flight.
+
+        One deliberate behavioural difference from the retired strategies'
+        polls: when the broker's response is ambiguous (the executor reports
+        neither a confirmed fill nor a definite rejection), this reports
+        `uncertain=True` rather than `ok=False`. The backend records that as
+        UNKNOWN and keeps the position slot occupied, because a lost response
+        does not mean the order never reached the broker.
+        """
+        try:
+            response = self._api.get_pending_rsi_order(self._config.collector_account_id)
+        except ApiClientError as exc:
+            logger.warning("xauusd-rsi pending-order poll failed, will retry next tick", extra={"error": str(exc)})
+            return
+
+        order = response.get("order")
+        if not order:
+            return
+
+        logger.info("xauusd-rsi pending order claimed, attempting execution", extra={
+            "decision_id": order["decisionId"], "side": order["side"],
+            "volume": order["volume"], "symbol": order["symbol"],
+        })
+
+        try:
+            result = self._executor.send_bracket_order(
+                side=order["side"],
+                volume=order["volume"],
+                stop_loss_points=order["stopLossPoints"],
+                take_profit_points=order["takeProfitPoints"],
+                magic=order["magic"],
+                comment=order["comment"],
+                symbol=order["symbol"],
+                point_size=order["pointSize"],
+            )
+        except DemoAccountRequiredError as exc:
+            logger.critical("XAUUSD-RSI: DEMO ACCOUNT CHECK FAILED - refusing to trade", extra={"error": str(exc)})
+            self._report_rsi_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001 - must never crash the main loop
+            logger.error("xauusd-rsi order execution raised an unexpected error", extra={"error": str(exc)})
+            self._report_rsi_execution_result(order["decisionId"], ok=False, error_message=str(exc))
+            return
+
+        # A non-ok result with neither a ticket nor a broker retcode means the
+        # executor could not establish what happened (executor._unknown_result)
+        # - genuinely uncertain, as opposed to a broker that clearly refused.
+        uncertain = (not result.ok) and result.ticket is None and result.retcode is None
+
+        logger.info("xauusd-rsi order execution result", extra={
+            "decision_id": order["decisionId"], "ok": result.ok, "ticket": result.ticket,
+            "retcode": result.retcode, "uncertain": uncertain, "error": result.error_message,
+        })
+
+        broker_sl, broker_tp = self._read_position_protection(result.ticket, order["symbol"])
+        self._report_rsi_execution_result(
+            order["decisionId"], ok=result.ok, ticket=result.ticket,
+            filled_price=result.price, error_message=result.error_message,
+            uncertain=uncertain, broker_stop_loss=broker_sl, broker_take_profit=broker_tp,
+        )
+
+    def _read_position_protection(self, ticket, symbol: str):
+        """Reads the SL/TP the broker ACTUALLY attached to the freshly opened
+        position, so the backend can reconcile them against what was requested
+        instead of assuming the request was honoured verbatim.
+
+        Best-effort by design: a failure returns (None, None), which the
+        backend records as "not verified" rather than as a match.
+        """
+        if ticket is None:
+            return (None, None)
+        try:
+            position = self._executor.find_any_position(symbol)
+            if position is None or getattr(position, "ticket", None) != ticket:
+                return (None, None)
+            sl = getattr(position, "sl", None)
+            tp = getattr(position, "tp", None)
+            # MT5 reports 0 for "no level set" - surfaced as None, never as a
+            # real price of zero.
+            return (sl if sl else None, tp if tp else None)
+        except Exception as exc:  # noqa: BLE001 - diagnostic only
+            logger.warning("xauusd-rsi: could not read broker protection after fill", extra={
+                "ticket": ticket, "error": str(exc),
+            })
+            return (None, None)
+
+    def _report_rsi_execution_result(
+        self, decision_id: str, *, ok: bool, ticket=None,
+        filled_price=None, error_message=None,
+        uncertain: bool = False, broker_stop_loss=None,
+        broker_take_profit=None,
+    ) -> None:
+        payload = {"ok": ok, "uncertain": uncertain}
+        if ticket is not None:
+            payload["ticket"] = ticket
+        if filled_price is not None:
+            payload["filledPrice"] = filled_price
+        if broker_stop_loss is not None:
+            payload["brokerStopLoss"] = broker_stop_loss
+        if broker_take_profit is not None:
+            payload["brokerTakeProfit"] = broker_take_profit
+        if error_message is not None:
+            payload["errorMessage"] = error_message
+        try:
+            self._api.post_rsi_execution_result(self._config.collector_account_id, decision_id, payload)
+        except ApiClientError as exc:
+            # The backend's own startup reconciliation is the backstop: an
+            # unreported result stays SENT and is resolved against real broker
+            # state later, never assumed either way.
+            logger.error("xauusd-rsi: failed to report execution result to backend", extra={
+                "decision_id": decision_id, "error": str(exc),
+            })
 
     def _poll_and_execute_pending_gold_order(self) -> None:
         """Gold (XAUUSD) analog of `_poll_and_execute_pending_order` — its

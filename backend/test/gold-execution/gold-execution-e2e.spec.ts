@@ -85,59 +85,29 @@ describe('Gold execution — collector poll/report route is symbol-scoped', () =
     expect(res.body.order).toBeNull();
   });
 
-  it('EURUSD route never claims an XAUUSD pending row', async () => {
-    const { account, token } = await setupAccountWithToken(prisma);
-    await createDecision(account.id, 'XAUUSD');
-
-    const res = await request(app, {
-      method: 'GET',
-      url: `/collector/${account.id}/autonomous/pending-order`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    expect(res.statusCode).toBeLessThan(300);
-    expect(res.body.order).toBeNull();
-  });
-
-  it('gold route claims an XAUUSD pending row with gold-specific magic/volume/pointSize', async () => {
-    const { account, token } = await setupAccountWithToken(prisma);
-    await seedPreSendPrereqs(account.id);
-    await createDecision(account.id, 'XAUUSD');
-
-    const res = await request(app, {
-      method: 'GET',
-      url: `/collector/${account.id}/gold-execution/pending-order`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    expect(res.statusCode).toBeLessThan(300);
-    const order = res.body.order;
-    expect(order).not.toBeNull();
-    expect(order.symbol).toBe('XAUUSD');
-    expect(order.magic).toBe(262610181);
-    expect(order.volume).toBe(0.01);
-    expect(order.pointSize).toBe(0.01);
-    expect(order.stopLossPoints).toBeCloseTo(1000, 1);
-    expect(order.takeProfitPoints).toBeCloseTo(1000, 1);
-  });
-
-  it('a second poll after claiming sees nothing pending (atomic claim, gold route)', async () => {
-    const { account, token } = await setupAccountWithToken(prisma);
-    await seedPreSendPrereqs(account.id);
-    await createDecision(account.id, 'XAUUSD');
-
-    const first = await request(app, {
-      method: 'GET', url: `/collector/${account.id}/gold-execution/pending-order`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    const second = await request(app, {
-      method: 'GET', url: `/collector/${account.id}/gold-execution/pending-order`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-
-    expect(first.body.order).not.toBeNull();
-    expect(second.body.order).toBeNull();
-  });
+  /*
+   * REMOVED with the migration to `xauusd-m1-rsi-retest-extremes-v1`:
+   *
+   *   - 'EURUSD route never claims an XAUUSD pending row'
+   *   - 'gold route claims an XAUUSD pending row with gold-specific magic/volume/pointSize'
+   *   - 'a second poll after claiming sees nothing pending (atomic claim, gold route)'
+   *
+   * All three exercised ENTRY submission for strategies that are now retired.
+   * The legacy EURUSD route no longer exists at all, and the gold route now
+   * always returns `{ order: null }` without claiming anything, so these
+   * assertions describe behaviour that is intentionally gone rather than
+   * behaviour that regressed.
+   *
+   * Their replacement — proving that neither retired strategy can submit, and
+   * that a planted PENDING row stays unclaimed — is
+   * `test/xauusd-rsi/retired-strategies-disabled.spec.ts`. The atomic-claim
+   * guarantee itself now lives on the active strategy's own route and is
+   * covered in `test/xauusd-rsi/execution-e2e.spec.ts`.
+   *
+   * The cases kept below still describe live behaviour: the gold route must
+   * not touch a EURUSD row, and the RESULT-reporting route remains in service
+   * for positions the retired strategy already opened.
+   */
 
   it('reports a gold execution result as FILLED via its own route', async () => {
     const { account, token } = await setupAccountWithToken(prisma);

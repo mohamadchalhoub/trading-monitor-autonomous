@@ -39,6 +39,19 @@ from typing import Any
 _TRADE_MODE_LABELS = {0: "DEMO", 1: "CONTEST", 2: "REAL"}
 
 
+# Mirrors MT5's ACCOUNT_MARGIN_MODE_*. An unmapped value yields None rather
+# than a guess: "unknown" must stay distinguishable from "netting", because
+# the risk gate treats them differently in its reporting even though both
+# block the second slot.
+_MARGIN_MODE_LABELS = {0: "RETAIL_NETTING", 1: "EXCHANGE", 2: "RETAIL_HEDGING"}
+
+
+def _margin_mode_label(margin_mode: int | None) -> str | None:
+    if margin_mode is None:
+        return None
+    return _MARGIN_MODE_LABELS.get(margin_mode)
+
+
 def _trade_mode_label(trade_mode: int | None) -> str | None:
     if trade_mode is None:
         return None
@@ -66,6 +79,7 @@ def build_snapshot_payload(
         "marginLevel": account.get("margin_level"),
         "profit": account.get("profit", 0),
         "tradeMode": _trade_mode_label(account.get("trade_mode")),
+        "marginMode": _margin_mode_label(account.get("margin_mode")),
         "terminal": {
             "connected": bool(mt5_connected),
             **({"lastError": last_error} if last_error else {}),

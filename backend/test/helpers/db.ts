@@ -9,6 +9,16 @@ export async function resetDatabase(prisma: PrismaClient): Promise<void> {
   // isolation bug: leftover rows from an earlier test's ticket/dedupKey
   // silently changed a LATER test's behavior, e.g. a stale MISSING_PROTECTION
   // notification row made a fresh incident look already-alerted).
+  // Active-strategy tables. Same isolation bug as the gold tables below had:
+  // a liquidation item left behind by an earlier test is picked up by a later
+  // one as an already-SUBMITTED attempt, which then suppresses the close
+  // request that test was written to observe. Neither table has an FK to
+  // anything cleared later in this function, so they go first.
+  await prisma.xauusdRsiLiquidationItem.deleteMany();
+  await prisma.xauusdRsiDecision.deleteMany();
+  // Retired-strategy decisions. `accountId` is SetNull on account deletion, so
+  // without this the rows survive as orphans and accumulate across tests.
+  await prisma.autonomousDecision.deleteMany();
   await prisma.goldProtectionRestoreRequest.deleteMany();
   await prisma.goldCloseRequest.deleteMany();
   await prisma.goldTelegramNotification.deleteMany();

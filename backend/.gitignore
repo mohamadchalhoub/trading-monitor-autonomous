@@ -4,3 +4,6 @@ dist/
 .env.production
 backups/
 research-state/
+
+# Timestamped .env backups (contain real credentials, same as .env itself)
+.env.bak-*

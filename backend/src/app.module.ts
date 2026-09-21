@@ -15,12 +15,25 @@ import { HealthModule } from './health/health.module';
 import { MarketEventsModule } from './market-events/market-events.module';
 import { HistoricalChartsModule } from './historical-charts/historical-charts.module';
 import { XtbImportModule } from './xtb-import/xtb-import.module';
-import { AutonomousModule } from './autonomous/autonomous.module';
-import { TrendBreakoutModule } from './trend-breakout/trend-breakout.module';
-import { ConfirmedRetestDashboardModule } from './research/confirmed-retest-dashboard/confirmed-retest.controller';
 import { GoldExecutionModule } from './gold-execution/gold-execution.module';
+import { XauusdRsiModule } from './xauusd-rsi/xauusd-rsi.module';
 import { AppController } from './app.controller';
 
+/**
+ * Strategy wiring, as of the migration to `xauusd-m1-rsi-retest-extremes-v1`.
+ *
+ * REMOVED from active wiring (their code and historical rows are untouched
+ * and remain readable; only their ability to generate or submit entries is
+ * gone, because their modules — and therefore their controllers and
+ * coordinators — are no longer registered):
+ *
+ *   - `AutonomousModule`            legacy EURUSD autonomous strategy,
+ *                                   including its AI approval/veto layer.
+ *   - `TrendBreakoutModule`         H4/H1 trend-breakout (EURUSD + XAUUSD).
+ *   - `ConfirmedRetestDashboardModule`  the archived H4 gold research UI.
+ *
+ * The only module able to produce a new entry is `XauusdRsiModule`.
+ */
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -39,10 +52,15 @@ import { AppController } from './app.controller';
     XtbImportModule,
     MarketEventsModule,
     HistoricalChartsModule,
-    AutonomousModule,
-    TrendBreakoutModule,
-    ConfirmedRetestDashboardModule,
+    // Gold EXECUTION INFRASTRUCTURE only — its own entry generation is
+    // disabled (see gold-execution.controller.ts's pending-order route). This
+    // module is retained because the active strategy reuses its Telegram
+    // channel, close-request path and protection-restore path, and because
+    // positions opened by the retired H4 strategy must keep their original
+    // protective management until they resolve.
     GoldExecutionModule,
+    // The single enabled entry strategy.
+    XauusdRsiModule,
   ],
   controllers: [AppController],
 })

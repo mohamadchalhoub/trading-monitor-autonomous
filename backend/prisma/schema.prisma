@@ -75,6 +75,7 @@ model TradingAccount {
   trendBreakoutRiskState          TrendBreakoutRiskState?
   trendBreakoutEmergencyIncidents TrendBreakoutEmergencyIncident[]
   trendBreakoutCloseRequests      TrendBreakoutCloseRequest[]
+  xauusdRsiDecisions              XauusdRsiDecision[]
 
   @@unique([platform, externalAccountId])
   @@map("trading_accounts")
@@ -85,6 +86,15 @@ model TradingAccount {
 // doesn't push it for) simply don't have an opinion, never defaulted to
 // either value — a risk-manager caller reading a null here must treat it
 // as "unknown, not verified," never as "assumed demo."
+// Mirrors MT5's ACCOUNT_MARGIN_MODE_* enum. RETAIL_HEDGING is the only mode
+// in which this strategy's two execution slots can hold genuinely independent
+// positions with independent brackets.
+enum AccountMarginMode {
+  RETAIL_NETTING
+  EXCHANGE
+  RETAIL_HEDGING
+}
+
 enum AccountTradeMode {
   REAL
   DEMO
@@ -104,6 +114,19 @@ model AccountSnapshot {
   // single most safety-critical input, pushed by the collector from MT5's
   // own account_info().trade_mode (mt5_client.py) on every snapshot cycle.
   tradeMode   AccountTradeMode? @map("trade_mode")
+  // The broker's position-accounting mode, from MT5's own
+  // account_info().margin_mode.
+  //
+  // This matters to the two-slot execution model specifically: independent
+  // positions on one symbol, each with its own stop and target, only exist on
+  // a HEDGING account. On a NETTING account a second order merges with,
+  // reduces or reverses the first, so the second slot could not be honoured
+  // faithfully and must be refused rather than emulated.
+  //
+  // Nullable because an older collector does not push it, and "unknown" must
+  // stay distinguishable from "netting" — the risk gate fails closed on both,
+  // but only one of them is an assertion about the broker.
+  marginMode  AccountMarginMode? @map("margin_mode")
   capturedAt  DateTime          @map("captured_at")
 
   account TradingAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -424,7 +447,17 @@ enum GoldTelegramNotificationStatus {
 
 model GoldTelegramNotification {
   id         String                         @id @default(uuid())
+  // Per RECIPIENT, not per event: the sender appends the destination chat to
+  // the caller's logical key, so one event fanned out to several recipients
+  // produces one row each. That is what lets a retry re-send only the
+  // recipient that failed, without duplicating one that already succeeded,
+  // and stops one recipient's success from hiding another's failure.
   dedupKey   String                         @unique @map("dedup_key")
+  // The destination this row's result belongs to. Nullable because rows
+  // written before multi-recipient support existed have no recipient
+  // recorded, and inventing one retroactively would misattribute history.
+  chatId         String?                    @map("chat_id")
+  recipientLabel String?                    @map("recipient_label")
   eventType  String                         @map("event_type")
   status     GoldTelegramNotificationStatus @default(PENDING)
   messageId  Int?                           @map("message_id")
@@ -432,8 +465,18 @@ model GoldTelegramNotification {
   text       String
   createdAt  DateTime                       @default(now()) @map("created_at")
   sentAt     DateTime?                      @map("sent_at")
+  // Delivery attempts made for THIS row, and when the last one happened.
+  //
+  // A failed send used to be final: the row was written FAILED and nothing
+  // ever looked at it again, so a transient network problem silently and
+  // permanently lost a trade alert. These two columns are what let a
+  // retry sweep find the row, space its attempts out, and eventually give
+  // up instead of trying forever.
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime? @map("last_attempt_at")
 
   @@index([status, createdAt])
+  @@index([chatId, createdAt])
   @@map("gold_telegram_notifications")
 }
 
@@ -1397,4 +1440,225 @@ model TrendBreakoutCloseRequest {
   @@index([status, requestedAt])
   @@index([positionTicket, status])
   @@map("trend_breakout_close_requests")
+}
+
+// ============================================================================
+// xauusd-m1-rsi-retest-extremes-v1 — the application's single enabled entry
+// strategy. See backend/src/xauusd-rsi/XAUUSD_M1_RSI_RETEST_EXTREMES_V1_SPEC.md.
+//
+// Deliberately its OWN tables rather than an extension of AutonomousDecision
+// (legacy EURUSD + archived H4 gold) or TrendBreakoutDecision, for the same
+// reason trend-breakout gave for itself: the retired strategies' rows stay
+// exactly as they were, remain interpretable, and a defect in this schema can
+// never touch their data. Nothing here migrates, reinterprets or deletes a
+// historical row — spec §2's "Do not delete trading history to make the
+// application look new."
+// ============================================================================
+
+enum XauusdRsiOrderStatus {
+  // The decision was recorded but never became an order attempt — a signal
+  // skipped by schedule, occupancy, risk or a pre-send recheck. This is the
+  // audit trail spec §12 asks for ("signals and skipped events with reasons"),
+  // and it is distinct from "an order that has no ticket yet."
+  NONE
+  PENDING
+  SENT
+  FILLED
+  FAILED
+  // The broker's response was lost or ambiguous. Never silently resolved:
+  // reconciliation against real broker state is what moves this on.
+  UNKNOWN
+}
+
+enum XauusdRsiSetupKind {
+  SELL_PEAK_RETEST
+  BUY_TROUGH_RETEST
+  EXTREME_SELL
+  EXTREME_BUY
+}
+
+enum XauusdRsiDirection {
+  BUY
+  SELL
+}
+
+// The two independent execution slots. Each holds at most one active,
+// pending or uncertain entry of its own, so a retest position and an extreme
+// position may be open simultaneously and the strategy's maximum concurrency
+// is two. Deliberately NOT one slot per directional setup: SELL and BUY
+// retests share RETEST, and both extremes share EXTREME.
+enum XauusdRsiRuleFamily {
+  RETEST
+  EXTREME
+}
+
+model XauusdRsiDecision {
+  id String @id @default(uuid())
+
+  // Stamped on every row so a historical decision always says which rule set
+  // produced it, even after the rules change again. A revision gets a NEW
+  // version string, never an in-place semantic change to this one.
+  strategyVersion String @map("strategy_version")
+  // Hash of the frozen spec object at decision time — proves which exact
+  // thresholds were in force, independent of the human-readable version.
+  specHash        String @map("spec_hash")
+
+  // Nullable with onDelete: SetNull, matching AutonomousDecision's own
+  // convention: deleting a trading account must never delete the audit trail
+  // of what this strategy decided. Always populated on a live decision.
+  accountId String? @map("account_id")
+  symbol    String  @default("XAUUSD")
+
+  // When the OBSERVATION that produced this signal happened — the instant the
+  // rules were satisfied. Signal age is measured from here, never from
+  // `evaluatedAt`, so a decision delayed by queueing cannot look fresh.
+  observedAt  DateTime @map("observed_at")
+  evaluatedAt DateTime @default(now()) @map("evaluated_at")
+
+  direction  XauusdRsiDirection
+  // Which slot this decision competes for. Persisted rather than derived
+  // from `setupKinds` so a historical row's family is a recorded fact that
+  // survives any later change to the grouping.
+  ruleFamily XauusdRsiRuleFamily  @map("rule_family")
+  // The setups of THIS FAMILY that fired on the one observation. An
+  // observation that triggers both families produces two rows, each carrying
+  // only its own family's setups.
+  setupKinds XauusdRsiSetupKind[] @map("setup_kinds")
+  // Stable identity of the observation-plus-family that produced this row.
+  // Lets a replayed or retried evaluation be recognised as the same event
+  // rather than becoming a second decision.
+  eventId    String               @map("event_id")
+
+  // Full-precision RSI either side of the crossing, plus the bid the RSI was
+  // computed from — the three numbers needed to re-derive the trigger.
+  rsiValue        Decimal  @map("rsi_value") @db.Decimal(12, 8)
+  previousRsi     Decimal? @map("previous_rsi") @db.Decimal(12, 8)
+  basisPrice      Decimal  @map("basis_price") @db.Decimal(18, 6)
+  // TICK / SAMPLED_INTRABAR / CLOSED_BAR_ONLY — spec §7 requires the weaker
+  // modes be labelled, never presented as continuous intrabar observation.
+  observationMode String   @map("observation_mode")
+
+  // Intended order. Null on a decision that never became an order attempt.
+  entryPrice Decimal? @map("entry_price") @db.Decimal(18, 6)
+  stopLoss   Decimal? @map("stop_loss") @db.Decimal(18, 6)
+  takeProfit Decimal? @map("take_profit") @db.Decimal(18, 6)
+  // The ONE risk-approved volume snapshot, persisted so the collector hand-off
+  // submits exactly what risk was computed against — never a later re-read.
+  volumeLots Decimal? @map("volume_lots") @db.Decimal(18, 6)
+
+  reasoning String
+  // Everything needed to reconstruct the signal without guesswork: engine
+  // evidence, thresholds in force, schedule state, risk inputs.
+  evidence  Json
+
+  approved   Boolean @default(false)
+  // Why this decision did NOT become an order, in the operator's words.
+  // Populated for every skip: schedule block, occupancy, risk, pre-send.
+  skipReason String? @map("skip_reason")
+
+  orderStatus XauusdRsiOrderStatus @default(NONE) @map("order_status")
+  // This family's own magic number, recorded per row so ownership is
+  // provable from the data and not only from a constant in code. The two
+  // families use DIFFERENT magic numbers, which is what makes an open broker
+  // position attributable to one slot rather than merely to this strategy.
+  magicNumber Int                  @map("magic_number")
+
+  // When this decision stopped occupying its family's slot.
+  //
+  // A slot is held from the moment a decision is queued until its position is
+  // confirmed gone from broker data — so a FILLED decision whose position is
+  // still open continues to hold the slot, and only reconciliation against
+  // real broker state releases it. Null means "still holding".
+  //
+  // This column is what the partial unique index below keys on, giving the
+  // slot reservation its atomicity: two concurrent submissions for the same
+  // family cannot both insert, because the second violates the index.
+  slotReleasedAt DateTime? @map("slot_released_at")
+
+  // BigInt, not Int. MT5 position tickets are now 11 digits (observed live:
+  // 58537207521), which overflows a 32-bit integer. While this was Int, a
+  // real fill could not be recorded at all: recordExecutionResult threw
+  // "Unable to fit integer value into an INT4", the decision stayed SENT,
+  // and its slot was never released.
+  mt5Ticket      BigInt?   @map("mt5_ticket")
+  // Requested vs. actual, so slippage is recorded rather than inferred.
+  requestedPrice Decimal?  @map("requested_price") @db.Decimal(18, 6)
+  filledPrice    Decimal?  @map("filled_price") @db.Decimal(18, 6)
+  slippagePoints Decimal?  @map("slippage_points") @db.Decimal(18, 6)
+  // What the broker actually reports as the position's protection after the
+  // fill, reconciled against the requested bracket above.
+  brokerStopLoss   Decimal? @map("broker_stop_loss") @db.Decimal(18, 6)
+  brokerTakeProfit Decimal? @map("broker_take_profit") @db.Decimal(18, 6)
+  filledAt         DateTime? @map("filled_at")
+  executionError   String?   @map("execution_error")
+
+  account TradingAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([evaluatedAt(sort: Desc)])
+  @@index([accountId, orderStatus])
+  @@index([observedAt(sort: Desc)])
+  @@index([accountId, ruleFamily, slotReleasedAt])
+  @@index([eventId])
+  // NOTE: the actual slot-reservation constraint is a PARTIAL unique index
+  // created by raw SQL in this model's migration (Prisma cannot express a
+  // WHERE clause on a unique index). It enforces at most one slot-holding
+  // decision per account per rule family. Do not rely on this ordinary index
+  // for correctness.
+  @@map("xauusd_rsi_decisions")
+}
+
+// Friday pre-weekend liquidation (spec §9.3). One row per owned item the
+// application must clear before Friday 23:30 Beirut — an open position or a
+// broker-side pending order. Exists so that a deadline miss is a durable,
+// auditable fact with a named remaining exposure, never an inference from
+// the absence of a log line, and so a restart after the cutoff resumes from
+// real state rather than depending on a callback having fired.
+enum XauusdRsiLiquidationItemKind {
+  POSITION
+  PENDING_ORDER
+}
+
+enum XauusdRsiLiquidationItemStatus {
+  // Identified as owned and needing clearance.
+  OUTSTANDING
+  // A close/cancel was submitted; the broker has not yet confirmed.
+  SUBMITTED
+  // Broker evidence confirms it is gone. The ONLY success state.
+  CONFIRMED_CLEARED
+  // Attempts exhausted or the deadline passed with it still present.
+  FAILED
+}
+
+model XauusdRsiLiquidationItem {
+  id String @id @default(uuid())
+
+  accountId String @map("account_id")
+  symbol    String @default("XAUUSD")
+  // The Friday 23:30 Beirut deadline this item belongs to, as a UTC instant.
+  // Groups every item of one weekend's liquidation without a separate table.
+  deadlineAt DateTime @map("deadline_at")
+
+  kind   XauusdRsiLiquidationItemKind
+  // MT5 position ticket or order ticket.
+  ticket String
+  side   String
+  volume Decimal @db.Decimal(18, 6)
+  // Recorded so a deadline-miss report can state whose exposure remains.
+  magicNumber Int @map("magic_number")
+
+  status       XauusdRsiLiquidationItemStatus @default(OUTSTANDING)
+  attempts     Int      @default(0)
+  lastAttemptAt DateTime? @map("last_attempt_at")
+  lastError    String?   @map("last_error")
+  // Set only on broker-confirmed clearance — never on a submitted request.
+  clearedAt    DateTime? @map("cleared_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // One live liquidation row per ticket per deadline; a retry updates this
+  // row's attempt counter rather than creating a second one, so two workers
+  // cannot both be driving the same ticket.
+  @@unique([deadlineAt, ticket])
+  @@index([status, deadlineAt])
+  @@map("xauusd_rsi_liquidation_items")
 }
