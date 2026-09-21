@@ -290,7 +290,15 @@ export class RsiDecisionService {
     observedAtT: number;
     /** Which slot this decision holds — occupancy is rechecked for that family only. */
     family: RuleFamily;
-  }): Promise<RsiPreSendCheckResult> {
+  },
+  /**
+   * The server instant this check is evaluated at. Explicit so the quote's
+   * age and the schedule are judged against ONE stated time rather than
+   * against whatever timestamp happened to arrive with the data. Defaults
+   * to now; production never supplies it, and it is never taken from a
+   * request.
+   */
+  now: Date = new Date()): Promise<RsiPreSendCheckResult> {
     const { decisionId, accountId, action, entryPrice, observedAtT, family } = params;
 
     const controlBlock = entriesBlockedByControls();
@@ -298,10 +306,21 @@ export class RsiDecisionService {
       return { ok: false, reason: `Refusing to send at the final pre-send check — ${controlBlock}` };
     }
 
-    const tick = await this.prisma.liveTick.findUnique({ where: { symbol: RSI_SYMBOL } });
-    if (!tick) {
-      return { ok: false, reason: 'No live XAUUSD quote at send time — refusing to send blind.' };
+    // The SAME selected quote the rest of the system uses, so the age check
+    // and the deviation check below refer to one observation.
+    //
+    // This previously read `live_ticks` directly. That row is written once
+    // per collector snapshot cycle and lags 25-45s, so after the
+    // eligibility gate began judging freshness on the faster stream, a
+    // signal could pass eligibility and then be refused here for a stale
+    // quote — and the deviation check compared an entry priced off the fast
+    // stream against a price up to 45s older. Both halves now come from the
+    // same resolved quote.
+    const resolution = await this.accountState.resolveQuoteNow(now);
+    if (resolution.quote === null) {
+      return { ok: false, reason: `${resolution.blockedReason} Refusing to send blind.` };
     }
+    const quote = resolution.quote;
 
     // The quote's own age, measured against WALL CLOCK.
     //
@@ -313,11 +332,10 @@ export class RsiDecisionService {
     // never refreshes it — `tickAt` carries the broker's timestamp through
     // ingest unchanged — so the only thing needed to expose a frozen feed is
     // to compare that timestamp against real time, which is what this does.
-    const quoteAgeSeconds = (Date.now() - tick.tickAt.getTime()) / 1000;
-    if (quoteAgeSeconds > RSI_QUOTE_MAX_STALENESS_SECONDS) {
+    if (!quote.fresh) {
       return {
         ok: false,
-        reason: `XAUUSD quote is ${quoteAgeSeconds.toFixed(1)}s old at the pre-send check (limit ${RSI_QUOTE_MAX_STALENESS_SECONDS}s) — refusing to price an entry off a stale quote.`,
+        reason: `XAUUSD quote is ${quote.ageSeconds.toFixed(1)}s old at the pre-send check (limit ${RSI_QUOTE_MAX_STALENESS_SECONDS}s, source ${quote.source}) — refusing to price an entry off a stale quote.`,
       };
     }
 
@@ -333,7 +351,12 @@ export class RsiDecisionService {
     // immediately before order_send (collector/app/executor.py,
     // QUOTE_MAX_AGE_SECONDS). A one-second polling loop guarantees a
     // one-second READ, never a one-second-old market price.
-    const nowT = tick.tickAt.getTime();
+    // The schedule is judged at the EVALUATION instant, not at the quote's
+    // timestamp. Using the quote's time made the feed its own clock: while
+    // it was frozen, "now" froze with it. The quote is separately proven to
+    // be at most RSI_QUOTE_MAX_STALENESS_SECONDS old, so the two can differ
+    // by no more than that.
+    const nowT = now.getTime();
 
     const session = await this.accountState.resolveBrokerSessionOpen(new Date());
     const eligibility = evaluateEntryEligibility({
@@ -358,7 +381,7 @@ export class RsiDecisionService {
       return { ok: false, reason: `Signal is ${signalAgeSeconds.toFixed(1)}s old at send time (limit ${RSI_MAX_SIGNAL_AGE_SECONDS}s) — refusing to send a stale entry.` };
     }
 
-    const currentExecutablePrice = action === 'OPEN_BUY' ? tick.ask.toNumber() : tick.bid.toNumber();
+    const currentExecutablePrice = action === 'OPEN_BUY' ? quote.ask : quote.bid;
     const deviationPoints = Math.abs(currentExecutablePrice - entryPrice) / RSI_GOLD_POINT_SIZE;
     if (deviationPoints > RSI_MAX_ENTRY_DEVIATION_POINTS) {
       return { ok: false, reason: `Executable price moved ${deviationPoints.toFixed(1)}pt since queuing (limit ${RSI_MAX_ENTRY_DEVIATION_POINTS}pt) — refusing to send, not chasing.` };

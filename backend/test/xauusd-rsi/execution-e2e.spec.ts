@@ -19,6 +19,8 @@ import { request } from '../helpers/http';
 import { RSI_MAGIC_EXTREME, RSI_MAGIC_RETEST } from '../../src/xauusd-rsi/safety-constants';
 import { getRsiKillSwitchPath, getRsiStopNewEntriesPath } from '../../src/xauusd-rsi/controls';
 import { SPEC, SPEC_HASH } from '../../src/xauusd-rsi/spec';
+import { RsiAccountStateService } from '../../src/xauusd-rsi/account-state.service';
+import { RsiDecisionService } from '../../src/xauusd-rsi/decision.service';
 
 /**
  * Wednesday 2026-09-23, 15:00 Beirut — a plainly eligible instant: not in the
@@ -64,8 +66,12 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
   async function seedPrerequisites(accountId: string) {
     await prisma.liveTick.upsert({
       where: { symbol: 'XAUUSD' },
-      create: { symbol: 'XAUUSD', bid: 4345.45, ask: 4345.63, tickAt: new Date(ELIGIBLE_T) },
-      update: { bid: 4345.45, ask: 4345.63, tickAt: new Date(ELIGIBLE_T) },
+      // Seeded at real now, not at ELIGIBLE_T: the pre-send check resolves a
+      // real quote and refuses one dated days away, which a fixed future
+      // fixture date would be. ELIGIBLE_T still pins the SCHEDULE-specific
+      // cases, which call preSendCheck directly with an explicit clock.
+      create: { symbol: 'XAUUSD', bid: 4345.45, ask: 4345.63, tickAt: new Date() },
+      update: { bid: 4345.45, ask: 4345.63, tickAt: new Date() },
     });
     await prisma.accountSnapshot.create({
       data: {
@@ -210,38 +216,49 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
       expect(after.skipReason).toMatch(/STOP NEW ENTRIES/);
     });
 
+    /**
+     * These two pin a SCHEDULE instant, which can no longer be smuggled in
+     * through the quote's timestamp: the quote must now be genuinely fresh,
+     * so a fixture dated days away is refused before the schedule is ever
+     * consulted. They call preSendCheck directly with an explicit evaluation
+     * clock and a quote that is fresh at that instant, which tests the same
+     * behaviour more directly than routing it through HTTP.
+     */
+    async function preSendAt(accountId: string, decisionId: string, at: number) {
+      await prisma.liveTick.update({
+        where: { symbol: 'XAUUSD' },
+        data: { bid: 4345.45, ask: 4345.63, tickAt: new Date(at - 1_000) },
+      });
+      const accountState = new RsiAccountStateService(prisma as never);
+      const decisions = new RsiDecisionService(prisma as never, accountState);
+      return decisions.preSendCheck(
+        { decisionId, accountId, action: 'OPEN_SELL', entryPrice: 4345.45, observedAtT: at - 2_000, family: 'RETEST' },
+        new Date(at),
+      );
+    }
+
     it('when the Friday cutoff has been reached by send time', async () => {
-      const { account, token } = await setupAccountWithToken(prisma);
+      const { account } = await setupAccountWithToken(prisma);
       await seedPrerequisites(account.id);
       const decision = await queueDecision(account.id);
 
-      // Friday 2026-09-25, 23:05 Beirut — past the 23:00 cutoff. The decision
-      // was created before it; this proves a queued entry cannot submit after.
-      await prisma.liveTick.update({
-        where: { symbol: 'XAUUSD' },
-        data: { tickAt: new Date(Date.parse('2026-09-25T20:05:00.000Z')) },
-      });
+      // Friday 2026-09-25, 23:05 Beirut — past the 23:00 cutoff.
+      const result = await preSendAt(account.id, decision.id, Date.parse('2026-09-25T20:05:00.000Z'));
 
-      const res = await poll(account.id, token);
-      expect(res.body.order).toBeNull();
-      const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
-      expect(after.orderStatus).toBe('NONE');
-      expect(after.skipReason).toMatch(/FRIDAY_ENTRY_CUTOFF/);
+      expect(result.ok).toBe(false);
+      expect(result.reason).toMatch(/FRIDAY_ENTRY_CUTOFF/);
     });
 
     it('when the daily pause has begun by send time', async () => {
-      const { account, token } = await setupAccountWithToken(prisma);
+      const { account } = await setupAccountWithToken(prisma);
       await seedPrerequisites(account.id);
-      await queueDecision(account.id);
+      const decision = await queueDecision(account.id);
 
-      // Wednesday 23:35 Beirut.
-      await prisma.liveTick.update({
-        where: { symbol: 'XAUUSD' },
-        data: { tickAt: new Date(Date.parse('2026-09-23T20:35:00.000Z')) },
-      });
+      // Wednesday 23:35 Beirut, inside the 23:30-01:00 pause.
+      const result = await preSendAt(account.id, decision.id, Date.parse('2026-09-23T20:35:00.000Z'));
 
-      const res = await poll(account.id, token);
-      expect(res.body.order).toBeNull();
+      expect(result.ok).toBe(false);
+      expect(result.reason).toMatch(/DAILY_PAUSE|Schedule/);
     });
 
     it('when the account is no longer DEMO', async () => {
@@ -265,8 +282,10 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
     it('when the signal has gone stale by send time', async () => {
       const { account, token } = await setupAccountWithToken(prisma);
       await seedPrerequisites(account.id);
-      // Observed two minutes before the quote's own time; the limit is 60s.
-      await queueDecision(account.id, { observedAt: new Date(ELIGIBLE_T - 120_000) });
+      // Observed two minutes before the evaluation clock; the limit is 60s.
+      // Relative to real time, because the pre-send check now evaluates at
+      // the real server instant rather than at the quote's timestamp.
+      await queueDecision(account.id, { observedAt: new Date(Date.now() - 120_000) });
 
       const res = await poll(account.id, token);
       expect(res.body.order).toBeNull();
@@ -278,7 +297,7 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
       // 100pt = $1.00 is the limit; move the quote $3.
       await prisma.liveTick.update({
         where: { symbol: 'XAUUSD' },
-        data: { bid: 4348.45, ask: 4348.63, tickAt: new Date(ELIGIBLE_T) },
+        data: { bid: 4348.45, ask: 4348.63, tickAt: new Date() },
       });
 
       const res = await poll(account.id, token);
