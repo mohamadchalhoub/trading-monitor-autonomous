@@ -176,3 +176,65 @@ describe('Freshness is bounded on BOTH sides', () => {
     expect(step.notes.join(' ')).toMatch(/FUTURE/);
   });
 });
+
+describe('Quote freshness uses the freshest XAUUSD stream, not the slowest', () => {
+  /**
+   * Regression test for a gate that measured the wrong thing.
+   *
+   * The collector writes XAUUSD twice. `live_ticks` is written once per
+   * snapshot cycle, and that cycle also syncs candles across six timeframes
+   * and two symbols, so it lands every 25-45 seconds. `historical_ticks` is
+   * written by the dedicated one-second observation thread and is what the
+   * strategy actually observes.
+   *
+   * Reading only `live_ticks` made the eligibility gate oscillate between
+   * "quote is 6.7s old" and "quote is 43s old (limit 30s)" with no change in
+   * the market, blocking entries whenever the snapshot cycle ran long. Any
+   * signal in those windows was consumed and skipped.
+   *
+   * The comparison is not trivial: the two streams store timestamps on
+   * different clocks.
+   */
+  const NOW = Date.UTC(2026, 8, 21, 12, 0, 0);
+
+  /** What the freshness check computes, given both streams. */
+  function ageSeconds(liveTickUtcMs: number | null, storedObservationMs: number | null) {
+    const observationUtc = storedObservationMs === null ? null : storedBrokerTimeToUtcMs(storedObservationMs);
+    const candidates = [liveTickUtcMs, observationUtc].filter((t): t is number => t !== null);
+    return (NOW - Math.max(...candidates)) / 1000;
+  }
+
+  it('reports a fresh quote when observations are current but live_ticks lags', () => {
+    // The real case: snapshot row 43s old, observation thread 1s old.
+    const live = NOW - 43_000;
+    const observed = utcToWallClockMs('EET', NOW - 1_000);
+    expect(ageSeconds(live, observed)).toBeCloseTo(1, 3);
+    expect(ageSeconds(live, observed)).toBeLessThan(SPEC.observation.maxStalenessMs / 1000);
+  });
+
+  it('would have blocked on the old behaviour, which is the defect', () => {
+    // live_ticks alone: 43s, past the 30s limit.
+    expect(ageSeconds(NOW - 43_000, null)).toBeCloseTo(43, 3);
+    expect(ageSeconds(NOW - 43_000, null)).toBeGreaterThan(SPEC.observation.maxStalenessMs / 1000);
+  });
+
+  it('still reports STALE when BOTH streams are old — the gate is not weakened', () => {
+    const live = NOW - 120_000;
+    const observed = utcToWallClockMs('EET', NOW - 95_000);
+    expect(ageSeconds(live, observed)).toBeCloseTo(95, 3);
+    expect(ageSeconds(live, observed)).toBeGreaterThan(SPEC.observation.maxStalenessMs / 1000);
+  });
+
+  it('converts the observation clock rather than comparing raw values', () => {
+    // Raw, the stored observation looks 3h in the FUTURE; uncorrected it
+    // would make every quote appear impossibly fresh.
+    const observedRaw = utcToWallClockMs('EET', NOW - 5_000);
+    expect(NOW - observedRaw).toBeLessThan(0);
+    expect(ageSeconds(null, observedRaw)).toBeCloseTo(5, 3);
+  });
+
+  it('works when only one stream exists', () => {
+    expect(ageSeconds(NOW - 2_000, null)).toBeCloseTo(2, 3);
+    expect(ageSeconds(null, utcToWallClockMs('EET', NOW - 2_000))).toBeCloseTo(2, 3);
+  });
+});
