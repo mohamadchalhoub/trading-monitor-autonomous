@@ -751,7 +751,13 @@ export interface XauusdRsiStatus {
     currentFridayDeadline: { iso: string; beirut: string } | null;
     inWeekendWindow: boolean;
   };
-  entryEligibility: {
+  /**
+   * Added after the rest of this payload, so a backend that predates it
+   * simply omits it. Optional on purpose — the dashboard must render
+   * against an older backend rather than crash, which is exactly what it
+   * did when the page hot-reloaded ahead of a backend restart.
+   */
+  entryEligibility?: {
     canEnterNow: boolean;
     blockingGates: string[];
     gates: Array<{ gate: string; passed: boolean; detail: string }>;
