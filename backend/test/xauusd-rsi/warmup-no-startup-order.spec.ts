@@ -27,7 +27,9 @@ function seed(closes: readonly number[], startT = T0): { state: EngineState; sig
   let signals = 0;
   let t = startT;
   for (const close of closes) {
-    const step = applyClosedBar(state, t, close);
+    // advancePattern = false, exactly as RsiWatchService.reseedFromCandles
+    // does: warm-up makes RSI computable and must leave no pattern state.
+    const step = applyClosedBar(state, t, close, false);
     state = step.state;
     signals += step.signals.length;
     t += M1_MS;
@@ -76,6 +78,9 @@ describe('Warm-up seeding', () => {
     // it will arm at all, so a seed that ends inside one arms nothing.
     expect(state.pattern.sellRetest.phase).toBe('AWAITING_ARM_RESET');
     expect(state.pattern.buyRetest.phase).toBe('AWAITING_ARM_RESET');
+    // Nothing part-formed that a first live tick could retest.
+    expect(state.pattern.sellRetest.frozenExtreme).toBeNull();
+    expect(state.pattern.buyRetest.frozenExtreme).toBeNull();
     expect(state.pattern.extremeSell.phase).toBe('AWAITING_RESET');
     expect(state.pattern.extremeBuy.phase).toBe('AWAITING_RESET');
   });

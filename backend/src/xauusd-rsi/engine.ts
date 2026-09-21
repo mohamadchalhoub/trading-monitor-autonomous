@@ -33,7 +33,7 @@
 import { SPEC, SPEC_HASH } from './spec';
 import { RSI_FUTURE_OBSERVATION_TOLERANCE_MS } from './safety-constants';
 import { commitClosedBar, createRsiState, currentRsi, isWarmedUp, projectRsi, WilderRsiState } from './rsi';
-import { createPatternState, Direction, observe, PatternState, RuleFamily, SetupKind, splitByRuleFamily, TriggeredSetup } from './pattern';
+import { createPatternState, Direction, observe, observeClosedBar, PatternState, RuleFamily, SetupKind, splitByRuleFamily, TriggeredSetup } from './pattern';
 
 export const M1_MS = 60_000;
 
@@ -148,7 +148,20 @@ export interface StepResult {
  * supplies the missing bars; otherwise `needsRsiReseed` is raised and the
  * caller must rebuild from history before signals resume.
  */
-export function applyClosedBar(state: EngineState, barStartT: number, close: number): StepResult {
+export function applyClosedBar(
+  state: EngineState,
+  barStartT: number,
+  close: number,
+  /**
+   * Whether this bar may advance the retest patterns.
+   *
+   * FALSE while seeding the indicator from history. Warm-up exists to make
+   * RSI computable and nothing else: a trough frozen from historical bars
+   * could be retested by the first live tick and open an order from history,
+   * which spec §7 forbids. Live bars pass true.
+   */
+  advancePattern = true,
+): StepResult {
   const notes: string[] = [];
   const bucket = minuteBucket(barStartT);
 
@@ -206,6 +219,17 @@ export function applyClosedBar(state: EngineState, barStartT: number, close: num
     needsRsiReseed: next.needsRsiReseed,
   };
 
+  // The retest patterns progress here, on the closed bar, never on a tick.
+  if (advancePattern) {
+    const committedRsi = currentRsi(next.rsi);
+    if (committedRsi !== null) {
+      const stepped = observeClosedBar({ state: next.pattern, closeRsi: committedRsi });
+      next = { ...next, pattern: stepped.state };
+      if (stepped.notes.length > 0) notes.push(...stepped.notes.slice(0, 3));
+    }
+  }
+
+  // Still no signals: a closed bar can confirm a level but never open a trade.
   return { state: next, signals: [], notes, didReset };
 }
 
