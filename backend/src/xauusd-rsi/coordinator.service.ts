@@ -14,7 +14,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmittedSignal } from './engine';
-import { entriesBlockedByControls, getRsiExecutionMode, isRsiKillSwitchActive, stopNewEntriesState } from './controls';
+import { entriesBlockedByControls, getRsiExecutionMode, getRsiRequiredTradeMode, isRsiKillSwitchActive, stopNewEntriesState } from './controls';
 import { RsiRuntimeSettingsService } from './runtime-settings.service';
 import { RsiAccountStateService } from './account-state.service';
 import { buildRsiBracket, evaluateRsiRiskManager } from './risk-manager';
@@ -46,7 +46,7 @@ export interface RsiCoordinatorContext {
 }
 
 export interface RsiCoordinatorResult {
-  mode: 'OFF' | 'SHADOW' | 'DEMO';
+  mode: 'OFF' | 'SHADOW' | 'DEMO' | 'LIVE';
   decisionId: string;
   queued: boolean;
   skipReason: string | null;
@@ -211,6 +211,11 @@ export class RsiCoordinatorService {
     // candidate would mean two concurrent positions on one symbol.
     const slots = await this.accountState.resolveSlotStates(context.accountId);
     const otherFamilySlotHeld = family === 'RETEST' ? slots.EXTREME.occupied : slots.RETEST.occupied;
+    // SHADOW has no real/demo distinction of its own — it evaluates the full
+    // pipeline "as if trading" against DEMO, same as before this account
+    // ever supported a REAL trade_mode at all. Only DEMO and LIVE modes
+    // reach this point with their own required mode.
+    const requiredTradeMode = getRsiRequiredTradeMode(mode) ?? 'DEMO';
     const accountInfo = {
       ...baseAccountInfo,
       existingCombinedRiskAmount: baseAccountInfo.existingCombinedRiskAmount + reservedRisk.amount,
@@ -235,6 +240,7 @@ export class RsiCoordinatorService {
       requestedVolumeLots: resolvedVolume.volumeLots,
       pointSize: RSI_GOLD_POINT_SIZE,
       otherFamilySlotHeld,
+      requiredTradeMode,
     });
 
     const riskEvidence = {
@@ -270,7 +276,7 @@ export class RsiCoordinatorService {
       return { mode, decisionId: id, queued: false, skipReason: 'SHADOW mode — no order queued.' };
     }
 
-    // --- DEMO from here. ---
+    // --- DEMO or LIVE from here. ---
     if (!verdict.approved) {
       const id = await record({
         approved: false,
@@ -320,7 +326,7 @@ export class RsiCoordinatorService {
         extraEvidence: riskEvidence,
       });
       this.logger.log(
-        `DEMO: reserved the ${family} slot and queued order ${id} (${action} @ ${entryPrice}, SL ${stopLoss}, TP ${takeProfit}, ${verdict.volumeLots} lots)`,
+        `${mode}: reserved the ${family} slot and queued order ${id} (${action} @ ${entryPrice}, SL ${stopLoss}, TP ${takeProfit}, ${verdict.volumeLots} lots)`,
       );
       return { mode, decisionId: id, queued: true, skipReason: null };
     } catch (err) {

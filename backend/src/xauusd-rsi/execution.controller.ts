@@ -17,6 +17,7 @@ import { IsBoolean, IsInt, IsNumber, IsOptional, IsString } from 'class-validato
 import { AccountsService } from '../accounts/accounts.service';
 import { CollectorTokenGuard } from '../auth/collector-token.guard';
 import { RsiDecisionService } from './decision.service';
+import { getRsiExecutionMode } from './controls';
 import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
 import { GoldAiSummaryService } from '../gold-execution/gold-ai-summary.service';
 import { RSI_DEFAULT_VOLUME_LOTS, RSI_GOLD_POINT_SIZE, rsiMagicForFamily, RSI_SYMBOL } from './safety-constants';
@@ -82,7 +83,7 @@ export class RsiExecutionController {
       void this.telegram.notify(
         'SUBMISSION_REJECTED',
         `rsi-presend:${decision.id}`,
-        `XAUUSD RSI DEMO — ${decision.ruleFamily} ${decision.direction} entry cancelled at the pre-send check and never sent to the broker. decision=${decision.id} reason=${preSend.reason}`,
+        `XAUUSD RSI ${getRsiExecutionMode()} — ${decision.ruleFamily} ${decision.direction} entry cancelled at the pre-send check and never sent to the broker. decision=${decision.id} reason=${preSend.reason}`,
       );
       return { order: null };
     }
@@ -135,12 +136,12 @@ export class RsiExecutionController {
       void this.telegram.notify(
         'SUBMISSION_REJECTED',
         `rsi-uncertain:${decisionId}`,
-        `XAUUSD RSI DEMO — submission outcome UNKNOWN. decision=${decisionId} error=${dto.errorMessage ?? 'no broker response'}. ` +
+        `XAUUSD RSI ${getRsiExecutionMode()} — submission outcome UNKNOWN. decision=${decisionId} error=${dto.errorMessage ?? 'no broker response'}. ` +
           'The order may or may not have reached the broker; it is NOT assumed failed and the position slot stays occupied until reconciled.',
       );
     } else if (dto.ok) {
       const text =
-        `XAUUSD RSI DEMO — entry filled (broker-confirmed). decision=${decisionId} ticket=${dto.ticket ?? 'n/a'} ` +
+        `XAUUSD RSI ${getRsiExecutionMode()} — entry filled (broker-confirmed). decision=${decisionId} ticket=${dto.ticket ?? 'n/a'} ` +
         `filled=${dto.filledPrice ?? 'n/a'} brokerSL=${dto.brokerStopLoss ?? 'n/a'} brokerTP=${dto.brokerTakeProfit ?? 'n/a'}`;
       void this.telegram.notify('FILL_CONFIRMED', `rsi-fill:${decisionId}`, text);
       // Narration is generated from the SAME factual text that was already
@@ -150,7 +151,7 @@ export class RsiExecutionController {
       void this.telegram.notify(
         'SUBMISSION_REJECTED',
         `rsi-reject:${decisionId}`,
-        `XAUUSD RSI DEMO — entry rejected by the broker. decision=${decisionId} error=${dto.errorMessage ?? 'unknown'}`,
+        `XAUUSD RSI ${getRsiExecutionMode()} — entry rejected by the broker. decision=${decisionId} error=${dto.errorMessage ?? 'unknown'}`,
       );
     }
 
