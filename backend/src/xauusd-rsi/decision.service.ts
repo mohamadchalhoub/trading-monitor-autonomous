@@ -9,7 +9,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RsiAccountStateService } from './account-state.service';
-import { entriesBlockedByControls } from './controls';
+import { entriesBlockedByControls, getRsiExecutionMode, getRsiRequiredTradeMode } from './controls';
 import { evaluateEntryEligibility } from './schedule';
 import type { RuleFamily } from './pattern';
 import {
@@ -392,9 +392,13 @@ export class RsiDecisionService {
       return { ok: false, reason: `Occupancy changed since queuing (${occupancy.exposureDescription}) — refusing to send.` };
     }
 
+    // Re-read fresh, same posture as every other control in this method — the
+    // mode that was in effect when the decision was queued is not trusted at
+    // send time.
+    const requiredTradeMode = getRsiRequiredTradeMode(getRsiExecutionMode());
     const riskInfo = await this.accountState.resolveAccountRiskInfo(accountId);
-    if (riskInfo.tradeMode !== 'DEMO') {
-      return { ok: false, reason: `Account trade_mode is now "${riskInfo.tradeMode}", not DEMO — refusing to send. This is an absolute, non-negotiable safety rule.` };
+    if (requiredTradeMode !== null && riskInfo.tradeMode !== requiredTradeMode) {
+      return { ok: false, reason: `Account trade_mode is now "${riskInfo.tradeMode}", not the required ${requiredTradeMode} — refusing to send. This is an absolute, non-negotiable safety rule.` };
     }
 
     return { ok: true, reason: null };

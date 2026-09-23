@@ -18,25 +18,46 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * There is no REAL mode and no automatic real-account path — the type cannot
- * hold such a value, so no configuration mistake can produce one.
+ * DEMO and LIVE are symmetric, not a demo mode plus an unguarded escape
+ * hatch: each requires the connected MT5 account to report the matching
+ * `trade_mode` (DEMO→DEMO, LIVE→REAL) before an order is ever queued — see
+ * `getRsiRequiredTradeMode` and the check in `risk-manager.ts`/
+ * `decision.service.ts`. A config value can select which account family is
+ * intended, but it can never itself cause an order against the other kind of
+ * account — the live re-check of the account's own reported trade_mode is
+ * what actually gates the send, every time, independent of this setting.
  *
  * - `OFF`   — no evaluation, no orders. Protective monitoring, reconciliation
  *             and Friday liquidation of owned positions still run.
  * - `SHADOW`— the full pipeline runs and every decision is recorded exactly
  *             as if trading, but nothing is ever queued for the broker.
- * - `DEMO`  — an approved decision is queued as a real order against the
- *             positively-verified demo account.
+ * - `DEMO`  — an approved decision is queued as a real order, but only once
+ *             the connected account is positively verified as DEMO.
+ * - `LIVE`  — an approved decision is queued as a real order against real
+ *             money, but only once the connected account is positively
+ *             verified as REAL.
  */
-export type RsiExecutionMode = 'OFF' | 'SHADOW' | 'DEMO';
+export type RsiExecutionMode = 'OFF' | 'SHADOW' | 'DEMO' | 'LIVE';
 
 export function getRsiExecutionMode(): RsiExecutionMode {
   const raw = (process.env.XAUUSD_RSI_EXECUTION_MODE ?? '').trim().toUpperCase();
   if (raw === 'SHADOW') return 'SHADOW';
   if (raw === 'DEMO') return 'DEMO';
+  if (raw === 'LIVE') return 'LIVE';
   // Fails closed to OFF for anything else — unset, a typo, "true" — so an
   // active mode is never reached by accident.
   return 'OFF';
+}
+
+/**
+ * The account trade_mode an execution mode requires before an order may be
+ * sent. `null` for modes that never send (OFF, SHADOW) — callers that reach
+ * this point should not be asking.
+ */
+export function getRsiRequiredTradeMode(mode: RsiExecutionMode): 'DEMO' | 'REAL' | null {
+  if (mode === 'DEMO') return 'DEMO';
+  if (mode === 'LIVE') return 'REAL';
+  return null;
 }
 
 export function getRsiKillSwitchPath(): string {

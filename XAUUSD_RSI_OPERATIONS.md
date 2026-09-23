@@ -68,8 +68,22 @@ changes that. Close the position by hand instead.
 **Broker requirement.** Two independent positions on one symbol exist only on
 a hedging account. The application reads `account_info().margin_mode` and
 refuses the second concurrent position unless it is `RETAIL_HEDGING`, rather
-than emulating it with one net position. This account (MetaQuotes-Demo
-5055783885) reports `RETAIL_HEDGING`, so both slots are usable here.
+than emulating it with one net position. MetaQuotes-Demo 5055783885 reports
+`RETAIL_HEDGING`, so both slots were usable there. **Check the dashboard's
+`marginMode`/`supportsTwoIndependentPositions` field for whichever account is
+actually connected** — a different broker may report `RETAIL_NETTING`
+instead, in which case only one slot is usable until/unless that broker
+offers hedging.
+
+**DEMO vs LIVE.** `XAUUSD_RSI_EXECUTION_MODE` is `OFF` | `SHADOW` | `DEMO` |
+`LIVE`. DEMO and LIVE are symmetric, not a safe mode plus an escape hatch:
+each independently re-verifies the connected account's own reported
+`trade_mode` before every order (`DEMO` requires `DEMO`, `LIVE` requires
+`REAL`), so this setting can never by itself send an order to the wrong kind
+of account — a mismatch fails closed exactly the same way in both directions.
+Check the dashboard's `demo.tradeMode` / `demo.requiredTradeMode` /
+`demo.demoVerified` fields to confirm which account is actually connected
+before trusting either mode.
 
 ---
 

@@ -44,6 +44,7 @@ function baseInput(overrides: Partial<RsiRiskManagerInput> = {}): RsiRiskManager
     requestedVolumeLots: 0.5,
     pointSize: RSI_GOLD_POINT_SIZE,
     otherFamilySlotHeld: false,
+    requiredTradeMode: 'DEMO',
     ...overrides,
   };
 }
@@ -77,11 +78,33 @@ describe('The DEMO gate', () => {
   it('refuses a REAL account outright', () => {
     const v = evaluateRsiRiskManager(baseInput({ accountInfo: { ...baseInput().accountInfo, tradeMode: 'REAL' } }));
     expect(v.approved).toBe(false);
-    expect(v.rejectionReason).toMatch(/not DEMO/);
+    expect(v.rejectionReason).toMatch(/not the required DEMO/);
   });
 
   it('refuses a CONTEST account too', () => {
     const v = evaluateRsiRiskManager(baseInput({ accountInfo: { ...baseInput().accountInfo, tradeMode: 'CONTEST' } }));
+    expect(v.approved).toBe(false);
+  });
+});
+
+describe('The LIVE gate — symmetric with DEMO', () => {
+  it('approves a REAL account when LIVE is required', () => {
+    const v = evaluateRsiRiskManager(
+      baseInput({ requiredTradeMode: 'REAL', accountInfo: { ...baseInput().accountInfo, tradeMode: 'REAL' } }),
+    );
+    expect(v.approved).toBe(true);
+  });
+
+  it('refuses a DEMO account when LIVE is required — a LIVE config can never silently trade demo', () => {
+    const v = evaluateRsiRiskManager(baseInput({ requiredTradeMode: 'REAL' }));
+    expect(v.approved).toBe(false);
+    expect(v.rejectionReason).toMatch(/not the required REAL/);
+  });
+
+  it('refuses a CONTEST account when LIVE is required', () => {
+    const v = evaluateRsiRiskManager(
+      baseInput({ requiredTradeMode: 'REAL', accountInfo: { ...baseInput().accountInfo, tradeMode: 'CONTEST' } }),
+    );
     expect(v.approved).toBe(false);
   });
 });

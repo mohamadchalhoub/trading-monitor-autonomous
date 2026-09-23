@@ -20,7 +20,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RsiAccountStateService } from './account-state.service';
 import { RsiRuntimeSettingsService } from './runtime-settings.service';
 import { GoldTelegramService } from '../gold-execution/gold-telegram.service';
-import { getRsiExecutionMode, killSwitchState, stopNewEntriesState } from './controls';
+import { getRsiExecutionMode, getRsiRequiredTradeMode, killSwitchState, stopNewEntriesState } from './controls';
 import { evaluateClockSchedule, evaluateEntryEligibility, evaluateLiquidationPhase, nextClockEligibleAt, nextFridayDeadlineAt } from './schedule';
 import { beirutLabel } from './time';
 import { SPEC, SPEC_HASH } from './spec';
@@ -117,8 +117,10 @@ export class RsiDashboardController {
       demo: {
         accountId,
         tradeMode: riskInfo?.tradeMode ?? 'UNKNOWN',
-        // Stated plainly: anything other than DEMO blocks every entry.
-        demoVerified: riskInfo?.tradeMode === 'DEMO',
+        requiredTradeMode: getRsiRequiredTradeMode(mode),
+        // Stated plainly: anything other than the mode's required trade_mode
+        // blocks every entry.
+        demoVerified: riskInfo?.tradeMode === getRsiRequiredTradeMode(mode),
         equity: riskInfo?.equity ?? null,
         accountCurrency: riskInfo?.accountCurrency ?? null,
         // Whether the broker can genuinely hold two independent positions with

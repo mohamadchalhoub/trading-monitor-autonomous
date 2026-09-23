@@ -123,6 +123,15 @@ export interface RsiRiskManagerInput {
    * `evaluateRsiRiskManager`.
    */
   otherFamilySlotHeld: boolean;
+  /**
+   * Which trade_mode the connected account must report for this candidate to
+   * be allowed at all — 'DEMO' for the DEMO execution mode, 'REAL' for LIVE.
+   * Passed in rather than hardcoded so this remains the same absolute,
+   * non-negotiable gate in both directions: a DEMO-configured run can never
+   * trade a real account, and a LIVE-configured run can never silently
+   * trade a demo one instead.
+   */
+  requiredTradeMode: 'DEMO' | 'REAL';
 }
 
 export interface RsiRiskManagerVerdict {
@@ -164,9 +173,9 @@ export function evaluateRsiRiskManager(input: RsiRiskManagerInput): RsiRiskManag
   }
 
   // The single most safety-critical check.
-  if (accountInfo.tradeMode !== 'DEMO') {
+  if (accountInfo.tradeMode !== input.requiredTradeMode) {
     return reject(
-      `Refusing to trade: account trade_mode is "${accountInfo.tradeMode}", not DEMO. This is an absolute, non-negotiable safety rule.`,
+      `Refusing to trade: account trade_mode is "${accountInfo.tradeMode}", not the required ${input.requiredTradeMode}. This is an absolute, non-negotiable safety rule.`,
     );
   }
 

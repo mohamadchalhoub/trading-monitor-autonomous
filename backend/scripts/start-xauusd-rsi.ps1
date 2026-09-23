@@ -171,8 +171,11 @@ if ((Test-Path $killSwitch) -or (Test-Path $ownKillSwitch)) {
     if (Test-Path $killSwitch) { Write-Host "    $killSwitch" -ForegroundColor Yellow }
     if (Test-Path $ownKillSwitch) { Write-Host "    $ownKillSwitch" -ForegroundColor Yellow }
 }
-if ($mode -notlike 'DEMO*') {
-    Write-Host "  NOTE: mode is not DEMO, so signals will be observed and recorded but no order will be queued." -ForegroundColor Yellow
+if ($mode -eq 'OFF' -or $mode -eq 'SHADOW') {
+    Write-Host "  NOTE: mode is $mode, so signals will be observed and recorded but no order will be queued." -ForegroundColor Yellow
+}
+if ($mode -eq 'LIVE') {
+    Write-Host "  LIVE MODE - approved decisions will be queued as REAL orders against real money." -ForegroundColor Red
 }
 Write-Host ""
 

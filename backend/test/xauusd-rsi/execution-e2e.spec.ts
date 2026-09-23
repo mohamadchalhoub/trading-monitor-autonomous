@@ -276,7 +276,7 @@ describe('XAUUSD RSI execution — collector poll and report', () => {
       const res = await poll(account.id, token);
       expect(res.body.order).toBeNull();
       const after = await prisma.xauusdRsiDecision.findUniqueOrThrow({ where: { id: decision.id } });
-      expect(after.skipReason).toMatch(/not DEMO/);
+      expect(after.skipReason).toMatch(/not the required DEMO/);
     });
 
     it('when the signal has gone stale by send time', async () => {
