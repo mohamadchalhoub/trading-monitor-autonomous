@@ -330,7 +330,13 @@ export class RsiAccountStateService {
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const recentSnapshots = await this.prisma.accountSnapshot.findMany({
-      where: { accountId, capturedAt: { gte: thirtyDaysAgo } },
+      // Scoped to the CURRENT trade_mode, not just the last 30 days. The same
+      // account row can span a broker/account credential switch (e.g. demo to
+      // real) — without this, a peak equity from a completely different
+      // underlying account (different currency/balance scale) would produce a
+      // meaningless, near-100% "drawdown" the moment credentials changed,
+      // which would then wrongly trip the drawdown cap and block every entry.
+      where: { accountId, capturedAt: { gte: thirtyDaysAgo }, tradeMode },
       select: { equity: true },
     });
     const peakEquity = recentSnapshots.length > 0 ? Math.max(...recentSnapshots.map((s) => s.equity.toNumber())) : equity;
