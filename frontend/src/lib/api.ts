@@ -664,12 +664,13 @@ export interface XauusdRsiStatus {
     symbol: string;
     timeframe: string;
     magicNumbers: { RETEST: number; EXTREME: number };
-    executionMode: 'OFF' | 'SHADOW' | 'DEMO';
+    executionMode: 'OFF' | 'SHADOW' | 'DEMO' | 'LIVE';
     isTheOnlyEnabledEntryStrategy: boolean;
   };
   demo: {
     accountId: string | null;
     tradeMode: string;
+    requiredTradeMode: 'DEMO' | 'REAL' | null;
     demoVerified: boolean;
     equity: number | null;
     accountCurrency: string | null;

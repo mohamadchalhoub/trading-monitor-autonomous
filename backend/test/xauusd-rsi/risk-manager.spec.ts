@@ -7,7 +7,15 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildRsiBracket, evaluateRsiRiskManager, RsiRiskManagerInput } from '../../src/xauusd-rsi/risk-manager';
-import { RSI_GOLD_POINT_SIZE, RSI_SL_POINTS, RSI_TP_POINTS } from '../../src/xauusd-rsi/safety-constants';
+import {
+  RSI_COMBINED_RISK_CAP_PCT,
+  RSI_DAILY_LOSS_CAP_PCT,
+  RSI_DRAWDOWN_CAP_PCT,
+  RSI_GOLD_POINT_SIZE,
+  RSI_SL_POINTS,
+  RSI_STOP_RISK_CAP_PCT,
+  RSI_TP_POINTS,
+} from '../../src/xauusd-rsi/safety-constants';
 
 const ENTRY = 4345.0;
 
@@ -267,11 +275,6 @@ describe('Currency and equity', () => {
   });
 
   it('needs no conversion when the currencies already match, and a missing rate is then irrelevant', () => {
-    // Equity is raised above the live account's figure on purpose. In USD the
-    // same $250 stop against ~$50,000 is 0.50005% of equity, which is over the
-    // 0.5% cap — the EUR account only clears it because the conversion shrinks
-    // the risk to ~E216.76. That is a genuine property of the caps, not a
-    // quirk of this test, so the case is isolated from it here.
     const v = evaluateRsiRiskManager(
       baseInput({ accountInfo: { ...baseInput().accountInfo, equity: 60000, accountCurrency: 'USD', profitCurrencyToAccountCurrencyRate: null } }),
     );
@@ -279,12 +282,12 @@ describe('Currency and equity', () => {
     expect(v.stopRiskAmount).toBeCloseTo(250, 6);
   });
 
-  it('shows how close the 0.5 lot default sits to the per-trade cap in USD terms', () => {
-    // Recorded because it matters operationally: at ~$50,000 equity the
-    // specified 0.5 lot default is marginally OVER the preserved 0.5% cap
-    // when no currency conversion applies, and is correctly refused.
+  it('refuses the 0.5 lot default once equity is small enough that its $250 risk exceeds the per-trade cap', () => {
+    // Derived from the live cap constant rather than hardcoded, so this stays
+    // correct however that cap is configured (see safety-constants.ts).
+    const equityJustUnderThreshold = (250 / (RSI_STOP_RISK_CAP_PCT / 100)) * 0.99;
     const v = evaluateRsiRiskManager(
-      baseInput({ accountInfo: { ...baseInput().accountInfo, equity: 49998.54, accountCurrency: 'USD', profitCurrencyToAccountCurrencyRate: null } }),
+      baseInput({ accountInfo: { ...baseInput().accountInfo, equity: equityJustUnderThreshold, accountCurrency: 'USD', profitCurrencyToAccountCurrencyRate: null } }),
     );
     expect(v.approved).toBe(false);
     expect(v.rejectionReason).toMatch(/per-trade cap/);
@@ -303,29 +306,40 @@ describe('Currency and equity', () => {
 
 describe('Risk caps — the trade is skipped, never shrunk', () => {
   it('refuses when the per-trade stop risk exceeds the cap', () => {
-    // Same 0.5 lots against a much smaller account.
-    const v = evaluateRsiRiskManager(baseInput({ accountInfo: { ...baseInput().accountInfo, equity: 10000 } }));
+    // Same 0.5 lots ($250 risk) against an account too small for the current
+    // cap. No currency conversion here (accountCurrency: 'USD',
+    // profitCurrencyToAccountCurrencyRate: null) so the risk stays a flat
+    // $250 rather than baseInput()'s default EUR-converted ~$216.75.
+    const equityJustUnderThreshold = (250 / (RSI_STOP_RISK_CAP_PCT / 100)) * 0.99;
+    const v = evaluateRsiRiskManager(
+      baseInput({ accountInfo: { ...baseInput().accountInfo, equity: equityJustUnderThreshold, accountCurrency: 'USD', profitCurrencyToAccountCurrencyRate: null } }),
+    );
     expect(v.approved).toBe(false);
     expect(v.rejectionReason).toMatch(/per-trade cap/);
     expect(v.rejectionReason).toMatch(/never reduced to fit|Volume is never reduced/);
   });
 
   it('refuses when combined open risk would exceed the cap', () => {
+    const equity = 49998.54;
+    // Enough existing reserved risk that adding this $250 candidate pushes
+    // combined risk just over whatever RSI_COMBINED_RISK_CAP_PCT currently is.
+    const existingCombinedRiskAmount = (RSI_COMBINED_RISK_CAP_PCT / 100) * equity - 250 + 100;
     const v = evaluateRsiRiskManager(
-      baseInput({ accountInfo: { ...baseInput().accountInfo, existingCombinedRiskAmount: 400 } }),
+      baseInput({ accountInfo: { ...baseInput().accountInfo, equity, existingCombinedRiskAmount } }),
     );
     expect(v.rejectionReason).toMatch(/combined cap/);
   });
 
   it("refuses once today's loss has reached the daily cap", () => {
+    const equity = 49998.54;
     const v = evaluateRsiRiskManager(
-      baseInput({ accountInfo: { ...baseInput().accountInfo, todaysLossAmount: 49998.54 * 0.02 } }),
+      baseInput({ accountInfo: { ...baseInput().accountInfo, equity, todaysLossAmount: equity * (RSI_DAILY_LOSS_CAP_PCT / 100) } }),
     );
     expect(v.rejectionReason).toMatch(/daily cap/);
   });
 
   it('refuses once drawdown has reached the cap', () => {
-    const v = evaluateRsiRiskManager(baseInput({ accountInfo: { ...baseInput().accountInfo, currentDrawdownPct: 5 } }));
+    const v = evaluateRsiRiskManager(baseInput({ accountInfo: { ...baseInput().accountInfo, currentDrawdownPct: RSI_DRAWDOWN_CAP_PCT } }));
     expect(v.rejectionReason).toMatch(/drawdown/);
   });
 });

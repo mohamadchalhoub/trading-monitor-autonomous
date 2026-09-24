@@ -71,11 +71,17 @@ export default async function XauusdRsiPage() {
           <Tile
             label="Execution mode"
             value={strategy.executionMode}
-            tone={strategy.executionMode === "DEMO" ? "ok" : strategy.executionMode === "SHADOW" ? "warn" : "neutral"}
+            tone={
+              strategy.executionMode === "DEMO" || strategy.executionMode === "LIVE"
+                ? "ok"
+                : strategy.executionMode === "SHADOW"
+                  ? "warn"
+                  : "neutral"
+            }
           />
           <Tile
             label="Account"
-            value={demo.demoVerified ? `DEMO verified` : `${demo.tradeMode} — BLOCKED`}
+            value={demo.demoVerified ? `${demo.requiredTradeMode} verified` : `${demo.tradeMode} — BLOCKED`}
             tone={demo.demoVerified ? "ok" : "down"}
           />
           <Tile label="Schedule" value={schedule.state} tone={scheduleTone(schedule.state)} />

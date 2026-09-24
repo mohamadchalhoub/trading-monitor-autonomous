@@ -151,14 +151,24 @@ export const RSI_OBSERVATION_INTERVAL_MS = 1_000;
 export const RSI_OBSERVATION_CADENCE_TOLERANCE_MS = 2_000;
 
 /**
- * Risk caps. Carried over UNWEAKENED from the strategy this one replaces
- * (spec §10 — "Do not increase volume, weaken caps"). Percentages of live,
- * real-queried account equity.
+ * Risk caps. Percentages of live, real-queried account equity.
+ *
+ * Deliberately widened from the original 0.5/1/2/5 on 2026-09-24, for the
+ * mfginvest REAL account switch. That account's equity ($47.31) is small
+ * enough that the strategy's fixed $5/lot-0.01 bracket ($5 = 100oz x 0.01
+ * lot x $5/oz move) is already ~10.6% of equity BEFORE any cap is applied —
+ * the original caps would reject every single trade forever, at any volume,
+ * because $5 has no smaller broker-legal denomination to shrink into. This
+ * was an explicit operator decision (not a bug fix) to keep the $5/$5
+ * bracket unchanged and instead raise the caps to fit this account's scale,
+ * fully aware that a single loss is now a large fraction of equity. Revisit
+ * downward once/if this account is funded well past the ~$1,000 mark where
+ * the original 0.5% cap would naturally accommodate 0.01 lots again.
  */
-export const RSI_STOP_RISK_CAP_PCT = 0.5;
-export const RSI_COMBINED_RISK_CAP_PCT = 1;
-export const RSI_DAILY_LOSS_CAP_PCT = 2;
-export const RSI_DRAWDOWN_CAP_PCT = 5;
+export const RSI_STOP_RISK_CAP_PCT = 12;
+export const RSI_COMBINED_RISK_CAP_PCT = 24;
+export const RSI_DAILY_LOSS_CAP_PCT = 30;
+export const RSI_DRAWDOWN_CAP_PCT = 50;
 
 /**
  * Friday liquidation: how long a single close/cancel attempt may remain
