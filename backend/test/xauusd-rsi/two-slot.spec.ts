@@ -21,7 +21,7 @@ import { RsiRuntimeSettingsService } from '../../src/xauusd-rsi/runtime-settings
 import { EmittedSignal } from '../../src/xauusd-rsi/engine';
 import { RuleFamily } from '../../src/xauusd-rsi/pattern';
 import { SPEC, SPEC_HASH } from '../../src/xauusd-rsi/spec';
-import { RSI_MAGIC_EXTREME, RSI_MAGIC_RETEST } from '../../src/xauusd-rsi/safety-constants';
+import { RSI_COMBINED_RISK_CAP_PCT, RSI_MAGIC_EXTREME, RSI_MAGIC_RETEST, RSI_STOP_RISK_CAP_PCT } from '../../src/xauusd-rsi/safety-constants';
 
 /** Wednesday 2026-09-23, 15:00 Beirut — plainly eligible. */
 const NOW_T = Date.parse('2026-09-23T12:00:00.000Z');
@@ -181,12 +181,22 @@ describe('Two rule-family slots', () => {
   });
 
   describe('aggregate risk accounting', () => {
+    // $5 x 100oz x 0.5 lots = $250 of stop risk per position, fixed regardless
+    // of the cap constants. Equity is derived from the LIVE cap constants
+    // (rather than hardcoded) so this scenario — per-trade cap admits one
+    // position, combined cap admits exactly two before a little pre-existing
+    // risk tips the second one over — stays valid however
+    // safety-constants.ts's caps are configured.
+    const combinedCapTestEquity = (() => {
+      const lowerBound = Math.max(31000 / RSI_COMBINED_RISK_CAP_PCT, 25000 / RSI_STOP_RISK_CAP_PCT);
+      const upperBound = 56000 / RSI_COMBINED_RISK_CAP_PCT;
+      return (lowerBound + upperBound) / 2;
+    })();
+
     it("counts the first reservation toward the second entry's combined cap", async () => {
-      // $5 x 100oz x 0.5 lots = $250 of stop risk per position. At $50,000
-      // equity the per-trade cap (0.5% = $250) admits one, and the combined
-      // cap (1% = $500) admits exactly two — so a little pre-existing risk is
-      // what makes the second one the trade that tips over the line.
-      //
+      await prisma.accountSnapshot.deleteMany();
+      await seed(combinedCapTestEquity, 'RETAIL_HEDGING');
+
       // The existing risk is a EURUSD position, deliberately not XAUUSD: it
       // must add to combined risk without touching either gold slot, so this
       // case isolates the ARITHMETIC rather than re-testing occupancy.
@@ -198,22 +208,25 @@ describe('Two rule-family slots', () => {
         },
       });
 
-      // First: 60 + 250 = 310 of 500. Fits.
+      // First: 60 + 250 fits under the combined cap.
       const first = await coordinator.evaluate(signal('RETEST', 'SELL'), ctx());
       expect(first.queued).toBe(true);
 
-      // Second: 60 + 250 already reserved + 250 = 560 of 500. Does not fit —
-      // and it only exceeds because the first reservation is counted.
+      // Second: 60 + 250 already reserved + 250 does not fit — and it only
+      // exceeds because the first reservation is counted.
       const second = await coordinator.evaluate(signal('EXTREME', 'SELL'), ctx());
       expect(second.queued).toBe(false);
       expect(second.skipReason).toMatch(/combined cap/);
     });
 
     it('would have admitted the second entry had the first NOT been counted', async () => {
+      await prisma.accountSnapshot.deleteMany();
+      await seed(combinedCapTestEquity, 'RETAIL_HEDGING');
+
       // The control for the case above: same account, same pre-existing risk,
       // but with the first slot never reserved. If the reservation were not
-      // counted, 60 + 250 = 310 of 500 would fit — so this passing is what
-      // makes the previous failure attributable to the reservation.
+      // counted, 60 + 250 would fit — so this passing is what makes the
+      // previous failure attributable to the reservation.
       await prisma.position.create({
         data: {
           accountId, platform: 'MT5', externalPositionId: 'eu-1', symbol: 'EURUSD',
